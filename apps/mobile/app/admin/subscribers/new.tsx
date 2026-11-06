@@ -7,7 +7,7 @@ import { CredentialsCard } from '@/admin/parts';
 import { api } from '@/lib/api';
 import { newKey } from '@/lib/ids';
 import { space } from '@/theme/tokens';
-import { Button, Chip, ChipRow, Field, FormError, Notice, Screen, T } from '@/ui';
+import { Button, Chip, ChipRow, Field, FormError, ModalFrame, Notice, Screen, T } from '@/ui';
 
 const DURATIONS = [30, 90, 180, 365];
 
@@ -16,7 +16,7 @@ interface Created {
   temporaryPassword: string | null;
 }
 
-export default function NewSubscriber() {
+function NewSubscriber() {
   const router = useRouter();
   const client = useQueryClient();
   const [name, setName] = useState('');
@@ -179,5 +179,13 @@ export default function NewSubscriber() {
       />
       <FormError error={create.error} />
     </Screen>
+  );
+}
+
+export default function NewSubscriberRoute() {
+  return (
+    <ModalFrame>
+      <NewSubscriber />
+    </ModalFrame>
   );
 }

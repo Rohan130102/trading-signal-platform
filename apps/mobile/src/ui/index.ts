@@ -10,3 +10,4 @@ export * from './Toast';
 export * from './ConnectionBanner';
 export * from './AuthFrame';
 export * from './KeyboardArea';
+export * from './ModalFrame';

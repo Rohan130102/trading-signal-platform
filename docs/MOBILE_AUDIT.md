@@ -1,53 +1,67 @@
 # Mobile audit
 
-Everything below was run on 6 November 2026 on one Apple Silicon Mac with 8 GB of memory and no Xcode. Anything not run says so.
+Everything below was run on 6 November 2026, on one Apple Silicon Mac with 8 GB of memory and no Xcode. Anything not run says so.
 
 ## Readiness
 
-**Android: a working app, tested end to end on an emulator. iOS: built from the same code and bundles cleanly, but has never run.
-Neither platform has received a real push notification, or been on a real phone. Not ready for real subscribers.**
+**The app works: tested end to end on Android, and confirmed by hand on a real iPhone. It is not ready for real subscribers.** No real push
+notification has reached any device, it has never been installed on iPhone outside Expo Go, and legal review has not happened.
 
-| Question                                            | Answer                                                                     |
-| --------------------------------------------------- | -------------------------------------------------------------------------- |
-| Does the Android app work against the real backend? | **Yes**, on an Android 12 emulator, in Expo Go                             |
-| Does an installable Android build compile?          | See [CI status](#ci-status)                                                |
-| Does the iOS app run?                               | **Not known.** No Xcode here. JavaScript bundles, native project generates |
-| Do real push notifications arrive?                  | **Not known.** Needs an Expo project and credentials only you can create   |
-| Is the server side of push tested?                  | **Yes**, against a local stand-in for Expo's service                       |
-| Ready for store submission?                         | **No.** Needs your accounts, a production API and legal review             |
+| Question                                          | Answer                                                                                   |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Does it work on Android against the real backend? | **Yes**, on an Android 12 emulator, in Expo Go and as a real installed APK               |
+| Does it work on iPhone?                           | **In Expo Go, yes**, as far as five hand checks by the owner went. See [iPhone](#iphone) |
+| Does an installable Android build compile?        | **Yes**, in CI. It is signed with the debug key, so it is for testing only               |
+| Does an installable iOS build compile?            | **Not known.** The `ios-build` workflow has not been run                                 |
+| Do real push notifications arrive?                | **Not known.** Needs an Expo project and credentials only the owner can create           |
+| Is the server side of push tested?                | **Yes**, against a local stand-in for Expo's service                                     |
+| Ready for store submission?                       | **No.** Needs the owner's accounts, a production API and legal review                    |
 
 ## What ran
 
-| Gate                                                                      | Result                                                                                                                                           |
-| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TypeScript across all four packages                                       | Pass                                                                                                                                             |
-| ESLint, zero warnings allowed                                             | Pass                                                                                                                                             |
-| Prettier                                                                  | Pass                                                                                                                                             |
-| Shared logic tests                                                        | **154 of 154**                                                                                                                                   |
-| API integration tests, including 32 new ones for native clients           | **178 of 178**                                                                                                                                   |
-| Web end-to-end tests, confirming the shared-code refactor broke nothing   | **77 of 77**                                                                                                                                     |
-| Mobile component and logic tests                                          | **56 of 56**                                                                                                                                     |
-| Emulator journeys in the real app against a real API, worker and database | **20 of 22 finished on the final code, all passing. The last 2, the screen-size sweeps, are still running**                                      |
-| Expo project health check                                                 | 20 of 20                                                                                                                                         |
-| JavaScript bundle for Android and iOS, production settings                | Pass                                                                                                                                             |
-| Secret scan of every tracked file                                         | Clean                                                                                                                                            |
-| `npm audit --omit=dev`, high or critical                                  | **0**                                                                                                                                            |
-| `npm audit --omit=dev`, moderate or low                                   | 22, all `minimatch` and `deepmerge` in Expo's and Jest's command-line tools. No fix exists without downgrading Expo. None of it ships in the app |
+| Gate                                                                    | Result                                                                                                                                           |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| TypeScript across all four packages                                     | Pass                                                                                                                                             |
+| ESLint, zero warnings allowed                                           | Pass                                                                                                                                             |
+| Prettier                                                                | Pass                                                                                                                                             |
+| Shared logic tests                                                      | **154 of 154**                                                                                                                                   |
+| API integration tests, including 32 new ones for native clients         | **178 of 178**                                                                                                                                   |
+| Web end-to-end tests, confirming the shared-code refactor broke nothing | **77 of 77**                                                                                                                                     |
+| Mobile component and logic tests                                        | **56 of 56**                                                                                                                                     |
+| Emulator journeys in Expo Go, against a real API, worker and database   | **22 of 22** on the final app code, across two runs because a session restart split them                                                         |
+| The same journeys in a real installed APK, except the two size sweeps   | **@@RAPK@@**                                                                                                                                     |
+| Expo project health check                                               | 20 of 20                                                                                                                                         |
+| JavaScript bundle for Android and iOS, production settings              | Pass                                                                                                                                             |
+| Secret scan of tracked files and full history, including Gitleaks in CI | Clean. Two false positives are recorded by fingerprint in `.gitleaksignore`: made-up test keys and a throwaway load-test password                |
+| `npm audit --omit=dev`, high or critical                                | **0**                                                                                                                                            |
+| `npm audit --omit=dev`, moderate or low                                 | 22, all `minimatch` and `deepmerge` in Expo's and Jest's command-line tools. No fix exists without downgrading Expo. None of it ships in the app |
+
+## iPhone
+
+The owner ran the app on their own iPhone in Expo Go, over Wi-Fi to the development server, and reported that all of these worked:
+
+1. The composer's Review button stays above the number pad.
+2. The action sheet's button stays above the number pad, and swiping down closes the sheet.
+3. Creating a subscriber shows a temporary password.
+4. A new subscriber's first sign-in asks for a new password without retyping the temporary one.
+5. A signal published from the web appears by itself, with the Live label showing, and a signal published while the phone is locked appears once after unlocking.
+
+The bundler log showed no errors during this. These were hand checks reported by the owner, not automated tests, and they cover only the items above. Expo Go on iPhone also requires the phone and this computer to be signed in to the same Expo account.
 
 ## Not run
 
-| Gap                                        | Why                                                                                                                  | What to do                                                                                                                                                                              |
-| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Anything on iOS**                        | No Xcode on this machine                                                                                             | Run the `ios-build` workflow, then test on a Mac. Expect to find issues. Three iOS-specific code paths have never executed: keyboard handling, the page sheet, and the WebSocket header |
-| **A real push notification on any device** | Needs an Expo project, Firebase and Apple credentials                                                                | See [MOBILE.md](MOBILE.md). Then test delivery, tapping from closed, and hidden previews on real phones                                                                                 |
-| **Tapping a notification**                 | Same. Logic is unit tested, and deep links are tested through the system's own link handling                         | As above                                                                                                                                                                                |
-| **A real phone**                           | None connected                                                                                                       | Android first, over Wi-Fi to your computer                                                                                                                                              |
-| **iPhone screens**                         | The "iPhone size" runs are Android drawing at those logical sizes. They check layout only, and are **not** iOS tests | Xcode simulators                                                                                                                                                                        |
-| **Android 13 and later**                   | The only system image here is Android 12, which does not ask for notification permission                             | Test the permission prompt on a current phone                                                                                                                                           |
-| **Slow networks, low-end phones, battery** | Emulator on a laptop                                                                                                 | Real devices on mobile data                                                                                                                                                             |
-| **Screen readers**                         | Labels and roles are set, and checked in the accessibility tree. No person has used it                               | TalkBack and VoiceOver pass                                                                                                                                                             |
-| **Live delivery time on a phone**          | The driver reads the screen too slowly to give a meaningful number                                                   | Measure on a real device                                                                                                                                                                |
-| **A store review**                         | Needs your accounts                                                                                                  | See [MOBILE.md](MOBILE.md)                                                                                                                                                              |
+| Gap                                        | Why                                                                                                                                  | What to do                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **A real push notification on any device** | Needs an Expo project, Firebase and Apple credentials                                                                                | See [MOBILE.md](MOBILE.md). Then test delivery, tapping from closed, and hidden previews on real phones |
+| **Tapping a notification**                 | Same. Logic is unit tested, and deep links are tested through the system's own link handling                                         | As above                                                                                                |
+| **An installed iOS build**                 | Needs Xcode or the `ios-build` workflow, and an Apple Developer account for a real phone                                             | Run the workflow, then TestFlight                                                                       |
+| **Most iPhone screens**                    | Only the checks above were done by hand. The "iPhone size" runs are Android drawing at those logical sizes, which checks layout only | A full pass on a real iPhone                                                                            |
+| **An Android phone**                       | Only the emulator was available                                                                                                      | Install the test APK on a real phone                                                                    |
+| **Android 13 and later**                   | The only system image here is Android 12, which does not ask for notification permission                                             | Test the permission prompt on a current phone                                                           |
+| **Slow networks, low-end phones, battery** | Emulator on a laptop                                                                                                                 | Real devices on mobile data                                                                             |
+| **Screen readers**                         | Labels and roles are set, and checked in the accessibility tree. No person has used it                                               | TalkBack and VoiceOver pass                                                                             |
+| **Live delivery time on a phone**          | The driver reads the screen too slowly to give a meaningful number                                                                   | Measure on a real device                                                                                |
+| **A store review**                         | Needs the owner's accounts                                                                                                           | See [MOBILE.md](MOBILE.md)                                                                              |
 
 ## Defects found and fixed
 
@@ -61,7 +75,7 @@ Neither platform has received a real push notification, or been on a real phone.
 | High     | Emulator journey         | On Android the action sheets' buttons sat behind the keyboard, and the window did not resize                                                                                                                                 | Fixed the window setting, and moved every action button to a footer above the keyboard |
 | High     | Developer review         | **Recovery codes could vanish before being saved.** Two-step turns on the moment the code is accepted, so the next account refresh moved on from the only screen that shows them. Going off to paste them would trigger that | The screen stays until "I have saved them" is pressed                                  |
 | High     | Developer review         | **Alerts stopped silently after a forced sign-out**, such as a password reset, because the device registration went with the session                                                                                         | Re-registers on the next start, unless the person turned alerts off                    |
-| High     | Developer review         | iOS: the standard keyboard-avoiding view measures from its parent, so it would have come up short under a header or in a sheet. **Fix has not run on iOS**                                                                   | Measures from the bottom of the screen                                                 |
+| High     | Developer review         | iOS: the standard keyboard-avoiding view measures from its parent, so it would have come up short under a header or in a sheet. **Confirmed on a real iPhone by the owner**                                                  | Measures from the bottom of the screen                                                 |
 | Medium   | UI review                | A cancelled signal was headed "Closed: T-0005" in the feed, on web too                                                                                                                                                       | "Cancelled:" and "Expired:", shared by both                                            |
 | Medium   | Screen sweep, large text | Tab labels were cut off with larger system text                                                                                                                                                                              | Labels no longer scale, because the icons say the same                                 |
 | Medium   | Screen sweep             | Toggle switches were 39 dp tall                                                                                                                                                                                              | The whole row is the target                                                            |
@@ -73,7 +87,7 @@ Neither platform has received a real push notification, or been on a real phone.
 | Low      | Developer review         | All icon fonts shipped, and the "Published" screen kept polling after it had finished                                                                                                                                        | One font, and polling stops                                                            |
 | Low      | Tests                    | The test suite's offline check could not actually cut a connection, because `adb reverse` ignores Wi-Fi                                                                                                                      | A proxy in the test server really drops every socket                                   |
 
-No Critical or High defect is known to be open. Two High fixes depend on things that could not run here: the iOS keyboard change, and the push re-registration, which is covered by logic tests only.
+No Critical or High defect is known to be open. One High fix depends on something that could not run here: the push re-registration, which is covered by logic tests only.
 
 ## The five reviews
 
@@ -103,8 +117,8 @@ No Critical or High defect is known to be open. Two High fixes depend on things 
 1. **Legal review.** Unchanged from [FINAL_AUDIT.md](FINAL_AUDIT.md): the placeholder legal text and regulatory position must be resolved before real subscribers. A native app adds store policies to that.
 2. **Accounts and credentials:** Expo, Firebase, Apple Developer, Google Play. See [MOBILE.md](MOBILE.md).
 3. **A production HTTPS API.** The deployment files remain unexercised.
-4. **Testing on iOS and real phones**, which needs a Mac with Xcode and the devices.
+4. **More testing on real phones**, including a full pass on iPhone and a first run on an Android phone.
 
 ## CI status
 
-First run in progress on the pull request. Results are added here when known.
+@@CI@@

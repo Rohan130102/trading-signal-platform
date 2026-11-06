@@ -36,7 +36,7 @@ npm run mobile
 Then press `a` for Android, or scan the QR code with Expo Go on a phone. Set `EXPO_PUBLIC_API_URL` in `.env.local` if the table
 says so.
 
-Expo Go is enough for everything except notifications, which need a real build.
+Expo Go is enough for everything except notifications, which need a real build. On iPhone, Expo Go also requires the phone and this computer to be signed in to the same Expo account, so run `npx expo login` here first.
 
 ## Screens
 
@@ -118,6 +118,23 @@ Nothing is ever submitted to a store by these commands, or by CI.
 
 Without an Expo account, CI compiles an installable test APK on every push: see the `android-apk` job. The `ios-build` workflow
 compiles for the iOS simulator when run by hand. Its macOS minutes cost ten times as much, so it does not run automatically.
+
+## Sharing a test build with someone elsewhere
+
+Their phone has to reach your API, so that needs an HTTPS address first. For a short demo, a temporary tunnel works:
+
+```bash
+cloudflared tunnel --url http://localhost:4000
+```
+
+This puts your development server on the public internet for as long as it runs. The address changes every time, and your computer has to stay on and awake.
+
+| Their phone | How                                                                                                                                                                               |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Rebuild if the address changes |
+| iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                |
+
+The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. It has no notifications, because it has no Expo project. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
 
 ## What you need to provide
 

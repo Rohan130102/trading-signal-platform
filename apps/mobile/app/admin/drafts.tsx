@@ -4,9 +4,9 @@ import { useRouter } from 'expo-router';
 import { Alert, View } from 'react-native';
 import { api } from '@/lib/api';
 import { space } from '@/theme/tokens';
-import { Button, Card, EmptyState, ErrorState, errorMessage, Loading, Screen, T, useToast } from '@/ui';
+import { Button, Card, EmptyState, ErrorState, errorMessage, Loading, ModalFrame, Screen, T, useToast } from '@/ui';
 
-export default function Drafts() {
+function Drafts() {
   const router = useRouter();
   const client = useQueryClient();
   const toast = useToast();
@@ -59,5 +59,13 @@ export default function Drafts() {
         </Card>
       ))}
     </Screen>
+  );
+}
+
+export default function DraftsRoute() {
+  return (
+    <ModalFrame>
+      <Drafts />
+    </ModalFrame>
   );
 }

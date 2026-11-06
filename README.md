@@ -5,7 +5,7 @@ A platform for broadcasting structured trading signals to paying subscribers, wi
 It communicates signals. **It does not place orders or connect to brokers**, and it never assumes anyone acted on a signal.
 
 > **Status: ready for local development and testing. Not ready for real subscribers.** The Android app is tested end to end on an
-> emulator. The iOS app has never run, because this was built without Xcode, and no real push notification has reached any device yet.
+> emulator, and the app has been confirmed by hand on a real iPhone in Expo Go. No real push notification has reached any device yet.
 > Compliance review is a hard blocker, and deployment is unverified. See [docs/MOBILE_AUDIT.md](docs/MOBILE_AUDIT.md) and
 > [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md).
 
