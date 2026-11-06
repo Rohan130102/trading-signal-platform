@@ -1,4 +1,4 @@
-import { loginSchema } from '@signaldesk/domain';
+import { loginSchema, type PublicInfo } from '@signaldesk/domain';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -7,16 +7,6 @@ import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { space } from '@/theme/tokens';
 import { AuthFrame, Button, Field, FormError, type InputHandle, Notice, T } from '@/ui';
-
-export interface PublicInfo {
-  serviceName: string;
-  serviceDescription: string;
-  legalEntityName: string;
-  regulatoryStatement: string;
-  riskDisclosure: string;
-  privacyNotice: string;
-  supportContact: string;
-}
 
 export default function Login() {
   const { signIn, notice } = useSession();

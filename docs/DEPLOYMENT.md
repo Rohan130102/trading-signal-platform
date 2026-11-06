@@ -26,6 +26,19 @@ are validated at startup: a process with bad configuration refuses to start and 
 Production requires `NODE_ENV=production`, `https://` in every `APP_ORIGINS` entry, and `TRUST_PROXY_HOPS` equal to the number of
 proxies in front of the API. Keep `PUBLIC_PERFORMANCE_ENABLED=false` unless compliance review says otherwise.
 
+## Native app settings
+
+| Setting                      | Default                           | Notes                                                                             |
+| ---------------------------- | --------------------------------- | --------------------------------------------------------------------------------- |
+| `EXPO_PUSH_ENABLED`          | `true`                            | Set `false` to stop native push entirely                                          |
+| `EXPO_PUSH_API_URL`          | `https://exp.host/--/api/v2/push` | Only tests change this                                                            |
+| `EXPO_ACCESS_TOKEN`          | Not set                           | Needed if you turn on enhanced push security in your Expo project. Keep it secret |
+| `EXPO_RECEIPT_DELAY_SECONDS` | `900`                             | How long after sending to ask Expo whether Apple or Google took the message       |
+| `EXPO_RECEIPT_POLL_SECONDS`  | `60`                              | How often the worker checks for receipts that are due                             |
+
+The phone app connects from anywhere, so the API must be reachable over HTTPS on a public address, and `/ws` must allow WebSockets.
+Building the app itself is covered in [MOBILE.md](MOBILE.md).
+
 ## Build notes that will otherwise bite you
 
 - **Do not have `NODE_ENV=development` set during `npm run build`.** Next.js fails with a confusing prerender error.

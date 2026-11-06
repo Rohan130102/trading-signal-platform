@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   type AdminEvent,
   type AdminTradeDetail,
@@ -229,7 +229,7 @@ export default function AdminTrade() {
               renderExtra={(event) => {
                 const e = event as AdminEvent;
                 return (
-                  <View style={{ marginTop: space.sm, gap: 4 }}>
+                  <View style={{ marginTop: space.sm, gap: 4, alignItems: 'flex-start' }}>
                     {e.broadcast ? (
                       <DispatchStatus dispatch={e.dispatch} />
                     ) : (

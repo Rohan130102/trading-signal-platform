@@ -4,7 +4,7 @@ import {
   BASIS_LABELS,
   basisShort,
   type CalculationBasis,
-  categoryLabel,
+  eventHeading,
   CLOSE_REASON_LABELS,
   type Direction,
   type FeedEvent,
@@ -292,7 +292,7 @@ export function FeedCard({ event, fresh }: { event: FeedEvent; fresh?: boolean }
   const heading = (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className={clsx('text-xs font-semibold uppercase tracking-wide', TONE_TEXT[tone])}>
-        {categoryLabel(event.category, p.ref)}
+        {eventHeading(event.type, event.category, p.ref)}
       </span>
       {urgent && (
         <Badge tone="update">

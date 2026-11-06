@@ -1,5 +1,5 @@
 import { type DispatchSummary, formatPrice, type SubscriberRow, type TradeSummary } from '@signaldesk/domain';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -68,7 +68,7 @@ export function DispatchStatus({ dispatch }: { dispatch: DispatchSummary | null 
     parts.push('No devices have notifications on');
   }
   return (
-    <View style={{ gap: 4 }} testID="dispatch-status">
+    <View style={{ gap: 4, alignItems: 'flex-start' }} testID="dispatch-status">
       <Badge tone={stage.tone}>{stage.label}</Badge>
       <T v="caption" c="muted" num>
         {parts.join(' · ')}

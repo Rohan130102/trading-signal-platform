@@ -3,7 +3,7 @@
   "info": {
     "title": "SignalDesk API",
     "version": "1.0.0",
-    "description": "Signal communication platform. It does not place orders. State-changing requests must carry an allowed Origin header."
+    "description": "Signal communication platform. It does not place orders. State-changing requests with a cookie must carry an allowed Origin header."
   },
   "paths": {
     "/api/v1/auth/login": {
@@ -60,6 +60,64 @@
         }
       }
     },
+    "/api/v1/auth/token": {
+      "post": {
+        "summary": "Sign in from a native app. Returns a bearer token, once, for secure device storage.",
+        "tags": [
+          "Auth"
+        ],
+        "security": [],
+        "x-access": "public",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "deviceLabel": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "identifier",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "summary": "Sign out of this device",
@@ -69,6 +127,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -99,6 +160,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -129,6 +193,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -159,6 +226,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -217,6 +287,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -247,6 +320,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -299,6 +375,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -351,6 +430,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -422,6 +504,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -474,6 +559,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -504,6 +592,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -610,6 +701,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -649,6 +743,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -778,6 +875,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -934,6 +1034,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -962,6 +1065,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -1110,6 +1216,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -1265,6 +1374,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -1304,6 +1416,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -1422,6 +1537,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -1461,6 +1579,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2064,6 +2185,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2134,6 +2258,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -2164,6 +2291,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2192,6 +2322,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2347,6 +2480,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2511,6 +2647,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2539,6 +2678,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2646,6 +2788,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2739,6 +2884,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2814,6 +2962,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2924,6 +3075,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -2961,6 +3115,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3054,6 +3211,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3125,6 +3285,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3205,6 +3368,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3262,6 +3428,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3319,6 +3488,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3376,6 +3548,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3415,6 +3590,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3454,6 +3632,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -3484,10 +3665,129 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
         "parameters": [],
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register this installed app for native notifications",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "x-access": "active-subscription",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^Expo(nent)?PushToken\\[[A-Za-z0-9_-]{8,200}\\]$"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android"
+                    ]
+                  },
+                  "deviceLabel": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "token",
+                  "platform"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Stop native notifications to this installed app",
+        "tags": [
+          "Notifications"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "x-access": "authenticated",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^Expo(nent)?PushToken\\[[A-Za-z0-9_-]{8,200}\\]$"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "responses": {
           "2XX": {
             "description": "Success"
@@ -3514,6 +3814,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -3589,6 +3892,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -3640,6 +3946,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "active-subscription",
@@ -3670,6 +3979,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -3698,6 +4010,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "authenticated",
@@ -3764,6 +4079,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3794,6 +4112,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3824,6 +4145,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3854,6 +4178,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -3926,6 +4253,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4007,6 +4337,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4037,6 +4370,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4065,6 +4401,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4164,6 +4503,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4194,6 +4536,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4280,6 +4625,9 @@
         "security": [
           {
             "session": []
+          },
+          {
+            "bearer": []
           }
         ],
         "x-access": "admin",
@@ -4463,6 +4811,11 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "sd_session"
+      },
+      "bearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Native apps. Token from POST /auth/token."
       }
     },
     "schemas": {

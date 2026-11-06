@@ -43,6 +43,7 @@ export default function Desk() {
         testID="trades-list"
         data={rows}
         keyExtractor={(t) => t.id}
+        style={styles.fill}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

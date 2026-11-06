@@ -1,9 +1,11 @@
 import { AccountSections } from '@/account';
-import { useMe } from '@/lib/session';
+import { useSession } from '@/lib/session';
 import { Card, Screen, T } from '@/ui';
 
 export default function AdminAccount() {
-  const me = useMe();
+  // Sign-out clears the session a moment before this screen goes away.
+  const { me } = useSession();
+  if (!me) return null;
   return (
     <Screen edges={['bottom']} testID="account">
       <Card>

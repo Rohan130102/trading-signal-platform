@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View, type ViewProps, type ViewStyle } from 'react-native';
@@ -180,7 +180,19 @@ export function ToggleRow({
 }) {
   const c = useColors();
   return (
-    <View style={styles.toggle}>
+    <Pressable
+      testID={testID}
+      accessibilityRole="switch"
+      accessibilityLabel={label}
+      accessibilityHint={hint}
+      accessibilityState={{ checked: value, disabled: Boolean(disabled) }}
+      disabled={disabled}
+      onPress={() => {
+        void Haptics.selectionAsync().catch(() => undefined);
+        onChange(!value);
+      }}
+      style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
+    >
       <View style={styles.flex}>
         <T>{label}</T>
         {hint && (
@@ -189,16 +201,15 @@ export function ToggleRow({
           </T>
         )}
       </View>
-      <Switch
-        testID={testID}
-        accessibilityLabel={label}
-        value={value}
-        onValueChange={onChange}
-        disabled={disabled}
-        trackColor={{ true: c.success, false: c.lineStrong }}
-        thumbColor="#FFFFFF"
-      />
-    </View>
+      <View pointerEvents="none" importantForAccessibility="no-hide-descendants" accessibilityElementsHidden>
+        <Switch
+          value={value}
+          disabled={disabled}
+          trackColor={{ true: c.success, false: c.lineStrong }}
+          thumbColor="#FFFFFF"
+        />
+      </View>
+    </Pressable>
   );
 }
 
@@ -330,7 +341,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    alignSelf: 'flex-start',
   },
   segmented: { flexDirection: 'row', borderRadius: radius.md, padding: 3, gap: 3 },
   segment: {
@@ -347,7 +357,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 38,
+    minHeight: 40,
     paddingHorizontal: 14,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,

@@ -9,3 +9,4 @@ export * from './Text';
 export * from './Toast';
 export * from './ConnectionBanner';
 export * from './AuthFrame';
+export * from './KeyboardArea';

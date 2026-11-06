@@ -22,6 +22,7 @@ export default function Active() {
         testID="active-list"
         data={trades.data?.trades ?? []}
         keyExtractor={(t) => t.id}
+        style={styles.fill}
         contentContainerStyle={styles.list}
         refreshControl={<Refresh {...pull} />}
         ListHeaderComponent={

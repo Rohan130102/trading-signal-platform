@@ -39,10 +39,10 @@ export default function RootLayout() {
 
 function App() {
   const { colors, navigation } = useTheme();
-  const { state, me } = useSession();
+  const { state, me, holdRoute } = useSession();
   const router = useRouter();
   const segments = useSegments();
-  const redirect = gateRedirect(state, segments);
+  const redirect = holdRoute ? null : gateRedirect(state, segments);
   const [pending, setPending] = useState<string | null>(null);
   const settled = state.phase === 'signed-in' && !redirect;
 
@@ -120,12 +120,17 @@ function LiveAlerts({ adminLink }: { adminLink: boolean }) {
   const toast = useToast();
   const router = useRouter();
   const pathname = usePathname();
-  const onFeed = useRef(pathname === '/feed');
-  onFeed.current = pathname === '/feed';
+  const here = useRef(pathname);
+  here.current = pathname;
   useEffect(() => {
     if (!latest) return;
     clearLatest();
-    if (onFeed.current && latest.priority !== 'PRIORITY') return;
+    // No alert about what is already on screen, or about what this person has just done here.
+    const onThisTrade =
+      latest.tradeId !== null &&
+      (here.current === `/trades/${latest.tradeId}` || here.current === `/admin/trades/${latest.tradeId}`);
+    if (here.current === '/compose') return;
+    if ((here.current === '/feed' || onThisTrade) && latest.priority !== 'PRIORITY') return;
     const buy = latest.payload.direction === 'BUY';
     const isNew = latest.category === 'NEW_SIGNAL';
     const tradeId = latest.tradeId;

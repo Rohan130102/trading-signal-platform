@@ -9,6 +9,8 @@ It communicates signals. **It does not place orders or connect to brokers**, and
 
 ## What it does
 
+The main product is the **native Android and iOS app** in `apps/mobile` (React Native, Expo, TypeScript). The web app stays alongside it, and both use the same API. See [docs/MOBILE.md](docs/MOBILE.md).
+
 **Administrators** publish a signal in a few keystrokes: levels are calculated per instrument and previewed before anything is sent. They then activate, move stops, book partial profit, close and correct trades, manage subscribers, and watch delivery health and internal performance.
 
 **Subscribers** get a live feed on their phone, see the current levels of every active trade, and can search history. Updates always read as updates, tied to their trade.
@@ -51,6 +53,8 @@ Before anything else, check the instrument assumptions: see [docs/ASSUMPTIONS.md
 | `npm run test:integration`                                  | Real API, worker and PostgreSQL. Starts its own                                                                                  |
 | `npm run test:e2e`                                          | Browser journeys. First: `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium webkit`, and run with the same variable set |
 | `npm run test:perf`                                         | Measured latency and throughput                                                                                                  |
+| `npm run mobile`                                            | Start the phone app's development server. See [docs/MOBILE.md](docs/MOBILE.md)                                                   |
+| `npm run test:mobile`                                       | The phone app's component and logic tests                                                                                        |
 | `npm run lint`, `npm run typecheck`, `npm run format:check` | Static checks                                                                                                                    |
 | `npm run db:migrate`, `npm run db:seed`                     | Database setup                                                                                                                   |
 | `npm run admin:create -- <login> "<Name>"`                  | Provision an administrator                                                                                                       |

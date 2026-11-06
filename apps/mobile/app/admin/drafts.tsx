@@ -1,18 +1,10 @@
-import type { DraftInput } from '@signaldesk/domain';
-import { formatRelative } from '@signaldesk/domain';
+import { type DraftRow, formatRelative } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { Alert, View } from 'react-native';
 import { api } from '@/lib/api';
 import { space } from '@/theme/tokens';
 import { Button, Card, EmptyState, ErrorState, errorMessage, Loading, Screen, T, useToast } from '@/ui';
-
-export interface DraftRow {
-  id: string;
-  version: number;
-  draft: DraftInput;
-  updatedAt: string;
-}
 
 export default function Drafts() {
   const router = useRouter();

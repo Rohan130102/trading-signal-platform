@@ -8,6 +8,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
+import { connect, createServer as createTcpServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -19,9 +20,12 @@ const require = createRequire(join(apiDir, 'package.json'));
 const { default: EmbeddedPostgres } = await import(require.resolve('embedded-postgres'));
 const { generate } = await import(require.resolve('otplib'));
 
-const API_PORT = Number(process.env.STACK_API_PORT ?? 4200);
-const EXPO_PORT = API_PORT + 6;
-const PG_PORT = API_PORT + 50000 > 65000 ? 54390 : 54390;
+// The app reaches the API through a proxy on PUBLIC_PORT, which a test can cut like a lost network.
+const PUBLIC_PORT = Number(process.env.STACK_API_PORT ?? 4200);
+const API_PORT = PUBLIC_PORT + 1;
+const EXPO_PORT = PUBLIC_PORT + 6;
+const CONTROL_PORT = PUBLIC_PORT + 7;
+const PG_PORT = 54390;
 const api = `http://localhost:${API_PORT}/api/v1`;
 const PASSWORD = 'correct-horse-battery-staple';
 
@@ -84,6 +88,41 @@ const expo = createServer((req, res) => {
 });
 await new Promise((r) => expo.listen(EXPO_PORT, r));
 
+let networkUp = true;
+const open = new Set();
+const proxy = createTcpServer((client) => {
+  if (!networkUp) {
+    client.destroy();
+    return;
+  }
+  const upstream = connect(API_PORT, '127.0.0.1');
+  open.add(client);
+  open.add(upstream);
+  client.pipe(upstream);
+  upstream.pipe(client);
+  const close = () => {
+    client.destroy();
+    upstream.destroy();
+    open.delete(client);
+    open.delete(upstream);
+  };
+  client.on('error', close);
+  upstream.on('error', close);
+  client.on('close', close);
+  upstream.on('close', close);
+});
+await new Promise((r) => proxy.listen(PUBLIC_PORT, r));
+const control = createServer((req, res) => {
+  if (req.url === '/network/cut') {
+    networkUp = false;
+    for (const socket of open) socket.destroy();
+  } else if (req.url === '/network/restore') {
+    networkUp = true;
+  }
+  res.end(JSON.stringify({ networkUp }));
+});
+await new Promise((r) => control.listen(CONTROL_PORT, r));
+
 const children = [
   spawn('node', ['dist/main.js'], { cwd: apiDir, env, stdio: 'inherit' }),
   spawn('node', ['dist/worker.js'], { cwd: apiDir, env, stdio: 'inherit' }),
@@ -141,26 +180,26 @@ await call(subToken, 'POST', '/auth/change-password', {
   currentPassword: subscriber.temporaryPassword,
   newPassword: PASSWORD,
 });
-const newcomer = await makeSubscriber('Vikram Shah', 'vikram');
 
 writeFileSync(
   join(here, '.state.json'),
   JSON.stringify(
     {
+      appPort: PUBLIC_PORT,
       apiPort: API_PORT,
       expoPort: EXPO_PORT,
+      controlPort: CONTROL_PORT,
       adminToken: adminToken2,
       password: PASSWORD,
       totpSecret: secret,
       freshAdminTemp,
       subscriber: { ...subscriber, temporaryPassword: undefined },
-      newcomer,
     },
     null,
     2,
   ),
 );
-console.warn(`stack ready on port ${API_PORT}`);
+console.warn(`stack ready: the app connects to port ${PUBLIC_PORT}`);
 
 let stopping = false;
 const stop = async () => {
@@ -168,6 +207,8 @@ const stop = async () => {
   stopping = true;
   for (const child of children) child.kill('SIGTERM');
   expo.close();
+  proxy.close();
+  control.close();
   await pg.stop().catch(() => undefined);
   rmSync(dataDir, { recursive: true, force: true });
   process.exit(0);

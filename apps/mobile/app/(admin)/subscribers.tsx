@@ -44,6 +44,7 @@ export default function Subscribers() {
         testID="subscribers-list"
         data={rows}
         keyExtractor={(s) => s.id}
+        style={styles.fill}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

@@ -76,6 +76,7 @@ interface FormProps {
   pending: boolean;
   error: unknown;
   confirmWiden: boolean;
+  frame: { testID: string; title: string; subtitle: string; onClose: () => void };
 }
 
 /** One sheet for every action, so each is two taps from the trade and always shows its effect. */
@@ -130,46 +131,40 @@ export function ActionSheet({
     pending: run.isPending,
     error: run.error,
     confirmWiden,
+    frame: {
+      testID: `action-${kind}`,
+      title: TITLES[kind],
+      subtitle: `${trade.direction} ${trade.symbol} · ${trade.ref} · Stop-loss ${formatPrice(trade, trade.stopLoss)}`,
+      onClose,
+    },
   };
-  const content = (() => {
-    switch (kind) {
-      case 'ACTIVATE':
-        return <ActivateForm {...shared} />;
-      case 'RECORD_EXECUTION':
-        return <ExecutionForm {...shared} />;
-      case 'MOVE_STOP':
-        return <MoveStopForm {...shared} />;
-      case 'MOVE_STOP_BREAKEVEN':
-        return <BreakevenForm {...shared} />;
-      case 'TRAIL_STOP':
-        return <TrailForm {...shared} />;
-      case 'TARGET_HIT':
-        return <TargetHitForm {...shared} />;
-      case 'MODIFY_TARGETS':
-        return <TargetsForm {...shared} />;
-      case 'BOOK_PARTIAL':
-        return <ExitForm {...shared} final={false} />;
-      case 'CLOSE':
-        return <ExitForm {...shared} final />;
-      case 'URGENT':
-        return <UrgentForm {...shared} />;
-      case 'CANCEL':
-      case 'EXPIRE':
-        return <CommentOnlyForm {...shared} kind={kind} />;
-      case 'CORRECT':
-        return <CorrectForm {...shared} />;
-    }
-  })();
-  return (
-    <Sheet
-      testID={`action-${kind}`}
-      title={TITLES[kind]}
-      subtitle={`${trade.direction} ${trade.symbol} · ${trade.ref} · Stop-loss ${formatPrice(trade, trade.stopLoss)}`}
-      onClose={onClose}
-    >
-      {content}
-    </Sheet>
-  );
+  switch (kind) {
+    case 'ACTIVATE':
+      return <ActivateForm {...shared} />;
+    case 'RECORD_EXECUTION':
+      return <ExecutionForm {...shared} />;
+    case 'MOVE_STOP':
+      return <MoveStopForm {...shared} />;
+    case 'MOVE_STOP_BREAKEVEN':
+      return <BreakevenForm {...shared} />;
+    case 'TRAIL_STOP':
+      return <TrailForm {...shared} />;
+    case 'TARGET_HIT':
+      return <TargetHitForm {...shared} />;
+    case 'MODIFY_TARGETS':
+      return <TargetsForm {...shared} />;
+    case 'BOOK_PARTIAL':
+      return <ExitForm {...shared} final={false} />;
+    case 'CLOSE':
+      return <ExitForm {...shared} final />;
+    case 'URGENT':
+      return <UrgentForm {...shared} />;
+    case 'CANCEL':
+    case 'EXPIRE':
+      return <CommentOnlyForm {...shared} kind={kind} />;
+    case 'CORRECT':
+      return <CorrectForm {...shared} />;
+  }
 }
 
 type Shared = FormProps;
@@ -236,12 +231,24 @@ function Half({ children }: { children: ReactNode }) {
   return <View style={styles.half}>{children}</View>;
 }
 
-function ActivateForm({ trade, run, pending, error }: Shared) {
+function ActivateForm({ frame, trade, run, pending, error }: Shared) {
   const [entry, setEntry] = useState('');
   const [quantity, setQuantity] = useState('');
   const [comment, setComment] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Activate and notify"
+          onPress={() =>
+            run({ actualEntry: optional(entry), quantity: optional(quantity), comment: optional(comment) })
+          }
+        />
+      }
+    >
       <T c="muted">Tells subscribers the entry is live. A published signal never activates on its own.</T>
       <Row>
         <Half>
@@ -264,21 +271,26 @@ function ActivateForm({ trade, run, pending, error }: Shared) {
         </Half>
       </Row>
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Activate and notify"
-        onPress={() => run({ actualEntry: optional(entry), quantity: optional(quantity), comment: optional(comment) })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function ExecutionForm({ trade, run, pending, error }: Shared) {
+function ExecutionForm({ frame, trade, run, pending, error }: Shared) {
   const [entry, setEntry] = useState(trade.execution?.entryPrice ?? '');
   const [quantity, setQuantity] = useState(trade.execution?.quantity ?? '');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Save record"
+          disabled={!isDecimalLiteral(entry.trim())}
+          onPress={() => run({ actualEntry: entry.trim(), quantity: optional(quantity) })}
+        />
+      }
+    >
       <T c="muted">
         Your own fill, for internal results. It stays private and is labelled as declared by you, not independently
         verified.
@@ -297,22 +309,27 @@ function ExecutionForm({ trade, run, pending, error }: Shared) {
           />
         </Half>
       </Row>
-      <Submit
-        pending={pending}
-        error={error}
-        label="Save record"
-        disabled={!isDecimalLiteral(entry.trim())}
-        onPress={() => run({ actualEntry: entry.trim(), quantity: optional(quantity) })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function MoveStopForm({ trade, run, pending, error, confirmWiden }: Shared) {
+function MoveStopForm({ frame, trade, run, pending, error, confirmWiden }: Shared) {
   const [price, setPrice] = useState('');
   const [comment, setComment] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label={confirmWiden ? 'Yes, widen and notify' : 'Move and notify'}
+          danger={confirmWiden}
+          disabled={!isDecimalLiteral(price.trim())}
+          onPress={() => run({ price: price.trim(), comment: optional(comment), allowWiden: confirmWiden })}
+        />
+      }
+    >
       <PriceField
         testID="stop-price"
         big
@@ -328,24 +345,27 @@ function MoveStopForm({ trade, run, pending, error, confirmWiden }: Shared) {
           {`The new stop-loss is further from the trade than the current one (${formatPrice(trade, trade.stopLoss)}). Press the button again to confirm.`}
         </Notice>
       )}
-      <Submit
-        pending={pending}
-        error={error}
-        label={confirmWiden ? 'Yes, widen and notify' : 'Move and notify'}
-        danger={confirmWiden}
-        disabled={!isDecimalLiteral(price.trim())}
-        onPress={() => run({ price: price.trim(), comment: optional(comment), allowWiden: confirmWiden })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function BreakevenForm({ trade, run, pending, error }: Shared) {
+function BreakevenForm({ frame, trade, run, pending, error }: Shared) {
   const known = trade.execution?.entryPrice ?? (trade.entryType === 'SINGLE' ? trade.entryLow : null);
   const [price, setPrice] = useState('');
   const [comment, setComment] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Move and notify"
+          disabled={!known && !isDecimalLiteral(price.trim())}
+          onPress={() => run({ price: known ? undefined : price.trim(), comment: optional(comment) })}
+        />
+      }
+    >
       {known ? (
         <View style={styles.change}>
           <T c="muted">The stop-loss moves from</T>
@@ -367,24 +387,30 @@ function BreakevenForm({ trade, run, pending, error }: Shared) {
         />
       )}
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Move and notify"
-        disabled={!known && !isDecimalLiteral(price.trim())}
-        onPress={() => run({ price: known ? undefined : price.trim(), comment: optional(comment) })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function TrailForm({ trade, run, pending, error }: Shared) {
+function TrailForm({ frame, trade, run, pending, error }: Shared) {
   const [reference, setReference] = useState('');
   const [points, setPoints] = useState('');
   const [comment, setComment] = useState('');
   const computed = useMemo(() => trailStopPrice(trade, trade.direction, reference, points), [points, reference, trade]);
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Trail and notify"
+          disabled={!computed}
+          onPress={() =>
+            run({ referencePrice: reference.trim(), trailPoints: points.trim(), comment: optional(comment) })
+          }
+        />
+      }
+    >
       <T c="muted">
         This platform has no market data. It records the instruction at the price you give, and does not move the stop
         by itself afterwards.
@@ -419,25 +445,27 @@ function TrailForm({ trade, run, pending, error }: Shared) {
         </View>
       )}
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Trail and notify"
-        disabled={!computed}
-        onPress={() =>
-          run({ referencePrice: reference.trim(), trailPoints: points.trim(), comment: optional(comment) })
-        }
-      />
-    </>
+    </Sheet>
   );
 }
 
-function TargetHitForm({ trade, run, pending, error }: Shared) {
+function TargetHitForm({ frame, trade, run, pending, error }: Shared) {
   const open = trade.targets.filter((t) => t.status === 'OPEN');
   const [index, setIndex] = useState(open[0]?.index ?? 1);
   const [comment, setComment] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Mark reached and notify"
+          disabled={open.length === 0}
+          onPress={() => run({ targetIndex: index, comment: optional(comment) })}
+        />
+      }
+    >
       <View style={{ gap: space.sm }}>
         <T v="small" c="muted">
           Target reached. Any earlier targets are marked as reached too.
@@ -455,25 +483,28 @@ function TargetHitForm({ trade, run, pending, error }: Shared) {
         </ChipRow>
       </View>
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Mark reached and notify"
-        disabled={open.length === 0}
-        onPress={() => run({ targetIndex: index, comment: optional(comment) })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function TargetsForm({ trade, run, pending, error }: Shared) {
+function TargetsForm({ frame, trade, run, pending, error }: Shared) {
   const hit = trade.targets.filter((t) => t.status === 'HIT');
   const open = trade.targets.filter((t) => t.status === 'OPEN').map((t) => t.price);
   const slots = 3 - hit.length;
   const [values, setValues] = useState<string[]>(Array.from({ length: slots }, (_, i) => open[i] ?? ''));
   const [comment, setComment] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Change and notify"
+          onPress={() => run({ targets: values.map((v) => v.trim()).filter(Boolean), comment: optional(comment) })}
+        />
+      }
+    >
       {hit.length > 0 && (
         <T c="muted">{`Reached targets stay as they are: ${hit.map((t) => formatPrice(trade, t.price)).join(', ')}.`}</T>
       )}
@@ -491,17 +522,11 @@ function TargetsForm({ trade, run, pending, error }: Shared) {
         />
       ))}
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Change and notify"
-        onPress={() => run({ targets: values.map((v) => v.trim()).filter(Boolean), comment: optional(comment) })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function ExitForm({ trade, run, pending, error, final }: Shared & { final: boolean }) {
+function ExitForm({ frame, trade, run, pending, error, final }: Shared & { final: boolean }) {
   const c = useColors();
   const [exitPrice, setExitPrice] = useState('');
   const [reason, setReason] = useState<CloseReason>('MANUAL');
@@ -534,7 +559,29 @@ function ExitForm({ trade, run, pending, error, final }: Shared & { final: boole
     { value: 'NONE' as const, label: 'Exit only' },
   ];
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label={final ? 'Close trade and notify' : 'Book partial and notify'}
+          disabled={!isDecimalLiteral(exitPrice.trim())}
+          danger={final}
+          onPress={() => {
+            if (!final) return send();
+            Alert.alert(
+              'Close this trade?',
+              'Subscribers are notified and this cannot be undone. A wrong figure can be corrected later, in the open.',
+              [
+                { text: 'Not yet', style: 'cancel' },
+                { text: 'Close trade', style: 'destructive', onPress: send },
+              ],
+            );
+          }}
+        />
+      }
+    >
       {final && (
         <ChipRow>
           {openTargets.map((t) => (
@@ -672,32 +719,25 @@ function ExitForm({ trade, run, pending, error, final }: Shared & { final: boole
           </T>
         )}
       </View>
-      <Submit
-        pending={pending}
-        error={error}
-        label={final ? 'Close trade and notify' : 'Book partial and notify'}
-        disabled={!isDecimalLiteral(exitPrice.trim())}
-        danger={final}
-        onPress={() => {
-          if (!final) return send();
-          Alert.alert(
-            'Close this trade?',
-            'Subscribers are notified and this cannot be undone. A wrong figure can be corrected later, in the open.',
-            [
-              { text: 'Not yet', style: 'cancel' },
-              { text: 'Close trade', style: 'destructive', onPress: send },
-            ],
-          );
-        }}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function UrgentForm({ run, pending, error }: Shared) {
+function UrgentForm({ frame, run, pending, error }: Shared) {
   const [message, setMessage] = useState('');
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Send to subscribers"
+          disabled={!message.trim()}
+          onPress={() => run({ message: message.trim() })}
+        />
+      }
+    >
       <Field
         testID="urgent-message"
         label="Instruction"
@@ -708,45 +748,42 @@ function UrgentForm({ run, pending, error }: Shared) {
         maxLength={1000}
         autoFocus
       />
-      <Submit
-        pending={pending}
-        error={error}
-        label="Send to subscribers"
-        disabled={!message.trim()}
-        onPress={() => run({ message: message.trim() })}
-      />
-    </>
+    </Sheet>
   );
 }
 
-function CommentOnlyForm({ run, pending, error, kind }: Shared & { kind: 'CANCEL' | 'EXPIRE' }) {
+function CommentOnlyForm({ frame, run, pending, error, kind }: Shared & { kind: 'CANCEL' | 'EXPIRE' }) {
   const [comment, setComment] = useState('');
   const label = kind === 'CANCEL' ? 'Cancel signal and notify' : 'Mark expired and notify';
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label={label}
+          danger
+          onPress={() =>
+            Alert.alert(
+              kind === 'CANCEL' ? 'Cancel this signal?' : 'Mark as expired?',
+              'Subscribers are notified and this cannot be undone.',
+              [
+                { text: 'Keep it', style: 'cancel' },
+                { text: label, style: 'destructive', onPress: () => run({ comment: optional(comment) }) },
+              ],
+            )
+          }
+        />
+      }
+    >
       <T c="muted">Subscribers are told not to enter this signal. This cannot be undone.</T>
       <Comment value={comment} onChange={setComment} />
-      <Submit
-        pending={pending}
-        error={error}
-        label={label}
-        danger
-        onPress={() =>
-          Alert.alert(
-            kind === 'CANCEL' ? 'Cancel this signal?' : 'Mark as expired?',
-            'Subscribers are notified and this cannot be undone.',
-            [
-              { text: 'Keep it', style: 'cancel' },
-              { text: label, style: 'destructive', onPress: () => run({ comment: optional(comment) }) },
-            ],
-          )
-        }
-      />
-    </>
+    </Sheet>
   );
 }
 
-function CorrectForm({ trade, run, pending, error }: Shared) {
+function CorrectForm({ frame, trade, run, pending, error }: Shared) {
   const closed = trade.status === 'CLOSED';
   const currentClosures = trade.closures.filter((closure) => !closure.superseded);
   const [reason, setReason] = useState('');
@@ -774,7 +811,19 @@ function CorrectForm({ trade, run, pending, error }: Shared) {
     });
   };
   return (
-    <>
+    <Sheet
+      {...frame}
+      footer={
+        <Submit
+          pending={pending}
+          error={error}
+          label="Publish correction"
+          disabled={reason.trim().length < 3}
+          note={`Point value on this trade: 1 pt = ${formatPoints(trade.pointSize)} ${trade.quoteCurrency}.`}
+          onPress={send}
+        />
+      }
+    >
       <T c="muted">Subscribers see what changed, from what, to what, and why. The original record stays visible.</T>
       <Field
         testID="correct-reason"
@@ -848,15 +897,7 @@ function CorrectForm({ trade, run, pending, error }: Shared) {
           <PriceField testID="correct-exit" label="Correct exit price" value={exitPrice} onChange={setExitPrice} />
         </View>
       )}
-      <Submit
-        pending={pending}
-        error={error}
-        label="Publish correction"
-        disabled={reason.trim().length < 3}
-        note={`Point value on this trade: 1 pt = ${formatPoints(trade.pointSize)} ${trade.quoteCurrency}.`}
-        onPress={send}
-      />
-    </>
+    </Sheet>
   );
 }
 

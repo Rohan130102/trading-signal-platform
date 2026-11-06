@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import { Tabs } from 'expo-router/js-tabs';
 import { useRealtime, useStartRealtimeFromHead } from '@/lib/realtime';
@@ -17,6 +17,8 @@ export default function SubscriberTabs() {
         tabBarInactiveTintColor: c.subtle,
         tabBarStyle: { backgroundColor: c.surface, borderTopColor: c.line },
         tabBarLabelStyle: { fontWeight: '600', fontSize: 11 },
+        // The bar has a fixed height, and its icons already say the same thing.
+        tabBarAllowFontScaling: false,
       }}
     >
       <Tabs.Screen

@@ -39,6 +39,7 @@ function parseNodes(xml) {
       checked: attrs.checked === 'true',
       enabled: attrs.enabled !== 'false',
       selected: attrs.selected === 'true',
+      scrollable: attrs.scrollable === 'true',
       focused: attrs.focused === 'true',
       x: Math.round((x1 + x2) / 2),
       y: Math.round((y1 + y2) / 2),
@@ -241,17 +242,24 @@ export class Device {
   async audit(minDp = 40) {
     const nodes = await this.nodes();
     const { width } = await this.size();
-    const density =
-      Number(/(\d+)/.exec((await this.shell('wm', 'density')).split('\n').pop() || '')?.[1] ?? 0) ||
-      Number(
-        /Override density: (\d+)/.exec(await this.shell('wm', 'density'))?.[1] ??
-          /Physical density: (\d+)/.exec(await this.shell('wm', 'density'))?.[1] ??
-          160,
-      );
+    const out = await this.shell('wm', 'density');
+    const density = Number(/Override density: (\d+)/.exec(out)?.[1] ?? /Physical density: (\d+)/.exec(out)?.[1] ?? 160);
     const scale = density / 160;
     const problems = [];
+    // A row cut off by the edge of a scrolling list is not a small target.
+    const scrollers = nodes.filter((n) => n.scrollable);
+    const clipped = (n) =>
+      scrollers.some(
+        (s) =>
+          n.x1 >= s.x1 - 1 &&
+          n.x2 <= s.x2 + 1 &&
+          (Math.abs(n.y2 - s.y2) <= 2 ||
+            Math.abs(n.y1 - s.y1) <= 2 ||
+            Math.abs(n.x2 - s.x2) <= 2 ||
+            Math.abs(n.x1 - s.x1) <= 2),
+      );
     for (const n of nodes) {
-      if (n.clickable && n.enabled) {
+      if (n.clickable && n.enabled && !clipped(n)) {
         const w = (n.x2 - n.x1) / scale;
         const h = (n.y2 - n.y1) / scale;
         if ((w < minDp || h < minDp) && n.x1 >= 0 && n.y1 >= 0) {

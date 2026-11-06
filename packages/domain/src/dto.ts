@@ -1,3 +1,4 @@
+import type { DraftInput } from './contracts.js';
 import type { EventPayload, EventSnapshot, TargetState } from './lifecycle.js';
 import type { InstrumentSpec } from './instrument.js';
 import type { CalculationBasis, PerformanceStats, TradeAggregate } from './pnl.js';
@@ -153,6 +154,25 @@ export interface MeResponse {
   subscription: SubscriptionView;
   access: { allowed: boolean; reason: AccessDenial | null };
   support: { contact: string; renewalInstructions: string; serviceName: string };
+}
+
+/** What anyone may read, signed in or not. */
+export interface PublicInfo {
+  serviceName: string;
+  serviceDescription: string;
+  legalEntityName: string;
+  regulatoryStatement: string;
+  riskDisclosure: string;
+  privacyNotice: string;
+  supportContact: string;
+  publicResultsAvailable: boolean;
+}
+
+export interface DraftRow {
+  id: string;
+  version: number;
+  draft: DraftInput;
+  updatedAt: string;
 }
 
 export interface TokenLoginResponse {

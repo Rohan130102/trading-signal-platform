@@ -1,10 +1,11 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   type AdminTradeDetail,
   composeSignal,
   defaultSignalTemplateKind,
   type Direction,
   type DraftInput,
+  type DraftRow,
   type EntryType,
   formatPoints,
   formatPrice,
@@ -18,7 +19,7 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DispatchStatus } from '@/admin/parts';
 import { api, ApiError } from '@/lib/api';
@@ -38,6 +39,7 @@ import {
   Field,
   FormError,
   type InputHandle,
+  KeyboardArea,
   Loading,
   Notice,
   PriceField,
@@ -47,13 +49,6 @@ import {
   ToggleRow,
   useToast,
 } from '@/ui';
-
-interface DraftRow {
-  id: string;
-  version: number;
-  draft: DraftInput;
-  updatedAt: string;
-}
 
 interface FormState {
   instrumentId: string;
@@ -116,6 +111,7 @@ export default function Compose() {
   const [cycle, setCycle] = useState(0);
   const [recent, setRecent] = useState<string[]>([]);
   const hydrated = useRef(false);
+  const [restored, setRestored] = useState(false);
   const entryInput = useRef<InputHandle>(null);
 
   const active = useMemo(() => (instruments.data?.instruments ?? []).filter((i) => i.active), [instruments.data]);
@@ -156,9 +152,13 @@ export default function Compose() {
       if (reuse || direction) {
         // Reusing an earlier trade carries only its instrument and direction. Prices are always fresh.
         setForm((f) => ({ ...f, instrumentId: reuse?.id ?? firstChoice?.id ?? '', direction }));
+        setRestored(true);
         return;
       }
-      if (params.draft) return;
+      if (params.draft) {
+        setRestored(true);
+        return;
+      }
       const raw = await secure.getComposer();
       if (raw) {
         try {
@@ -175,6 +175,7 @@ export default function Compose() {
             ) {
               setAdvanced(true);
             }
+            setRestored(true);
             return;
           }
         } catch {
@@ -182,12 +183,13 @@ export default function Compose() {
         }
       }
       if (firstChoice) setForm((f) => ({ ...f, instrumentId: firstChoice.id }));
+      setRestored(true);
     })();
   }, [active, instruments.data, params.direction, params.draft, params.symbol]);
 
   useEffect(() => {
-    if (hydrated.current) void secure.setComposer(JSON.stringify({ form, draftRef }));
-  }, [draftRef, form]);
+    if (restored) void secure.setComposer(JSON.stringify({ form, draftRef }));
+  }, [draftRef, form, restored]);
 
   const draftRow = drafts.data?.drafts.find((d) => d.id === params.draft);
   useEffect(() => {
@@ -351,7 +353,7 @@ export default function Compose() {
           <Ionicons name="close" size={20} color={c.text} />
         </Pressable>
       </View>
-      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardArea style={styles.fill}>
         <ScrollView
           testID="compose-scroll"
           style={styles.fill}
@@ -589,7 +591,7 @@ export default function Compose() {
             }}
           />
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardArea>
       {reviewing && previewEvent && (
         <Sheet
           testID="compose-review-sheet"
@@ -680,7 +682,11 @@ function Published({
     queryKey: ['admin', 'trade', trade.id],
     queryFn: () => api.get<AdminTradeDetail>(`/admin/trades/${trade.id}`),
     initialData: trade,
-    refetchInterval: 1500,
+    // Until the worker has finished with this event. Then the figures stop changing.
+    refetchInterval: (query) => {
+      const stage = query.state.data?.events[0]?.dispatch?.stage;
+      return stage === 'COMPLETED' || stage === 'FAILED' ? false : 1500;
+    },
   });
   const event = live.data.events[0];
   return (
@@ -737,7 +743,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  close: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   body: { padding: space.lg, gap: space.md, paddingBottom: space.xl },
   directions: { flexDirection: 'row', gap: space.md },
   direction: {

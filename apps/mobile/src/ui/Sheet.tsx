@@ -1,9 +1,10 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ReactNode } from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { useColors, useTheme } from '@/theme';
 import { space } from '@/theme/tokens';
+import { KeyboardArea } from './KeyboardArea';
 import { T } from './Text';
 
 /**
@@ -28,14 +29,7 @@ export function Sheet({
   const c = useColors();
   const { colors } = useTheme();
   return (
-    <Modal
-      visible
-      animationType="slide"
-      presentationStyle="pageSheet"
-      onRequestClose={onClose}
-      statusBarTranslucent
-      navigationBarTranslucent
-    >
+    <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaProvider>
         <SafeAreaView style={[styles.fill, { backgroundColor: colors.bg }]} edges={['top', 'bottom']} testID={testID}>
           <View style={[styles.header, { borderBottomColor: c.line }]}>
@@ -60,7 +54,7 @@ export function Sheet({
               <Ionicons name="close" size={20} color={c.text} />
             </Pressable>
           </View>
-          <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardArea style={styles.fill}>
             <ScrollView
               style={styles.fill}
               contentContainerStyle={styles.body}
@@ -70,7 +64,7 @@ export function Sheet({
               {children}
             </ScrollView>
             {footer && <View style={[styles.footer, { borderTopColor: c.line }]}>{footer}</View>}
-          </KeyboardAvoidingView>
+          </KeyboardArea>
         </SafeAreaView>
       </SafeAreaProvider>
     </Modal>
@@ -88,7 +82,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   titles: { flex: 1, minWidth: 0 },
-  close: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   body: { padding: space.lg, gap: space.lg, paddingBottom: space.xl },
   footer: { padding: space.lg, gap: space.sm, borderTopWidth: StyleSheet.hairlineWidth },
 });

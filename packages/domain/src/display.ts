@@ -2,7 +2,7 @@ import { formatPoints } from './instrument.js';
 import { toDec } from './decimal.js';
 import type { MeResponse } from './dto.js';
 import type { CalculationBasis } from './pnl.js';
-import type { EventCategory } from './status.js';
+import type { EventCategory, EventType } from './status.js';
 
 /** Presentation shared by every client, so a figure reads the same on web and on a phone. */
 
@@ -91,6 +91,13 @@ export function categoryLabel(category: EventCategory, ref?: string): string {
     case 'ANNOUNCEMENT':
       return 'Announcement';
   }
+}
+
+/** Like categoryLabel, but a cancelled or expired signal is not described as closed. */
+export function eventHeading(type: EventType, category: EventCategory, ref?: string): string {
+  if (type === 'TRADE_CANCELLED') return `Cancelled: ${ref ?? 'signal'}`;
+  if (type === 'ENTRY_EXPIRED') return `Expired: ${ref ?? 'signal'}`;
+  return categoryLabel(category, ref);
 }
 
 /** What someone whose access has ended is told, on every client. */

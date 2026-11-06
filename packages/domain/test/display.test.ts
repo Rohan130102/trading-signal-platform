@@ -4,6 +4,7 @@ import {
   androidChannelFor,
   basisShort,
   categoryLabel,
+  eventHeading,
   formatLocalDate,
   isSafeDeepLink,
   mobileDeepLinkPath,
@@ -92,6 +93,13 @@ describe('shared wording', () => {
     expect(categoryLabel('UPDATE', 'T-1')).toBe('Update to T-1');
     expect(categoryLabel('CLOSURE', 'T-1')).toBe('Closed: T-1');
     expect(categoryLabel('ANNOUNCEMENT')).toBe('Announcement');
+  });
+
+  it('does not call a cancelled or expired signal closed', () => {
+    expect(eventHeading('TRADE_CANCELLED', 'CLOSURE', 'T-1')).toBe('Cancelled: T-1');
+    expect(eventHeading('ENTRY_EXPIRED', 'CLOSURE', 'T-1')).toBe('Expired: T-1');
+    expect(eventHeading('TRADE_CLOSED', 'CLOSURE', 'T-1')).toBe('Closed: T-1');
+    expect(eventHeading('STOP_MOVED', 'UPDATE', 'T-1')).toBe('Update to T-1');
   });
 
   it('formats a calendar date without shifting it by timezone', () => {

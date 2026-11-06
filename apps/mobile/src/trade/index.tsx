@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   BASIS_LABELS,
   basisShort,
-  categoryLabel,
+  eventHeading,
   CLOSE_REASON_LABELS,
   type Direction,
   type FeedEvent,
@@ -183,6 +183,7 @@ export function Levels({
       {targets.map((t) => (
         <PriceCell
           key={t.index}
+          big={big}
           testID={`level-target-${t.index}`}
           label={t.status === 'HIT' ? `Target ${t.index}, reached` : `Target ${t.index}`}
           value={fmt(t.price)}
@@ -306,7 +307,7 @@ function toneText(tone: TemplateTone) {
 /** Says in one line what a screen reader user needs, where the card's layout does that for everyone else. */
 function feedCardLabel(event: FeedEvent): string {
   const p = event.payload;
-  const parts = [categoryLabel(event.category, p.ref)];
+  const parts = [eventHeading(event.type, event.category, p.ref)];
   if (event.priority === 'PRIORITY') parts.push('priority');
   parts.push(event.title);
   if (event.body) parts.push(event.body.replace(/\n/g, '. '));
@@ -334,7 +335,7 @@ export function FeedCard({ event, fresh, adminLink }: { event: FeedEvent; fresh?
       <View style={[styles.accent, { backgroundColor: toneColor(c, tone) }]} />
       <View style={styles.heading}>
         <T v="label" c={toneText(tone)} style={{ textTransform: 'uppercase', flexShrink: 1 }} numberOfLines={1}>
-          {categoryLabel(event.category, p.ref)}
+          {eventHeading(event.type, event.category, p.ref)}
         </T>
         {urgent && (
           <Badge tone="update" icon="warning">

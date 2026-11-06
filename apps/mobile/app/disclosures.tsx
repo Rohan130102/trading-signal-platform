@@ -1,16 +1,9 @@
+import type { PublicInfo } from '@signaldesk/domain';
 import { useQuery } from '@tanstack/react-query';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
 import { space } from '@/theme/tokens';
 import { ErrorState, Loading, Screen, T } from '@/ui';
-
-interface PublicInfo {
-  legalEntityName: string;
-  regulatoryStatement: string;
-  riskDisclosure: string;
-  privacyNotice: string;
-  supportContact: string;
-}
 
 function Section({ title, children }: { title: string; children: string }) {
   return (

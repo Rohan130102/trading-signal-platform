@@ -1,16 +1,9 @@
 import { type ReactNode, useCallback, useState } from 'react';
-import {
-  KeyboardAvoidingView,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  View,
-  type ViewStyle,
-} from 'react-native';
+import { RefreshControl, type RefreshControlProps, ScrollView, StyleSheet, View, type ViewStyle } from 'react-native';
 import { type Edge, SafeAreaView } from 'react-native-safe-area-context';
 import { useColors } from '@/theme';
 import { space } from '@/theme/tokens';
+import { KeyboardArea } from './KeyboardArea';
 import { T } from './Text';
 
 export function useRefresh(run: () => Promise<unknown>): { refreshing: boolean; onRefresh: () => void } {
@@ -24,10 +17,15 @@ export function useRefresh(run: () => Promise<unknown>): { refreshing: boolean; 
   return { refreshing, onRefresh };
 }
 
-export function Refresh({ refreshing, onRefresh }: { refreshing: boolean; onRefresh: () => void }) {
+/**
+ * On Android a scroll view renders inside its refresh control, passing itself as children and its layout
+ * as style. Dropping those props leaves a blank screen, so everything else is forwarded.
+ */
+export function Refresh({ refreshing, onRefresh, ...rest }: Omit<RefreshControlProps, 'tintColor' | 'colors'>) {
   const c = useColors();
   return (
     <RefreshControl
+      {...rest}
       refreshing={refreshing}
       onRefresh={onRefresh}
       tintColor={c.muted}
@@ -74,13 +72,7 @@ export function Screen({
   );
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.bg }]} edges={edges}>
-      {keyboard ? (
-        <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-          {body}
-        </KeyboardAvoidingView>
-      ) : (
-        body
-      )}
+      {keyboard ? <KeyboardArea style={styles.fill}>{body}</KeyboardArea> : body}
     </SafeAreaView>
   );
 }

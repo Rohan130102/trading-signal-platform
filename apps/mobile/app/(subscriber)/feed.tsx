@@ -135,6 +135,7 @@ export default function Feed() {
         testID="feed-list"
         data={events}
         keyExtractor={(event) => String(event.seq)}
+        style={styles.fill}
         contentContainerStyle={styles.list}
         refreshControl={<Refresh {...pull} />}
         onEndReachedThreshold={0.4}

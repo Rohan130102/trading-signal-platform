@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Haptics from 'expo-haptics';
 import type { ComponentProps, ReactNode } from 'react';
 import { ActivityIndicator, Pressable, type PressableProps, StyleSheet, View, type ViewStyle } from 'react-native';
@@ -66,7 +66,7 @@ export function Button({
         {
           backgroundColor: look.bg,
           borderColor: look.border,
-          minHeight: large ? 54 : small ? 38 : TOUCH,
+          minHeight: large ? 54 : small ? 40 : TOUCH,
           paddingHorizontal: small ? space.md : space.lg,
           opacity: off && !loading ? 0.45 : pressed ? 0.8 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],

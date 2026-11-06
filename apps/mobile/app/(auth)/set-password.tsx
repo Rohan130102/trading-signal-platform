@@ -7,8 +7,9 @@ import { space } from '@/theme/tokens';
 import { AuthFrame, Button, Field, FormError } from '@/ui';
 
 export default function SetPassword() {
-  const { refresh, signOut } = useSession();
-  const [current, setCurrent] = useState('');
+  const { refresh, signOut, signInPassword } = useSession();
+  const [known] = useState(signInPassword);
+  const [current, setCurrent] = useState(known ?? '');
   const [next, setNext] = useState('');
   const [again, setAgain] = useState('');
   const [problems, setProblems] = useState<{ next?: string; again?: string }>({});
@@ -39,16 +40,18 @@ export default function SetPassword() {
       description="The password you were given only works once. Pick one that only you know."
     >
       <View style={{ gap: space.md }}>
-        <Field
-          testID="current-password"
-          label="Temporary password"
-          value={current}
-          onChangeText={setCurrent}
-          secret
-          autoCapitalize="none"
-          autoComplete="current-password"
-          textContentType="password"
-        />
+        {(!known || error !== null) && (
+          <Field
+            testID="current-password"
+            label="Temporary password"
+            value={current}
+            onChangeText={setCurrent}
+            secret
+            autoCapitalize="none"
+            autoComplete="current-password"
+            textContentType="password"
+          />
+        )}
         <Field
           testID="new-password"
           label="New password"

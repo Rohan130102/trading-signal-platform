@@ -29,12 +29,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       // Local network access exists only so a development build can reach a server on this computer.
-      ...(isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {}),
+      NSAppTransportSecurity: { NSAllowsArbitraryLoads: false, NSAllowsLocalNetworking: isDevelopment },
     },
   },
   android: {
     package: identifier,
     softwareKeyboardLayoutMode: 'resize',
+    // Sessions must not come back from a device backup.
+    allowBackup: false,
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       monochromeImage: './assets/adaptive-icon-mono.png',
@@ -52,9 +54,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   plugins: [
     'expo-router',
-    'expo-secure-store',
+    // Nothing here uses biometrics, so the app should not declare that it might.
+    ['expo-secure-store', { faceIDPermission: false }],
     ['expo-splash-screen', { image: './assets/splash.png', imageWidth: 180, backgroundColor: background }],
-    ['expo-notifications', { icon: './assets/notification-icon.png', color: '#5AA9FF' }],
+    [
+      'expo-notifications',
+      {
+        icon: './assets/notification-icon.png',
+        color: '#5AA9FF',
+        mode: isProduction ? 'production' : 'development',
+      },
+    ],
     // Cleartext is for a development build talking to this computer. Every other build must use HTTPS.
     ['expo-build-properties', { android: { usesCleartextTraffic: isDevelopment } }],
   ],

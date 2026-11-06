@@ -3,6 +3,7 @@
 import {
   type Direction,
   type DraftInput,
+  type DraftRow,
   type EntryType,
   type FeedEvent,
   formatPoints,
@@ -60,13 +61,6 @@ interface TemplateRow {
   active: boolean;
   favorite: boolean;
   isDefault: boolean;
-}
-
-interface DraftRow {
-  id: string;
-  version: number;
-  draft: DraftInput;
-  updatedAt: string;
 }
 
 interface FormState {

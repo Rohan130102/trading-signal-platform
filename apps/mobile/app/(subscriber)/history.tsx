@@ -56,6 +56,7 @@ export default function History() {
         testID="history-list"
         data={trades}
         keyExtractor={(t) => t.id}
+        style={styles.fill}
         contentContainerStyle={styles.list}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"

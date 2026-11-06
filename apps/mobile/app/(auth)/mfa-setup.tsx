@@ -17,14 +17,19 @@ interface Setup {
 
 export default function MfaSetup() {
   const c = useColors();
-  const { refresh, signOut } = useSession();
+  const { refresh, signOut, setHoldRoute } = useSession();
   const toast = useToast();
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState<string[] | null>(null);
   const setup = useMutation({ mutationFn: () => api.post<Setup>('/auth/mfa/setup') });
   const enable = useMutation({
     mutationFn: () => api.post<{ recoveryCodes: string[] }>('/auth/mfa/enable', { code }),
-    onSuccess: (data) => setRecovery(data.recoveryCodes),
+    onSuccess: (data) => {
+      // These appear once. Two-step is now on, so the next account refresh would move on from this
+      // screen, for example on coming back from pasting them somewhere safe.
+      setHoldRoute(true);
+      setRecovery(data.recoveryCodes);
+    },
   });
   const started = useRef(false);
   const beginSetup = setup.mutate;
@@ -66,7 +71,10 @@ export default function MfaSetup() {
           label="I have saved them"
           variant="primary"
           large
-          onPress={() => void refresh()}
+          onPress={() => {
+            setHoldRoute(false);
+            void refresh();
+          }}
         />
       </AuthFrame>
     );
