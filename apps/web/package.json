@@ -1,0 +1,35 @@
+{
+  "name": "@signaldesk/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build && node ../../scripts/prepare-standalone.mjs",
+    "start": "HOSTNAME=${HOSTNAME:-0.0.0.0} PORT=${PORT:-3000} node .next/standalone/apps/web/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "7.0.3",
+    "@radix-ui/react-dialog": "1.3.1",
+    "@signaldesk/domain": "0.1.0",
+    "@tanstack/react-query": "5.106.1",
+    "clsx": "2.1.1",
+    "geist": "1.9.1",
+    "lucide-react": "1.69.0",
+    "next": "16.4.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-hook-form": "7.91.0",
+    "sonner": "2.0.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.4",
+    "@types/node": "22.20.5",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "tailwindcss": "4.3.4",
+    "typescript": "5.9.3"
+  }
+}

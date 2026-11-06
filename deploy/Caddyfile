@@ -1,0 +1,36 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Second layer of protection for the sign-in routes, on top of the application's own limits.
+	request_body {
+		max_size 256KB
+	}
+
+	# API and live stream go straight to the API. The browser sees one origin, so the session cookie
+	# stays first-party and no CORS is needed.
+	handle /api/* {
+		reverse_proxy api:4000
+	}
+	handle /ws {
+		reverse_proxy api:4000
+	}
+	# Health stays internal.
+	handle /health/* {
+		respond 404
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+
+	log {
+		output stdout
+		# Cookies never go into access logs.
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cookie delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
+}

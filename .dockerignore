@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+**/.next
+.data
+.env
+.env.*
+!.env.example
+test-results
+playwright-report
+e2e/.auth
+e2e/.state
+e2e/screenshots
+apps/api/src/generated

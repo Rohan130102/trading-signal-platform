@@ -1,0 +1,561 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  SUBSCRIBER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum TradeStatus {
+  DRAFT
+  PUBLISHED
+  ACTIVE
+  PARTIALLY_CLOSED
+  CLOSED
+  CANCELLED
+  EXPIRED
+}
+
+enum Direction {
+  BUY
+  SELL
+}
+
+enum EntryType {
+  SINGLE
+  RANGE
+}
+
+enum Priority {
+  NORMAL
+  PRIORITY
+}
+
+enum EventType {
+  SIGNAL_PUBLISHED
+  ENTRY_ACTIVATED
+  EXECUTION_RECORDED
+  STOP_MOVED
+  TARGET_HIT
+  TARGETS_MODIFIED
+  PARTIAL_BOOKED
+  TRADE_CLOSED
+  TRADE_CANCELLED
+  ENTRY_EXPIRED
+  URGENT_INSTRUCTION
+  CORRECTION
+  ANNOUNCEMENT
+}
+
+enum CalculationBasis {
+  NONE
+  HYPOTHETICAL_OUTCOME
+  ADMIN_DECLARED_EXECUTION
+  EXTERNALLY_VERIFIED
+}
+
+enum ClosureKind {
+  PARTIAL
+  FINAL
+}
+
+enum CloseReason {
+  TARGET_ACHIEVED
+  STOP_LOSS_HIT
+  MANUAL
+  BREAKEVEN
+  INVALIDATED
+  OTHER
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  DONE
+  DEAD
+}
+
+enum PushStatus {
+  PENDING
+  SENDING
+  RETRY
+  ACCEPTED
+  FAILED
+  GONE
+  SKIPPED
+}
+
+enum SubscriptionEventType {
+  CREATED
+  RENEWED
+  ADJUSTED
+}
+
+model User {
+  id                    String     @id @default(uuid()) @db.Uuid
+  role                  Role
+  status                UserStatus @default(ACTIVE)
+  name                  String
+  email                 String?
+  phone                 String?
+  loginId               String     @unique @map("login_id")
+  passwordHash          String     @map("password_hash")
+  mustChangePassword    Boolean    @default(true) @map("must_change_password")
+  tempPasswordExpiresAt DateTime?  @map("temp_password_expires_at") @db.Timestamptz(3)
+  mfaSecretEnc          String?    @map("mfa_secret_enc")
+  mfaEnabledAt          DateTime?  @map("mfa_enabled_at") @db.Timestamptz(3)
+  mfaLastStep           BigInt?    @map("mfa_last_step")
+  lastLoginAt           DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  lastReadSeq           BigInt     @default(0) @map("last_read_seq")
+  notes                 String?
+  createdById           String?    @map("created_by_id") @db.Uuid
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  createdBy         User?                   @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  created           User[]                  @relation("UserCreatedBy")
+  sessions          Session[]
+  recoveryCodes     MfaRecoveryCode[]
+  subscription      Subscription?
+  subscriptionActs  SubscriptionEvent[]
+  pushSubscriptions PushSubscription[]
+  preferences       NotificationPreference?
+  trades            Trade[]                 @relation("TradeCreatedBy")
+  events            SignalEvent[]
+  executions        TradeExecutionRecord[]
+  auditEntries      AuditLog[]
+  approvals         PublicPerformanceApproval[]
+
+  @@index([role, status])
+  @@index([email])
+  @@map("users")
+}
+
+model Session {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash")
+  mfaVerifiedAt DateTime? @map("mfa_verified_at") @db.Timestamptz(3)
+  deviceLabel   String?   @map("device_label")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pushSubscriptions PushSubscription[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model MfaRecoveryCode {
+  id       String    @id @default(uuid()) @db.Uuid
+  userId   String    @map("user_id") @db.Uuid
+  codeHash String    @map("code_hash")
+  usedAt   DateTime? @map("used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+model Subscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  startsAt  DateTime @map("starts_at") @db.Timestamptz(3)
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user   User                @relation(fields: [userId], references: [id], onDelete: Restrict)
+  events SubscriptionEvent[]
+
+  @@index([expiresAt])
+  @@map("subscriptions")
+}
+
+model SubscriptionEvent {
+  id                String                @id @default(uuid()) @db.Uuid
+  subscriptionId    String                @map("subscription_id") @db.Uuid
+  type              SubscriptionEventType
+  mode              String?
+  durationDays      Int?                  @map("duration_days")
+  previousStartsAt  DateTime?             @map("previous_starts_at") @db.Timestamptz(3)
+  previousExpiresAt DateTime?             @map("previous_expires_at") @db.Timestamptz(3)
+  newStartsAt       DateTime              @map("new_starts_at") @db.Timestamptz(3)
+  newExpiresAt      DateTime              @map("new_expires_at") @db.Timestamptz(3)
+  note              String?
+  actorId           String                @map("actor_id") @db.Uuid
+  idempotencyKey    String                @unique @map("idempotency_key")
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  actor        User         @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([subscriptionId, createdAt])
+  @@map("subscription_events")
+}
+
+model Instrument {
+  id                   String   @id @default(uuid()) @db.Uuid
+  symbol               String   @unique
+  displayName          String   @map("display_name")
+  assetClass           String   @map("asset_class")
+  quoteCurrency        String   @map("quote_currency")
+  pricePrecision       Int      @map("price_precision")
+  tickSize             Decimal  @map("tick_size") @db.Decimal(24, 8)
+  pointSize            Decimal  @map("point_size") @db.Decimal(24, 8)
+  defaultTargetPoints  Decimal  @map("default_target_points") @db.Decimal(24, 8)
+  defaultStopPoints    Decimal  @map("default_stop_points") @db.Decimal(24, 8)
+  defaultTarget2Points Decimal? @map("default_target2_points") @db.Decimal(24, 8)
+  defaultTarget3Points Decimal? @map("default_target3_points") @db.Decimal(24, 8)
+  contractMultiplier   Decimal? @map("contract_multiplier") @db.Decimal(24, 8)
+  unitLabel            String   @map("unit_label")
+  active               Boolean  @default(true)
+  sortOrder            Int      @default(100) @map("sort_order")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  trades Trade[]
+
+  @@index([active, sortOrder])
+  @@map("instruments")
+}
+
+model SignalTemplate {
+  id        String   @id @default(uuid()) @db.Uuid
+  kind      String
+  name      String
+  tone      String
+  title     String
+  body      String
+  isDefault Boolean  @default(false) @map("is_default")
+  active    Boolean  @default(true)
+  favorite  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  trades Trade[]
+  events SignalEvent[]
+
+  @@unique([kind, name])
+  @@map("signal_templates")
+}
+
+/// The current projection of a signal. Its event history in signal_events is the record;
+/// every change to this row happens in the same transaction as the event that causes it.
+model Trade {
+  id                String            @id @default(uuid()) @db.Uuid
+  ref               String?           @unique
+  status            TradeStatus       @default(DRAFT)
+  instrumentId      String?           @map("instrument_id") @db.Uuid
+  /// Instrument configuration at publication, so later edits never change history.
+  instrumentSpec    Json?             @map("instrument_spec")
+  direction         Direction?
+  entryType         EntryType?        @map("entry_type")
+  entryLow          Decimal?          @map("entry_low") @db.Decimal(24, 8)
+  entryHigh         Decimal?          @map("entry_high") @db.Decimal(24, 8)
+  originalStopLoss  Decimal?          @map("original_stop_loss") @db.Decimal(24, 8)
+  stopLoss          Decimal?          @map("stop_loss") @db.Decimal(24, 8)
+  targets           Json              @default("[]")
+  closedFraction    Decimal           @default(0) @map("closed_fraction") @db.Decimal(24, 12)
+  closureBasis      CalculationBasis? @map("closure_basis")
+  executionEntry    Decimal?          @map("execution_entry") @db.Decimal(24, 8)
+  executionQuantity Decimal?          @map("execution_quantity") @db.Decimal(24, 8)
+  priority          Priority          @default(NORMAL)
+  commentary        String?
+  templateId        String?           @map("template_id") @db.Uuid
+  usedDefaultLevels Boolean?          @map("used_default_levels")
+  version           Int               @default(0)
+  draft             Json?
+  entryExpiresAt    DateTime?         @map("entry_expires_at") @db.Timestamptz(3)
+  publishedAt       DateTime?         @map("published_at") @db.Timestamptz(3)
+  activatedAt       DateTime?         @map("activated_at") @db.Timestamptz(3)
+  closedAt          DateTime?         @map("closed_at") @db.Timestamptz(3)
+  createdById       String            @map("created_by_id") @db.Uuid
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  instrument Instrument?            @relation(fields: [instrumentId], references: [id], onDelete: Restrict)
+  template   SignalTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  createdBy  User                   @relation("TradeCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  events     SignalEvent[]
+  closures   TradeClosure[]
+  executions TradeExecutionRecord[]
+
+  @@index([status, publishedAt(sort: Desc)])
+  @@index([instrumentId, publishedAt(sort: Desc)])
+  @@index([entryExpiresAt])
+  @@map("trades")
+}
+
+/// Append-only (database trigger). Sequence, timestamp and hash are assigned by the database.
+model SignalEvent {
+  id             String    @id @default(uuid()) @db.Uuid
+  seq            BigInt    @unique @default(dbgenerated("0"))
+  tradeId        String?   @map("trade_id") @db.Uuid
+  tradeVersion   Int?      @map("trade_version")
+  type           EventType
+  broadcast      Boolean   @default(true)
+  priority       Priority  @default(NORMAL)
+  tone           String
+  title          String
+  body           String
+  payload        Json
+  templateId     String?   @map("template_id") @db.Uuid
+  actorId        String?   @map("actor_id") @db.Uuid
+  idempotencyKey String?   @unique @map("idempotency_key")
+  prevHash       String    @default("") @map("prev_hash")
+  hash           String    @default("")
+  createdAt      DateTime  @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(3)
+
+  trade      Trade?                 @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  template   SignalTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  actor      User?                  @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  outbox     OutboxEvent?
+  deliveries PushDelivery[]
+  closures   TradeClosure[]         @relation("ClosureEvent")
+  superseded TradeClosure[]         @relation("ClosureSupersededBy")
+  executions TradeExecutionRecord[]
+  fanouts    FanoutMetric[]
+
+  @@unique([tradeId, tradeVersion])
+  @@index([broadcast, seq(sort: Desc)])
+  @@index([tradeId, seq])
+  @@map("signal_events")
+}
+
+/// Append-only. Current execution figures are also projected onto the trade.
+model TradeExecutionRecord {
+  id           String           @id @default(uuid()) @db.Uuid
+  tradeId      String           @map("trade_id") @db.Uuid
+  eventId      String           @map("event_id") @db.Uuid
+  basis        CalculationBasis
+  entryPrice   Decimal          @map("entry_price") @db.Decimal(24, 8)
+  quantity     Decimal?         @db.Decimal(24, 8)
+  recordedById String           @map("recorded_by_id") @db.Uuid
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  trade      Trade       @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  event      SignalEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  recordedBy User        @relation(fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@index([tradeId])
+  @@map("trade_execution_records")
+}
+
+/// Source inputs, results and methodology are stored together. A correction supersedes a row;
+/// the database permits no other update and no deletion.
+model TradeClosure {
+  id                  String           @id @default(uuid()) @db.Uuid
+  tradeId             String           @map("trade_id") @db.Uuid
+  eventId             String           @map("event_id") @db.Uuid
+  kind                ClosureKind
+  fraction            Decimal          @db.Decimal(24, 12)
+  quantity            Decimal?         @db.Decimal(24, 8)
+  exitPrice           Decimal          @map("exit_price") @db.Decimal(24, 8)
+  exitedAt            DateTime         @map("exited_at") @db.Timestamptz(3)
+  reason              CloseReason?
+  basis               CalculationBasis
+  entryPriceUsed      Decimal?         @map("entry_price_used") @db.Decimal(24, 8)
+  multiplierUsed      Decimal?         @map("multiplier_used") @db.Decimal(24, 8)
+  fees                Decimal?         @db.Decimal(24, 8)
+  priceMove           Decimal?         @map("price_move") @db.Decimal(24, 8)
+  points              Decimal?         @db.Decimal(24, 8)
+  grossPnl            Decimal?         @map("gross_pnl") @db.Decimal(28, 8)
+  netPnl              Decimal?         @map("net_pnl") @db.Decimal(28, 8)
+  methodologyVersion  String           @map("methodology_version")
+  supersedesId        String?          @map("supersedes_id") @db.Uuid
+  supersededByEventId String?          @map("superseded_by_event_id") @db.Uuid
+  createdAt           DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  trade        Trade        @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  event        SignalEvent  @relation("ClosureEvent", fields: [eventId], references: [id], onDelete: Restrict)
+  supersededBy SignalEvent? @relation("ClosureSupersededBy", fields: [supersededByEventId], references: [id], onDelete: Restrict)
+
+  @@index([tradeId, createdAt])
+  @@map("trade_closures")
+}
+
+model OutboxEvent {
+  id          BigInt       @id @default(autoincrement())
+  eventId     String       @unique @map("event_id") @db.Uuid
+  status      OutboxStatus @default(PENDING)
+  attempts    Int          @default(0)
+  availableAt DateTime     @default(now()) @map("available_at") @db.Timestamptz(3)
+  lockedAt    DateTime?    @map("locked_at") @db.Timestamptz(3)
+  lockedBy    String?      @map("locked_by")
+  processedAt DateTime?    @map("processed_at") @db.Timestamptz(3)
+  lastError   String?      @map("last_error")
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  event SignalEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
+  @@map("outbox_events")
+}
+
+model PushSubscription {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  sessionId      String?   @map("session_id") @db.Uuid
+  endpoint       String    @unique
+  p256dh         String
+  auth           String
+  deviceLabel    String?   @map("device_label")
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastAcceptedAt DateTime? @map("last_accepted_at") @db.Timestamptz(3)
+  invalidatedAt  DateTime? @map("invalidated_at") @db.Timestamptz(3)
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session    Session?       @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  deliveries PushDelivery[]
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+/// One logical push to one device for one event: the unique key makes fan-out idempotent.
+model PushDelivery {
+  id                 String     @id @default(uuid()) @db.Uuid
+  eventId            String     @map("event_id") @db.Uuid
+  pushSubscriptionId String     @map("push_subscription_id") @db.Uuid
+  userId             String     @map("user_id") @db.Uuid
+  status             PushStatus @default(PENDING)
+  attempts           Int        @default(0)
+  nextAttemptAt      DateTime   @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedAt           DateTime?  @map("locked_at") @db.Timestamptz(3)
+  lastStatusCode     Int?       @map("last_status_code")
+  lastError          String?    @map("last_error")
+  acceptedAt         DateTime?  @map("accepted_at") @db.Timestamptz(3)
+  createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  event            SignalEvent      @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  pushSubscription PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, pushSubscriptionId])
+  @@index([status, nextAttemptAt])
+  @@map("push_deliveries")
+}
+
+model NotificationPreference {
+  userId            String   @id @map("user_id") @db.Uuid
+  pushNewSignals    Boolean  @default(true) @map("push_new_signals")
+  pushUpdates       Boolean  @default(true) @map("push_updates")
+  pushClosures      Boolean  @default(true) @map("push_closures")
+  pushAnnouncements Boolean  @default(true) @map("push_announcements")
+  hidePreview       Boolean  @default(false) @map("hide_preview")
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_preferences")
+}
+
+/// Append-only (database trigger).
+model AuditLog {
+  id         BigInt   @id @default(autoincrement())
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json     @default("{}")
+  requestId  String?  @map("request_id")
+  createdAt  DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(3)
+
+  actor User? @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([targetId])
+  @@map("audit_logs")
+}
+
+model AppSettings {
+  id                      Int      @id @default(1)
+  serviceName             String   @default("SignalDesk") @map("service_name")
+  businessTimezone        String   @default("Asia/Kolkata") @map("business_timezone")
+  supportContact          String   @default("") @map("support_contact")
+  renewalInstructions     String   @default("") @map("renewal_instructions")
+  legalEntityName         String   @default("") @map("legal_entity_name")
+  regulatoryStatement     String   @default("") @map("regulatory_statement")
+  riskDisclosure          String   @default("") @map("risk_disclosure")
+  privacyNotice           String   @default("") @map("privacy_notice")
+  serviceDescription      String   @default("") @map("service_description")
+  entryExpiryHoursDefault Int      @default(0) @map("entry_expiry_hours_default")
+  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("app_settings")
+}
+
+/// A documented compliance sign-off. Public performance stays off without a current one AND the
+/// deployment flag: neither alone is enough.
+model PublicPerformanceApproval {
+  id                String    @id @default(uuid()) @db.Uuid
+  jurisdiction      String
+  scope             String
+  reviewerName      String    @map("reviewer_name")
+  documentReference String    @map("document_reference")
+  effectiveFrom     DateTime  @map("effective_from") @db.Timestamptz(3)
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  notes             String?
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdById       String    @map("created_by_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@map("public_performance_approvals")
+}
+
+model RateLimitBucket {
+  key         String   @id
+  windowStart DateTime @map("window_start") @db.Timestamptz(3)
+  count       Int
+
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
+}
+
+model WorkerHeartbeat {
+  workerId   String   @id @map("worker_id")
+  startedAt  DateTime @map("started_at") @db.Timestamptz(3)
+  lastSeenAt DateTime @map("last_seen_at") @db.Timestamptz(3)
+
+  @@map("worker_heartbeats")
+}
+
+/// Written once per event per API instance after live fan-out. Source of the latency figures on
+/// the health page.
+model FanoutMetric {
+  id         BigInt   @id @default(autoincrement())
+  eventId    String   @map("event_id") @db.Uuid
+  instanceId String   @map("instance_id")
+  recipients Int
+  latencyMs  Int      @map("latency_ms")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  event SignalEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, instanceId])
+  @@index([createdAt])
+  @@map("fanout_metrics")
+}

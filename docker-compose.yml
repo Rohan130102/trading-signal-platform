@@ -1,0 +1,101 @@
+# Production-shaped stack on one host. Required values come from a .env file you create and protect:
+#   DOMAIN, POSTGRES_PASSWORD, APP_ENCRYPTION_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+# Not exercised in the environment this was built in, because no Docker daemon was available.
+name: signaldesk
+
+x-app: &app
+  image: signaldesk:${TAG:-latest}
+  restart: unless-stopped
+  environment: &app-env
+    NODE_ENV: production
+    DATABASE_URL: postgresql://signaldesk:${POSTGRES_PASSWORD:?}@postgres:5432/signaldesk
+    APP_ORIGINS: https://${DOMAIN:?}
+    TRUST_PROXY_HOPS: '1'
+    APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?}
+    PUSH_TRANSPORT: webpush
+    VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?}
+    VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?}
+    VAPID_SUBJECT: ${VAPID_SUBJECT:?}
+    PUBLIC_PERFORMANCE_ENABLED: 'false'
+
+services:
+  postgres:
+    image: postgres:18.1-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: signaldesk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: signaldesk
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U signaldesk -d signaldesk]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    restart: 'no'
+    command: [sh, -c, 'cd apps/api && npx prisma migrate deploy && node dist/scripts/seed.js']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    build: .
+    command: [node, apps/api/dist/main.js]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: [node, apps/api/dist/worker.js]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    <<: *app
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      HOSTNAME: 0.0.0.0
+      API_ORIGIN: http://api:4000
+    working_dir: /app/apps/web/.next/standalone/apps/web
+    command: [node, server.js]
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://localhost:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+    environment:
+      DOMAIN: ${DOMAIN:?}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - web
+      - api
+
+volumes:
+  pgdata:
+  caddy_data:

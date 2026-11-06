@@ -1,0 +1,661 @@
+import { describe, expect, it } from 'vitest';
+import {
+  ACTION_FROM,
+  allowedActions,
+  canTransition,
+  type ClosureState,
+  decide,
+  DomainError,
+  evolve,
+  renderTemplateText,
+  defaultTemplate,
+  snapshot,
+  TERMINAL_STATUSES,
+  type TradeCommand,
+  type TradeState,
+  TRADE_ACTIONS,
+  TRADE_STATUSES,
+  tradeCommandSchema,
+} from '../src/index.js';
+import { KEY, NOW, tradeState } from './fixtures.js';
+
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+type Cmd = DistributiveOmit<TradeCommand, 'expectedVersion' | 'idempotencyKey'>;
+
+const run = (state: TradeState, cmd: Cmd) =>
+  decide(state, { expectedVersion: state.version, idempotencyKey: KEY, ...cmd } as TradeCommand, NOW);
+
+const code = (fn: () => unknown): string => {
+  try {
+    fn();
+  } catch (e) {
+    if (e instanceof DomainError) return e.code;
+    throw e;
+  }
+  return 'NO_ERROR';
+};
+
+describe('state machine', () => {
+  it('has no transition out of a terminal state', () => {
+    for (const from of TERMINAL_STATUSES) {
+      for (const to of TRADE_STATUSES) expect(canTransition(from, to)).toBe(false);
+    }
+  });
+
+  it('a published signal is never automatically active', () => {
+    expect(canTransition('DRAFT', 'ACTIVE')).toBe(false);
+    expect(canTransition('PUBLISHED', 'ACTIVE')).toBe(true);
+    expect(canTransition('PUBLISHED', 'CLOSED')).toBe(false);
+    expect(canTransition('PUBLISHED', 'PARTIALLY_CLOSED')).toBe(false);
+  });
+
+  it('every action names at least one source state and drafts allow none', () => {
+    for (const action of TRADE_ACTIONS) expect(ACTION_FROM[action].length).toBeGreaterThan(0);
+    expect(allowedActions('DRAFT')).toEqual([]);
+    expect(allowedActions('CANCELLED')).toEqual([]);
+    expect(allowedActions('EXPIRED')).toEqual([]);
+  });
+
+  it('rejects an action that is not allowed from the current state', () => {
+    const published = tradeState({ status: 'PUBLISHED', activatedAt: null });
+    expect(
+      code(() =>
+        run(published, { action: 'CLOSE', exitPrice: '3450', basis: 'NONE', reason: 'MANUAL', confirm: true }),
+      ),
+    ).toBe('INVALID_TRANSITION');
+    expect(code(() => run(published, { action: 'TARGET_HIT', targetIndex: 1 }))).toBe('INVALID_TRANSITION');
+    expect(code(() => run(tradeState(), { action: 'CANCEL' }))).toBe('INVALID_TRANSITION');
+    const closed = tradeState({ status: 'CLOSED' });
+    expect(code(() => run(closed, { action: 'MOVE_STOP', price: '3200', allowWiden: false }))).toBe(
+      'INVALID_TRANSITION',
+    );
+  });
+});
+
+describe('concurrency guard', () => {
+  it('rejects a command made against a stale version', () => {
+    const state = tradeState({ version: 5 });
+    expect(
+      code(() => decide(state, { action: 'URGENT', message: 'x', expectedVersion: 4, idempotencyKey: KEY }, NOW)),
+    ).toBe('STALE_VERSION');
+  });
+
+  it('each event advances the version by exactly one', () => {
+    const d = run(tradeState(), { action: 'URGENT', message: 'hold' });
+    expect(d.next.version).toBe(3);
+    const a = run(tradeState({ status: 'PUBLISHED' }), { action: 'ACTIVATE', actualEntry: '3301', quantity: '2' });
+    expect(a.events.map((e) => e.type)).toEqual(['EXECUTION_RECORDED', 'ENTRY_ACTIVATED']);
+    expect(a.next.version).toBe(4);
+  });
+});
+
+describe('activation', () => {
+  it('moves to ACTIVE without recording an execution unless one is declared', () => {
+    const d = run(tradeState({ status: 'PUBLISHED', activatedAt: null }), { action: 'ACTIVATE' });
+    expect(d.next.status).toBe('ACTIVE');
+    expect(d.next.activatedAt).toBe(NOW.toISOString());
+    expect(d.next.execution).toBeNull();
+    expect(d.execution).toBeNull();
+  });
+
+  it('keeps a declared quantity out of the broadcast event', () => {
+    const d = run(tradeState({ status: 'PUBLISHED' }), { action: 'ACTIVATE', actualEntry: '3301', quantity: '2' });
+    const [internal, broadcast] = d.events;
+    expect(internal?.broadcast).toBe(false);
+    expect(internal?.payload.quantity).toBe('2');
+    expect(broadcast?.broadcast).toBe(true);
+    expect(JSON.stringify(broadcast?.payload)).not.toContain('quantity');
+    expect(d.next.execution).toEqual({ basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3301', quantity: '2' });
+  });
+
+  it('rejects a quantity with no entry', () => {
+    expect(code(() => run(tradeState({ status: 'PUBLISHED' }), { action: 'ACTIVATE', quantity: '2' }))).toBe(
+      'VALIDATION',
+    );
+  });
+});
+
+describe('stop-loss changes', () => {
+  it('sets the effective stop while the original is retained', () => {
+    const d = run(tradeState(), { action: 'MOVE_STOP', price: '3350', allowWiden: false });
+    expect(d.next.stopLoss).toBe('3350');
+    expect(d.next.originalStopLoss).toBe('3120');
+    expect(d.events[0]?.payload).toMatchObject({ previousStop: '3120', newStop: '3350', stopKind: 'MANUAL' });
+    expect(d.events[0]?.payload.after?.stopLoss).toBe('3350');
+  });
+
+  it('asks for confirmation before widening risk, on both directions', () => {
+    expect(
+      code(() => run(tradeState({ stopLoss: '3200' }), { action: 'MOVE_STOP', price: '3150', allowWiden: false })),
+    ).toBe('WIDENS_RISK');
+    expect(
+      run(tradeState({ stopLoss: '3200' }), { action: 'MOVE_STOP', price: '3150', allowWiden: true }).next.stopLoss,
+    ).toBe('3150');
+    const sell = tradeState({
+      direction: 'SELL',
+      stopLoss: '3400',
+      originalStopLoss: '3400',
+      targets: [{ index: 1, price: '3150', originalPrice: '3150', status: 'OPEN', hitAt: null }],
+    });
+    expect(code(() => run(sell, { action: 'MOVE_STOP', price: '3450', allowWiden: false }))).toBe('WIDENS_RISK');
+  });
+
+  it('rejects a stop beyond the next open target', () => {
+    expect(code(() => run(tradeState(), { action: 'MOVE_STOP', price: '3450', allowWiden: false }))).toBe(
+      'STOP_BEYOND_TARGET',
+    );
+    expect(code(() => run(tradeState(), { action: 'MOVE_STOP', price: '3500', allowWiden: false }))).toBe(
+      'STOP_BEYOND_TARGET',
+    );
+  });
+
+  it('before entry the stop must stay on the loss side of the entry', () => {
+    const s = tradeState({ status: 'PUBLISHED' });
+    expect(code(() => run(s, { action: 'MOVE_STOP', price: '3310', allowWiden: false }))).toBe('STOP_SIDE');
+  });
+
+  it('rejects a no-op and off-tick values', () => {
+    expect(code(() => run(tradeState(), { action: 'MOVE_STOP', price: '3120.00', allowWiden: false }))).toBe(
+      'NO_CHANGE',
+    );
+    expect(code(() => run(tradeState(), { action: 'MOVE_STOP', price: '3120.123', allowWiden: false }))).toBe(
+      'VALIDATION',
+    );
+  });
+
+  it('breakeven uses the recorded fill, else a single entry, and never guesses within a range', () => {
+    const recorded = tradeState({
+      execution: { basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3302', quantity: null },
+    });
+    expect(run(recorded, { action: 'MOVE_STOP_BREAKEVEN' }).next.stopLoss).toBe('3302');
+    expect(run(tradeState(), { action: 'MOVE_STOP_BREAKEVEN' }).next.stopLoss).toBe('3300');
+    const range = tradeState({ entry: { type: 'RANGE', low: '3290', high: '3300' } });
+    expect(code(() => run(range, { action: 'MOVE_STOP_BREAKEVEN' }))).toBe('ENTRY_REQUIRED');
+    expect(run(range, { action: 'MOVE_STOP_BREAKEVEN', price: '3295' }).next.stopLoss).toBe('3295');
+  });
+
+  it('a trail computes the stop from the reference and can only tighten', () => {
+    const d = run(tradeState(), { action: 'TRAIL_STOP', referencePrice: '3400', trailPoints: '50' });
+    expect(d.next.stopLoss).toBe('3350');
+    expect(d.events[0]?.templateKind).toBe('STOP_TRAILED');
+    expect(
+      code(() =>
+        run(tradeState({ stopLoss: '3380' }), { action: 'TRAIL_STOP', referencePrice: '3400', trailPoints: '50' }),
+      ),
+    ).toBe('TRAIL_NOT_TIGHTER');
+    const sell = tradeState({
+      direction: 'SELL',
+      stopLoss: '3480',
+      originalStopLoss: '3480',
+      targets: [{ index: 1, price: '3150', originalPrice: '3150', status: 'OPEN', hitAt: null }],
+    });
+    expect(run(sell, { action: 'TRAIL_STOP', referencePrice: '3250', trailPoints: '50' }).next.stopLoss).toBe('3300');
+  });
+});
+
+describe('targets', () => {
+  const three = tradeState({
+    targets: [
+      { index: 1, price: '3350', originalPrice: '3350', status: 'OPEN', hitAt: null },
+      { index: 2, price: '3400', originalPrice: '3400', status: 'OPEN', hitAt: null },
+      { index: 3, price: '3450', originalPrice: '3450', status: 'OPEN', hitAt: null },
+    ],
+  });
+
+  it('marks a target and any earlier ones as reached', () => {
+    const d = run(three, { action: 'TARGET_HIT', targetIndex: 2 });
+    expect(d.next.targets.map((t) => t.status)).toEqual(['HIT', 'HIT', 'OPEN']);
+    expect(d.next.targets[0]?.hitAt).toBe(NOW.toISOString());
+  });
+
+  it('rejects an unknown or already reached target', () => {
+    expect(code(() => run(tradeState(), { action: 'TARGET_HIT', targetIndex: 2 }))).toBe('TARGET_NOT_FOUND');
+    const hit = run(three, { action: 'TARGET_HIT', targetIndex: 1 }).next;
+    expect(code(() => run(hit, { action: 'TARGET_HIT', targetIndex: 1 }))).toBe('NO_CHANGE');
+  });
+
+  it('modifying keeps reached targets and renumbers the rest', () => {
+    const hit = run(three, { action: 'TARGET_HIT', targetIndex: 1 }).next;
+    const d = run(hit, { action: 'MODIFY_TARGETS', targets: ['3420', '3500'] });
+    expect(d.next.targets).toMatchObject([
+      { index: 1, price: '3350', status: 'HIT' },
+      { index: 2, price: '3420', originalPrice: '3400', status: 'OPEN' },
+      { index: 3, price: '3500', originalPrice: '3450', status: 'OPEN' },
+    ]);
+    expect(d.events[0]?.payload.previousTargets).toEqual(['3400', '3450']);
+  });
+
+  it('rejects contradictory target changes', () => {
+    expect(code(() => run(three, { action: 'MODIFY_TARGETS', targets: ['3250'] }))).toBe('VALIDATION');
+    expect(code(() => run(three, { action: 'MODIFY_TARGETS', targets: ['3450', '3400'] }))).toBe('VALIDATION');
+    expect(code(() => run(three, { action: 'MODIFY_TARGETS', targets: ['3310', '3320', '3330', '3340'] }))).toBe(
+      'VALIDATION',
+    );
+    const tight = tradeState({ stopLoss: '3320', targets: three.targets });
+    expect(code(() => run(tight, { action: 'MODIFY_TARGETS', targets: ['3310'] }))).toBe('STOP_BEYOND_TARGET');
+    const hit = run(three, { action: 'TARGET_HIT', targetIndex: 1 }).next;
+    expect(code(() => run(hit, { action: 'MODIFY_TARGETS', targets: ['3340'] }))).toBe('VALIDATION');
+  });
+});
+
+const persisted = (s: TradeState, d: ReturnType<typeof decide>, id = 'c1'): TradeState => ({
+  ...d.next,
+  closures: d.closure ? [...s.closures, { ...d.closure, id } as ClosureState] : s.closures,
+});
+
+describe('partial and final closure', () => {
+  const declared = tradeState({ execution: { basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3300', quantity: '10' } });
+
+  it('books a partial by percentage against a declared position', () => {
+    const d = run(declared, {
+      action: 'BOOK_PARTIAL',
+      exitPrice: '3400',
+      percent: '40',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+      fees: '4',
+    });
+    expect(d.next.status).toBe('PARTIALLY_CLOSED');
+    expect(d.next.closedFraction).toBe('0.4');
+    expect(d.closure).toMatchObject({
+      quantity: '4',
+      fraction: '0.4',
+      priceMove: '100',
+      grossPnl: '400',
+      netPnl: '396',
+    });
+  });
+
+  it('never closes more than the position across partials', () => {
+    const first = run(declared, {
+      action: 'BOOK_PARTIAL',
+      exitPrice: '3400',
+      quantity: '6',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+    });
+    const after = persisted(declared, first);
+    expect(after.closedFraction).toBe('0.6');
+    expect(
+      code(() =>
+        run(after, { action: 'BOOK_PARTIAL', exitPrice: '3400', quantity: '5', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      ),
+    ).toBe('EXCEEDS_POSITION');
+    expect(
+      code(() =>
+        run(after, { action: 'BOOK_PARTIAL', exitPrice: '3400', percent: '50', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      ),
+    ).toBe('EXCEEDS_POSITION');
+    expect(
+      code(() =>
+        run(after, { action: 'BOOK_PARTIAL', exitPrice: '3400', percent: '40', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      ),
+    ).toBe('USE_CLOSE');
+  });
+
+  it('the final close takes exactly what remains', () => {
+    const first = persisted(
+      declared,
+      run(declared, { action: 'BOOK_PARTIAL', exitPrice: '3400', quantity: '6', basis: 'ADMIN_DECLARED_EXECUTION' }),
+    );
+    const d = run(first, {
+      action: 'CLOSE',
+      exitPrice: '3450',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+      reason: 'TARGET_ACHIEVED',
+      confirm: true,
+    });
+    expect(d.next.status).toBe('CLOSED');
+    expect(d.next.closedFraction).toBe('1');
+    expect(d.closure).toMatchObject({ quantity: '4', fraction: '0.4', grossPnl: '600', kind: 'FINAL' });
+  });
+
+  it('keeps position, fees and money out of broadcast events', () => {
+    const d = run(declared, {
+      action: 'CLOSE',
+      exitPrice: '3450',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+      reason: 'TARGET_ACHIEVED',
+      confirm: true,
+      fees: '12',
+    });
+    const wire = JSON.stringify(d.events[0]?.payload);
+    expect(wire).not.toMatch(/quantity|fees|gross|net|Pnl/i);
+  });
+
+  it('refuses a declared outcome with no recorded execution', () => {
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'ADMIN_DECLARED_EXECUTION',
+          reason: 'MANUAL',
+          confirm: true,
+        }),
+      ),
+    ).toBe('EXECUTION_REQUIRED');
+  });
+
+  it('a recommended range is never silently treated as a fill', () => {
+    const range = tradeState({ entry: { type: 'RANGE', low: '3290', high: '3300' } });
+    expect(
+      code(() =>
+        run(range, {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'HYPOTHETICAL_OUTCOME',
+          reason: 'MANUAL',
+          confirm: true,
+        }),
+      ),
+    ).toBe('HYPOTHETICAL_ENTRY_REQUIRED');
+    expect(
+      code(() =>
+        run(range, {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'HYPOTHETICAL_OUTCOME',
+          hypotheticalEntry: '3280',
+          reason: 'MANUAL',
+          confirm: true,
+        }),
+      ),
+    ).toBe('HYPOTHETICAL_OUTSIDE_RANGE');
+    const d = run(range, {
+      action: 'CLOSE',
+      exitPrice: '3450',
+      basis: 'HYPOTHETICAL_OUTCOME',
+      hypotheticalEntry: '3295',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    expect(d.closure).toMatchObject({ entryPriceUsed: '3295', priceMove: '155', grossPnl: null });
+  });
+
+  it('closing with no basis records the exit and produces no figures', () => {
+    const d = run(tradeState(), { action: 'CLOSE', exitPrice: '3450', basis: 'NONE', reason: 'MANUAL', confirm: true });
+    expect(d.next.status).toBe('CLOSED');
+    expect(d.closure).toMatchObject({ priceMove: null, points: null, grossPnl: null, netPnl: null });
+    expect(d.events[0]?.templateContext.movement).toBeNull();
+  });
+
+  it('does not allow fees without a position', () => {
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'HYPOTHETICAL_OUTCOME',
+          fees: '3',
+          reason: 'MANUAL',
+          confirm: true,
+        }),
+      ),
+    ).toBe('FEES_WITHOUT_POSITION');
+  });
+
+  it('refuses mixing bases across exits on one trade', () => {
+    const first = persisted(
+      tradeState(),
+      run(tradeState(), { action: 'BOOK_PARTIAL', exitPrice: '3400', percent: '50', basis: 'HYPOTHETICAL_OUTCOME' }),
+    );
+    expect(first.closureBasis).toBe('HYPOTHETICAL_OUTCOME');
+    expect(
+      code(() => run(first, { action: 'CLOSE', exitPrice: '3450', basis: 'NONE', reason: 'MANUAL', confirm: true })),
+    ).toBe('BASIS_MISMATCH');
+  });
+
+  it('cannot reach the externally verified basis', () => {
+    const parsed = tradeCommandSchema.safeParse({
+      action: 'CLOSE',
+      expectedVersion: 1,
+      idempotencyKey: KEY,
+      exitPrice: '1',
+      basis: 'EXTERNALLY_VERIFIED',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('requires explicit confirmation to close', () => {
+    const parsed = tradeCommandSchema.safeParse({
+      action: 'CLOSE',
+      expectedVersion: 1,
+      idempotencyKey: KEY,
+      exitPrice: '1',
+      basis: 'NONE',
+      reason: 'MANUAL',
+      confirm: false,
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it('rejects a reason that contradicts the numbers', () => {
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CLOSE',
+          exitPrice: '3200',
+          basis: 'HYPOTHETICAL_OUTCOME',
+          reason: 'TARGET_ACHIEVED',
+          confirm: true,
+        }),
+      ),
+    ).toBe('REASON_CONTRADICTS_EXIT');
+  });
+
+  it('validates exit timing', () => {
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'NONE',
+          reason: 'MANUAL',
+          confirm: true,
+          exitedAt: '2027-01-01T00:00:00Z',
+        }),
+      ),
+    ).toBe('EXIT_IN_FUTURE');
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CLOSE',
+          exitPrice: '3450',
+          basis: 'NONE',
+          reason: 'MANUAL',
+          confirm: true,
+          exitedAt: '2026-10-01T00:00:00Z',
+        }),
+      ),
+    ).toBe('EXIT_BEFORE_ENTRY');
+  });
+
+  it('chooses the wording by reason', () => {
+    const close = (reason: 'TARGET_ACHIEVED' | 'STOP_LOSS_HIT' | 'MANUAL', exitPrice: string) =>
+      run(tradeState(), { action: 'CLOSE', exitPrice, basis: 'HYPOTHETICAL_OUTCOME', reason, confirm: true }).events[0]
+        ?.templateKind;
+    expect(close('TARGET_ACHIEVED', '3450')).toBe('FULL_PROFIT_BOOKED');
+    expect(close('STOP_LOSS_HIT', '3120')).toBe('STOP_LOSS_HIT');
+    expect(close('MANUAL', '3320')).toBe('TRADE_CLOSED');
+  });
+});
+
+describe('rounding and limits', () => {
+  it('thirds of a position close exactly, with no leftover and no overrun', () => {
+    let state = tradeState({ execution: { basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3300', quantity: '3' } });
+    state = persisted(
+      state,
+      run(state, { action: 'BOOK_PARTIAL', exitPrice: '3400', quantity: '1', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      'a',
+    );
+    state = persisted(
+      state,
+      run(state, { action: 'BOOK_PARTIAL', exitPrice: '3400', quantity: '1', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      'b',
+    );
+    expect(state.closedFraction).toBe('0.666666666666');
+    expect(
+      code(() =>
+        run(state, { action: 'BOOK_PARTIAL', exitPrice: '3400', quantity: '1', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      ),
+    ).toBe('USE_CLOSE');
+    const final = run(state, {
+      action: 'CLOSE',
+      exitPrice: '3400',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    expect(final.closure).toMatchObject({ quantity: '1', fraction: '0.333333333334', grossPnl: '100' });
+    expect(final.next.closedFraction).toBe('1');
+  });
+
+  it('computed figures fit the storage scale exactly', () => {
+    const spec = { ...tradeState().spec, pointSize: '3' };
+    const d = run(tradeState({ spec }), {
+      action: 'CLOSE',
+      exitPrice: '3301',
+      basis: 'HYPOTHETICAL_OUTCOME',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    expect(d.closure?.points).toBe('0.33333333');
+  });
+
+  it('refuses results too large to be real instead of failing at the database', () => {
+    const state = tradeState({
+      execution: { basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '1', quantity: '99999999999999' },
+      spec: { ...tradeState().spec, contractMultiplier: '99999999' },
+      entry: { type: 'SINGLE', low: '1', high: '1' },
+    });
+    expect(
+      code(() =>
+        run(state, {
+          action: 'CLOSE',
+          exitPrice: '99999999999999',
+          basis: 'ADMIN_DECLARED_EXECUTION',
+          reason: 'MANUAL',
+          confirm: true,
+        }),
+      ),
+    ).toBe('RESULT_OUT_OF_RANGE');
+  });
+});
+
+describe('corrections', () => {
+  it('records from and to, and updates the effective values', () => {
+    const d = run(tradeState({ status: 'PUBLISHED' }), { action: 'CORRECT', reason: 'Typo in stop', stopLoss: '3130' });
+    expect(d.next.stopLoss).toBe('3130');
+    expect(d.next.originalStopLoss).toBe('3120');
+    expect(d.events[0]?.payload.changes).toEqual([{ field: 'Stop-loss', from: '3,120.00', to: '3,130.00' }]);
+    expect(d.events[0]?.type).toBe('CORRECTION');
+    expect(d.events[0]?.broadcast).toBe(true);
+  });
+
+  it('corrects an entry within the same validation rules', () => {
+    const d = run(tradeState({ status: 'PUBLISHED' }), { action: 'CORRECT', reason: 'Wrong entry', entryLow: '3305' });
+    expect(d.next.entry).toEqual({ type: 'SINGLE', low: '3305', high: '3305' });
+    expect(
+      code(() =>
+        run(tradeState({ status: 'PUBLISHED' }), { action: 'CORRECT', reason: 'Wrong entry', entryLow: '3460' }),
+      ),
+    ).toBe('VALIDATION');
+  });
+
+  it('corrects an exit by superseding, recalculating from the original inputs', () => {
+    const base = tradeState();
+    const closed = persisted(
+      base,
+      run(base, { action: 'CLOSE', exitPrice: '3440', basis: 'HYPOTHETICAL_OUTCOME', reason: 'MANUAL', confirm: true }),
+    );
+    const d = run(closed, { action: 'CORRECT', reason: 'Exit mistyped', closureId: 'c1', exitPrice: '3450' });
+    expect(d.closure).toMatchObject({ supersedesClosureId: 'c1', exitPrice: '3450', priceMove: '150', kind: 'FINAL' });
+    expect(d.next.status).toBe('CLOSED');
+    expect(d.next.closedFraction).toBe('1');
+  });
+
+  it('will not rewrite the levels of a closed trade', () => {
+    expect(
+      code(() => run(tradeState({ status: 'CLOSED' }), { action: 'CORRECT', reason: 'nope', stopLoss: '3130' })),
+    ).toBe('CLOSED_LEVELS');
+  });
+
+  it('rejects an empty correction, an unknown exit and cancelled trades', () => {
+    expect(code(() => run(tradeState(), { action: 'CORRECT', reason: 'nothing', stopLoss: '3120' }))).toBe('NO_CHANGE');
+    expect(
+      code(() =>
+        run(tradeState(), {
+          action: 'CORRECT',
+          reason: 'bad id',
+          closureId: '6b1f0a52-4f55-4b8e-9d10-222222222222',
+          exitPrice: '3400',
+        }),
+      ),
+    ).toBe('CLOSURE_NOT_FOUND');
+    expect(
+      code(() => run(tradeState({ status: 'CANCELLED' }), { action: 'CORRECT', reason: 'too late', stopLoss: '3130' })),
+    ).toBe('INVALID_TRANSITION');
+  });
+});
+
+describe('event integrity', () => {
+  it('replaying a trade history reproduces the stored state', () => {
+    const start = tradeState({
+      status: 'PUBLISHED',
+      version: 1,
+      activatedAt: null,
+      targets: [
+        { index: 1, price: '3350', originalPrice: '3350', status: 'OPEN', hitAt: null },
+        { index: 2, price: '3450', originalPrice: '3450', status: 'OPEN', hitAt: null },
+      ],
+    });
+    const commands: Cmd[] = [
+      { action: 'ACTIVATE', actualEntry: '3301', quantity: '4' },
+      { action: 'TARGET_HIT', targetIndex: 1 },
+      { action: 'MOVE_STOP_BREAKEVEN' },
+      { action: 'MODIFY_TARGETS', targets: ['3500'] },
+      { action: 'BOOK_PARTIAL', exitPrice: '3360', percent: '25', basis: 'ADMIN_DECLARED_EXECUTION' },
+      { action: 'TRAIL_STOP', referencePrice: '3440', trailPoints: '20' },
+      {
+        action: 'CLOSE',
+        exitPrice: '3500',
+        basis: 'ADMIN_DECLARED_EXECUTION',
+        reason: 'TARGET_ACHIEVED',
+        confirm: true,
+      },
+    ];
+    let state = start;
+    let replay = start;
+    let i = 0;
+    for (const command of commands) {
+      const d = run(state, command);
+      for (const event of d.events) {
+        replay = evolve(replay, event.type, event.payload, NOW.toISOString());
+        expect(event.payload.after).toEqual(snapshot(replay));
+      }
+      state = persisted(state, d, `c${i++}`);
+    }
+    expect({ ...replay, closures: [] }).toEqual({ ...state, closures: [] });
+    expect(state.status).toBe('CLOSED');
+    expect(state.stopLoss).toBe('3420');
+    expect(state.originalStopLoss).toBe('3120');
+  });
+
+  it('does not mutate the state it is given', () => {
+    const state = tradeState();
+    const frozen = JSON.stringify(state);
+    run(state, { action: 'TARGET_HIT', targetIndex: 1 });
+    expect(JSON.stringify(state)).toBe(frozen);
+  });
+
+  it('rendered text agrees with the structured values', () => {
+    const d = run(tradeState(), { action: 'MOVE_STOP', price: '3350', allowWiden: false, comment: 'Lock in gains' });
+    const e = d.events[0];
+    const title = renderTemplateText(defaultTemplate('STOP_MOVED').title, e?.templateContext ?? {});
+    const body = renderTemplateText(defaultTemplate('STOP_MOVED').body, e?.templateContext ?? {});
+    expect(title).toBe('Move stop-loss to 3,350.00: BUY XAU/USD');
+    expect(body).toContain('moved from 3,120.00 to 3,350.00');
+    expect(body).toContain('Lock in gains');
+  });
+});

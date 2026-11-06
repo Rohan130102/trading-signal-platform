@@ -1,0 +1,166 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root,
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --surface: #13161b;
+  --raised: #1a1e24;
+  --text: #eceef1;
+  --muted: #a4acb6;
+  --subtle: #8a939e;
+  --line: rgb(255 255 255 / 8%);
+  --line-strong: rgb(255 255 255 / 16%);
+  --primary: #eceef1;
+  --primary-text: #0b0d10;
+  --buy: #5aa9ff;
+  --sell: #ee7ab6;
+  --update: #f0b341;
+  --success: #3fcf8e;
+  --stop: #ff6b6b;
+  --buy-soft: rgb(90 169 255 / 13%);
+  --sell-soft: rgb(238 122 182 / 13%);
+  --update-soft: rgb(240 179 65 / 13%);
+  --success-soft: rgb(63 207 142 / 13%);
+  --stop-soft: rgb(255 107 107 / 13%);
+  --neutral-soft: rgb(255 255 255 / 7%);
+  --shadow: 0 8px 30px rgb(0 0 0 / 45%);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f6f7f8;
+  --surface: #ffffff;
+  --raised: #f1f2f4;
+  --text: #14171b;
+  --muted: #555d67;
+  --subtle: #636b75;
+  --line: rgb(0 0 0 / 10%);
+  --line-strong: rgb(0 0 0 / 22%);
+  --primary: #14171b;
+  --primary-text: #ffffff;
+  --buy: #0b62c4;
+  --sell: #b51e76;
+  --update: #8f5b00;
+  --success: #0b7a4b;
+  --stop: #c4282d;
+  --buy-soft: rgb(11 98 196 / 10%);
+  --sell-soft: rgb(181 30 118 / 10%);
+  --update-soft: rgb(143 91 0 / 11%);
+  --success-soft: rgb(11 122 75 / 10%);
+  --stop-soft: rgb(196 40 45 / 10%);
+  --neutral-soft: rgb(0 0 0 / 5%);
+  --shadow: 0 8px 30px rgb(0 0 0 / 12%);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-primary: var(--primary);
+  --color-primary-text: var(--primary-text);
+  --color-buy: var(--buy);
+  --color-sell: var(--sell);
+  --color-update: var(--update);
+  --color-success: var(--success);
+  --color-stop: var(--stop);
+  --color-buy-soft: var(--buy-soft);
+  --color-sell-soft: var(--sell-soft);
+  --color-update-soft: var(--update-soft);
+  --color-success-soft: var(--success-soft);
+  --color-stop-soft: var(--stop-soft);
+  --color-neutral-soft: var(--neutral-soft);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --shadow-float: var(--shadow);
+  --animate-arrive: arrive 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-overlay: overlay 160ms ease-out;
+  --animate-dialog: dialog 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+@keyframes overlay {
+  from {
+    opacity: 0;
+  }
+}
+/* Centering uses the separate translate property, so this must not restate it. */
+@keyframes dialog {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-text-size-adjust: 100%;
+  scrollbar-gutter: stable;
+}
+
+body {
+  background: var(--bg);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: var(--buy-soft);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings:
+    'tnum',
+    'zero' 0;
+  letter-spacing: -0.01em;
+}
+
+/* iOS zooms any input smaller than 16px on focus. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Native date inputs follow color-scheme but need their icon to be visible. */
+input[type='date']::-webkit-calendar-picker-indicator,
+input[type='datetime-local']::-webkit-calendar-picker-indicator {
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
