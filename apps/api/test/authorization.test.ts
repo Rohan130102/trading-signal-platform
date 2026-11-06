@@ -46,7 +46,7 @@ describe('every route enforces its access level', () => {
   it('the route table is substantial and has no accidental public write routes', () => {
     expect(all.length).toBeGreaterThan(50);
     const publicWrites = all.filter((r) => r.access === 'public' && r.method !== 'GET');
-    expect(publicWrites.map((r) => r.path)).toEqual(['/auth/login']);
+    expect(publicWrites.map((r) => r.path)).toEqual(['/auth/login', '/auth/token']);
   });
 
   it('anonymous visitors get 401 on everything private', async () => {

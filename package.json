@@ -48,5 +48,9 @@
     "web-push": "3.6.7",
     "ws": "8.22.1",
     "eslint-plugin-react-hooks": "7.1.1"
+  },
+  "overrides": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

@@ -4,6 +4,7 @@ import {
   ALLOW_INCOMPLETE,
   AppError,
   type AuthedRequest,
+  bearerToken,
   forbidden,
   IS_PUBLIC,
   parseCookies,
@@ -29,7 +30,8 @@ export class SessionGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const targets = [context.getHandler(), context.getClass()];
     const request = context.switchToHttp().getRequest<AuthedRequest>();
-    const token = parseCookies(request.headers.cookie)[SESSION_COOKIE];
+    // A bearer token is authoritative when present: there is no falling back to a cookie.
+    const token = bearerToken(request.headers.authorization) ?? parseCookies(request.headers.cookie)[SESSION_COOKIE];
     const session = token ? await this.auth.authenticate(token) : null;
     if (session) request.auth = session;
 

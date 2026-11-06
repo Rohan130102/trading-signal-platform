@@ -182,6 +182,12 @@ export const ClientIp = createParamDecorator(
   (_data: unknown, ctx: ExecutionContext): string => ctx.switchToHttp().getRequest<AuthedRequest>().ip ?? 'unknown',
 );
 
+/** Native apps authenticate with a header, which unlike a cookie is never attached automatically. */
+export function bearerToken(header: string | undefined): string | null {
+  const match = /^Bearer\s+(\S+)$/i.exec(header ?? '');
+  return match?.[1] ?? null;
+}
+
 export function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!header) return out;

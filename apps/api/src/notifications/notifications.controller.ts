@@ -1,5 +1,11 @@
 import { Controller, Delete, Get, HttpCode, Post, Put } from '@nestjs/common';
-import { preferencesSchema, pushSubscribeSchema, pushUnsubscribeSchema } from '@signaldesk/domain';
+import {
+  preferencesSchema,
+  pushSubscribeSchema,
+  pushUnsubscribeSchema,
+  registerDeviceSchema,
+  unregisterDeviceSchema,
+} from '@signaldesk/domain';
 import type { z } from 'zod';
 import { AdminOnly, Auth, type AuthContext, RequestId, RequireSignalAccess, Summary, ZBody } from '../common/http.js';
 import { NotificationsService } from './notifications.service.js';
@@ -35,6 +41,24 @@ export class NotificationsController {
     @ZBody(pushUnsubscribeSchema) body: z.infer<typeof pushUnsubscribeSchema>,
   ) {
     await this.notifications.unsubscribe(auth.user.id, body.endpoint);
+    return { ok: true };
+  }
+
+  @Post('push/devices')
+  @RequireSignalAccess()
+  @Summary('Register this installed app for native notifications')
+  registerDevice(@Auth() auth: AuthContext, @ZBody(registerDeviceSchema) body: z.infer<typeof registerDeviceSchema>) {
+    return this.notifications.registerNativeDevice(auth.user.id, auth.sessionId, body);
+  }
+
+  @Delete('push/devices')
+  @HttpCode(200)
+  @Summary('Stop native notifications to this installed app')
+  async unregisterDevice(
+    @Auth() auth: AuthContext,
+    @ZBody(unregisterDeviceSchema) body: z.infer<typeof unregisterDeviceSchema>,
+  ) {
+    await this.notifications.unregisterNativeDevice(auth.user.id, body.token);
     return { ok: true };
   }
 

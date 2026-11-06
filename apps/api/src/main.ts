@@ -6,7 +6,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule, CONTROLLERS } from './app.module.js';
-import type { AuthedRequest } from './common/http.js';
+import { type AuthedRequest, bearerToken } from './common/http.js';
 import { log } from './common/log.js';
 import { buildOpenApi } from './common/openapi.js';
 import { env, isProduction } from './config/env.js';
@@ -84,10 +84,13 @@ async function bootstrap(): Promise<void> {
     next();
   });
   app.use(rateLimiter());
-  // Cross-site request protection for cookie authentication, including login.
+  // Cross-site request protection for cookie authentication, including login. Browsers always send
+  // Origin on these requests. Native apps send none and authenticate with a header that a cross-site
+  // page cannot set, so only they may omit it.
   app.use((req: Request, res: Response, next: NextFunction) => {
     if (SAFE_METHODS.has(req.method)) return next();
     const origin = req.headers.origin;
+    if (!origin && (bearerToken(req.headers.authorization) || req.path === '/api/v1/auth/token')) return next();
     if (!origin || !env.APP_ORIGINS.includes(origin)) {
       res.status(403).json({ error: { code: 'BAD_ORIGIN', message: 'This request came from an unexpected origin.' } });
       return;

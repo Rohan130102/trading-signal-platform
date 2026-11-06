@@ -1,28 +1,21 @@
 'use client';
 
 import {
-  calculateLevels,
-  canon,
   type Direction,
   type DraftInput,
-  type EntryLevels,
   type EntryType,
-  entryLabel,
   type FeedEvent,
   formatPoints,
   formatPrice,
   type InstrumentSpec,
-  isDecimalLiteral,
-  type Issue,
   MAX_TARGETS,
   type Priority,
-  rangeEntry,
-  renderTemplateText,
-  riskSummary,
-  singleEntry,
   type AdminTradeDetail,
   toDec,
-  validateSignalLevels,
+  composeSignal,
+  defaultSignalTemplateKind,
+  isTemplateForDirection,
+  previewSignalEvent,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
@@ -128,60 +121,6 @@ function writeStorage(store: 'local' | 'session', key: string, value: unknown): 
   }
 }
 
-function useComputed(form: FormState, spec: InstrumentSpec | undefined) {
-  return useMemo(() => {
-    const low = form.entryLow.trim();
-    const high = form.entryHigh.trim();
-    let entry: EntryLevels | null = null;
-    const entryIssues: Issue[] = [];
-    if (form.entryType === 'SINGLE' && isDecimalLiteral(low)) entry = singleEntry(canon(low));
-    if (form.entryType === 'RANGE' && isDecimalLiteral(low) && isDecimalLiteral(high))
-      entry = rangeEntry(canon(low), canon(high));
-    if (low && !isDecimalLiteral(low))
-      entryIssues.push({
-        field: 'entryLow',
-        code: 'INVALID_NUMBER',
-        message: 'Enter a plain number, such as 3300.50.',
-      });
-    if (form.entryType === 'RANGE' && high && !isDecimalLiteral(high))
-      entryIssues.push({
-        field: 'entryHigh',
-        code: 'INVALID_NUMBER',
-        message: 'Enter a plain number, such as 3300.50.',
-      });
-
-    if (!spec || !form.direction || !entry)
-      return { entry, auto: null, targets: [] as string[], stopLoss: '', issues: entryIssues, risk: null };
-
-    const auto = calculateLevels({ spec, direction: form.direction, entry });
-    const targets = form.custom ? form.targets.map((t) => t.trim()).filter(Boolean) : auto.targets;
-    const stopLoss = form.custom ? form.stopLoss.trim() : auto.stopLoss;
-    let issues: Issue[] = [...entryIssues];
-    let risk = null;
-    const wellFormed = targets.every(isDecimalLiteral) && isDecimalLiteral(stopLoss);
-    if (wellFormed) {
-      const canonTargets = targets.map(canon);
-      const levels = { spec, direction: form.direction, entry, targets: canonTargets, stopLoss: canon(stopLoss) };
-      issues = [...issues, ...validateSignalLevels(levels)];
-      if (issues.length === 0) risk = riskSummary(levels);
-    } else {
-      issues.push({
-        field: 'stopLoss',
-        code: 'INVALID_NUMBER',
-        message: 'Targets and stop-loss must be plain numbers.',
-      });
-    }
-    return {
-      entry,
-      auto,
-      targets: wellFormed ? targets.map(canon) : targets,
-      stopLoss: wellFormed ? canon(stopLoss) : stopLoss,
-      issues,
-      risk,
-    };
-  }, [form, spec]);
-}
-
 function Composer() {
   const router = useRouter();
   const params = useSearchParams();
@@ -221,7 +160,7 @@ function Composer() {
     [active, recent],
   );
   const spec = active.find((i) => i.id === form.instrumentId);
-  const computed = useComputed(form, spec);
+  const computed = useMemo(() => composeSignal(form, spec), [form, spec]);
 
   // Restore work in progress: a refresh or an accidental navigation must not lose a signal.
   useEffect(() => {
@@ -442,64 +381,30 @@ function Composer() {
     if (canReview) setReviewOpen(true);
   };
 
-  const signalTemplates = (templates.data?.templates ?? []).filter((t) => {
-    if (!t.active) return false;
-    if (t.kind === 'PRIORITY_SIGNAL') return true;
-    return t.kind === (form.direction === 'SELL' ? 'SELL_STANDARD' : 'BUY_STANDARD');
-  });
+  const signalTemplates = (templates.data?.templates ?? []).filter(
+    (t) => t.active && isTemplateForDirection(t.kind, form.direction),
+  );
   const chosenTemplate = useMemo(() => {
     const all = templates.data?.templates ?? [];
     if (form.templateId) return all.find((t) => t.id === form.templateId);
-    const kind =
-      form.priority === 'PRIORITY' ? 'PRIORITY_SIGNAL' : form.direction === 'SELL' ? 'SELL_STANDARD' : 'BUY_STANDARD';
+    const kind = defaultSignalTemplateKind(form.direction, form.priority);
     return all.find((t) => t.kind === kind && t.isDefault);
   }, [form.direction, form.priority, form.templateId, templates.data]);
 
-  const previewEvent: FeedEvent | null = useMemo(() => {
-    if (!spec || !form.direction || !computed.entry || computed.issues.length > 0 || computed.targets.length === 0)
-      return null;
-    const context = {
-      ref: 'T-NEW',
-      instrument: spec.symbol,
-      direction: form.direction,
-      entry: entryLabel(spec, computed.entry),
-      stop: formatPrice(spec, computed.stopLoss),
-      target1: computed.targets[0] ? formatPrice(spec, computed.targets[0]) : null,
-      target2: computed.targets[1] ? formatPrice(spec, computed.targets[1]) : null,
-      target3: computed.targets[2] ? formatPrice(spec, computed.targets[2]) : null,
-      comment: form.commentary.trim() || null,
-    };
-    return {
-      seq: 0,
-      id: 'preview',
-      tradeId: null,
-      tradeVersion: 1,
-      type: 'SIGNAL_PUBLISHED',
-      category: 'NEW_SIGNAL',
-      tone: form.direction === 'BUY' ? 'BUY' : 'SELL',
-      priority: form.priority,
-      title: chosenTemplate ? renderTemplateText(chosenTemplate.title, context) : '',
-      body: chosenTemplate ? renderTemplateText(chosenTemplate.body, context) : '',
-      tradeStatus: 'PUBLISHED',
-      createdAt: new Date().toISOString(),
-      payload: {
-        ref: 'T-NEW',
-        symbol: spec.symbol,
-        direction: form.direction,
-        pricePrecision: spec.pricePrecision,
-        entryType: computed.entry.type,
-        entryLow: computed.entry.low,
-        entryHigh: computed.entry.high,
-        comment: form.commentary.trim() || null,
-        after: {
-          status: 'PUBLISHED',
-          stopLoss: computed.stopLoss,
-          targets: computed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const })),
-          closedFraction: '0',
-        },
-      },
-    };
-  }, [chosenTemplate, computed, form.commentary, form.direction, form.priority, spec]);
+  const previewEvent: FeedEvent | null = useMemo(
+    () =>
+      spec && form.direction
+        ? previewSignalEvent({
+            spec,
+            direction: form.direction,
+            composed: computed,
+            priority: form.priority,
+            commentary: form.commentary,
+            template: chosenTemplate,
+          })
+        : null,
+    [chosenTemplate, computed, form.commentary, form.direction, form.priority, spec],
+  );
 
   if (instruments.isPending) return <Loading rows={2} label="Loading the composer" />;
   if (instruments.isError) return <ErrorState error={instruments.error} onRetry={() => void instruments.refetch()} />;
@@ -783,7 +688,7 @@ function Composer() {
                       <li key={line}>{line}</li>
                     ))}
                   </ul>
-                  {computed.entry.type === 'RANGE' && (
+                  {computed.entry?.type === 'RANGE' && (
                     <p className="mt-1.5">
                       For a range, the target is measured from the far edge in the profit direction and the stop from
                       the far edge against it.

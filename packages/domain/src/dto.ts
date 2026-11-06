@@ -1,5 +1,6 @@
 import type { EventPayload, EventSnapshot, TargetState } from './lifecycle.js';
-import type { CalculationBasis, TradeAggregate } from './pnl.js';
+import type { InstrumentSpec } from './instrument.js';
+import type { CalculationBasis, PerformanceStats, TradeAggregate } from './pnl.js';
 import type { Direction, EntryType } from './signal.js';
 import type { CloseReason, EventCategory, EventType, Priority, TradeStatus } from './status.js';
 import type { AccessDenial, Role, SubscriptionState, UserStatus } from './subscription.js';
@@ -153,4 +154,168 @@ export interface MeResponse {
   access: { allowed: boolean; reason: AccessDenial | null };
   support: { contact: string; renewalInstructions: string; serviceName: string };
 }
+
+export interface TokenLoginResponse {
+  /** Shown once. Store it in the device's secure storage and send it as a bearer token. */
+  token: string;
+  expiresAt: string;
+}
+
+export interface PushConfig {
+  available: boolean;
+  publicKey: string | null;
+  mode: string;
+  /** Whether the server can send to native devices. */
+  nativeAvailable: boolean;
+}
+
+export interface PushDevice {
+  id: string;
+  deviceLabel: string | null;
+  channel: 'WEB_PUSH' | 'EXPO';
+  platform: string | null;
+  createdAt: string;
+  lastAcceptedAt: string | null;
+  thisDevice: boolean;
+}
+
+export interface NotificationPreferences {
+  pushNewSignals: boolean;
+  pushUpdates: boolean;
+  pushClosures: boolean;
+  pushAnnouncements: boolean;
+  hidePreview: boolean;
+}
+
+export interface HistoryPage {
+  trades: (TradeSummary & { outcome: PublicOutcome | null })[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface AdminTradesPage {
+  trades: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface DashboardResponse {
+  active: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  awaitingEntry: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  recentlyClosed: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  recentEvents: {
+    seq: number;
+    id: string;
+    tradeId: string | null;
+    title: string;
+    type: string;
+    tone: string;
+    createdAt: string;
+    dispatch: DispatchSummary | null;
+  }[];
+  drafts: number;
+  subscribers: { total: number; active: number; expired: number; expiringSoon: number };
+  expiring: { id: string; name: string; loginId: string; expiresAt: string | null }[];
+  health: {
+    status: string;
+    worker: { healthy: boolean; lastSeenSecondsAgo: number | null };
+    outbox: { pending: number; dead: number };
+    push: { transport: string };
+  };
+  alerts: { level: 'WARNING' | 'CRITICAL'; message: string; href: string }[];
+}
+
+export interface NotificationHealth {
+  status: 'HEALTHY' | 'ATTENTION';
+  worker: { healthy: boolean; lastSeenSecondsAgo: number | null; instances: number };
+  outbox: { pending: number; dead: number; oldestPendingSeconds: number | null };
+  push: {
+    transport: string;
+    nativeAvailable: boolean;
+    last24h: { accepted: number; pending: number; failed: number; invalidated: number; skipped: number };
+    note: string;
+  };
+  live: {
+    last24h: { samples: number; p50Ms: number | null; p95Ms: number | null; maxMs: number | null };
+    sloTargetP95Ms: number;
+    note: string;
+  };
+  recentFailures: {
+    id: string;
+    attempts: number;
+    statusCode: number | null;
+    error: string | null;
+    at: string;
+    title: string;
+    tradeId: string | null;
+  }[];
+}
+
+export interface SubscriberRow {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  loginId: string;
+  status: UserStatus;
+  notes: string | null;
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  subscription: SubscriptionView;
+}
+
+export interface SubscriberDetail extends SubscriberRow {
+  events: {
+    id: string;
+    type: string;
+    mode: string | null;
+    durationDays: number | null;
+    lastValidDate: string;
+    note: string | null;
+    actorName: string;
+    createdAt: string;
+  }[];
+  devices: { id: string; deviceLabel: string | null; createdAt: string; lastAcceptedAt: string | null }[];
+  sessions: { id: string; deviceLabel: string | null; lastSeenAt: string }[];
+}
+
+export interface SubscribersPage {
+  subscribers: SubscriberRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PerformanceReport {
+  lifecycle: PerformanceStats;
+  byBasis: { basis: CalculationBasis; stats: PerformanceStats }[];
+  byInstrument: { symbol: string; byBasis: { basis: CalculationBasis; stats: PerformanceStats }[] }[];
+  records: (TradeSummary & { aggregate: TradeAggregate | null; corrected: boolean })[];
+  truncated: boolean;
+  quoteCurrency: string | null;
+  pointsComparable: boolean;
+  methodology: { version: string; statements: string[] };
+}
+
+export interface InstrumentRow extends InstrumentSpec {
+  id: string;
+  active: boolean;
+  sortOrder: number;
+}
+
+export interface TemplateRow {
+  id: string;
+  kind: string;
+  name: string;
+  tone: string;
+  title: string;
+  body: string;
+  active: boolean;
+  favorite: boolean;
+  isDefault: boolean;
+}
+
 export type { EventPayload, EventSnapshot, UserStatus };

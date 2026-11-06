@@ -2,10 +2,11 @@
 
 import {
   BASIS_LABELS,
+  basisShort,
   type CalculationBasis,
+  categoryLabel,
   CLOSE_REASON_LABELS,
   type Direction,
-  type EventCategory,
   type FeedEvent,
   formatPrice,
   type PublicOutcome,
@@ -76,19 +77,6 @@ const TONE_TEXT: Record<TemplateTone, string> = {
   STOP: 'text-stop',
   NEUTRAL: 'text-muted',
 };
-
-function categoryLabel(category: EventCategory, ref?: string): string {
-  switch (category) {
-    case 'NEW_SIGNAL':
-      return 'New signal';
-    case 'UPDATE':
-      return `Update to ${ref ?? 'trade'}`;
-    case 'CLOSURE':
-      return `Closed: ${ref ?? 'trade'}`;
-    case 'ANNOUNCEMENT':
-      return 'Announcement';
-  }
-}
 
 const nowListeners = new Set<() => void>();
 let nowValue = Date.now();
@@ -211,11 +199,6 @@ export function Levels({
       ))}
     </dl>
   );
-}
-
-/** A figure is never shown without saying what it rests on. */
-function basisShort(basis: CalculationBasis | undefined): string {
-  return basis === 'ADMIN_DECLARED_EXECUTION' ? 'declared by the administrator, unverified' : 'hypothetical';
 }
 
 /** Shows a change as before → after, which is what makes an update readable at a glance. */

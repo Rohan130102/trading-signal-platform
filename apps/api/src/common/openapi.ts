@@ -69,7 +69,7 @@ export function buildOpenApi(controllers: (new (...args: never[]) => object)[], 
       (paths[path] ??= {})[verb] = {
         summary: doc.summary ?? name,
         tags: [String(controller.name).replace(/Controller$/, '')],
-        security: isPublic ? [] : [{ session: [] }],
+        security: isPublic ? [] : [{ session: [] }, { bearer: [] }],
         'x-access': isPublic ? 'public' : isAdmin ? 'admin' : needsAccess ? 'active-subscription' : 'authenticated',
         parameters,
         ...(doc.body
@@ -91,11 +91,14 @@ export function buildOpenApi(controllers: (new (...args: never[]) => object)[], 
       title: 'SignalDesk API',
       version: '1.0.0',
       description:
-        'Signal communication platform. It does not place orders. State-changing requests must carry an allowed Origin header.',
+        'Signal communication platform. It does not place orders. State-changing requests with a cookie must carry an allowed Origin header.',
     },
     paths,
     components: {
-      securitySchemes: { session: { type: 'apiKey', in: 'cookie', name: 'sd_session' } },
+      securitySchemes: {
+        session: { type: 'apiKey', in: 'cookie', name: 'sd_session' },
+        bearer: { type: 'http', scheme: 'bearer', description: 'Native apps. Token from POST /auth/token.' },
+      },
       schemas: {
         Error: {
           type: 'object',

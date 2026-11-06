@@ -99,6 +99,11 @@ enum PushStatus {
   SKIPPED
 }
 
+enum PushChannel {
+  WEB_PUSH
+  EXPO
+}
+
 enum SubscriptionEventType {
   CREATED
   RENEWED
@@ -417,8 +422,10 @@ model PushSubscription {
   userId         String    @map("user_id") @db.Uuid
   sessionId      String?   @map("session_id") @db.Uuid
   endpoint       String    @unique
-  p256dh         String
-  auth           String
+  channel        PushChannel @default(WEB_PUSH)
+  platform       String?
+  p256dh         String?
+  auth           String?
   deviceLabel    String?   @map("device_label")
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   lastAcceptedAt DateTime? @map("last_accepted_at") @db.Timestamptz(3)
@@ -445,6 +452,9 @@ model PushDelivery {
   lastStatusCode     Int?       @map("last_status_code")
   lastError          String?    @map("last_error")
   acceptedAt         DateTime?  @map("accepted_at") @db.Timestamptz(3)
+  /// Expo reports a message's fate later, through this receipt.
+  receiptId          String?    @map("receipt_id")
+  receiptCheckedAt   DateTime?  @map("receipt_checked_at") @db.Timestamptz(3)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
