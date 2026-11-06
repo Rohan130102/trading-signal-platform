@@ -4,9 +4,9 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { newKey } from '@/lib/ids';
-import { Button, Field, FormError, Screen, T, ToggleRow, useToast } from '@/ui';
+import { Button, Field, FormError, ModalFrame, Screen, T, ToggleRow, useToast } from '@/ui';
 
-export default function Announcement() {
+function Announcement() {
   const router = useRouter();
   const client = useQueryClient();
   const toast = useToast();
@@ -80,5 +80,13 @@ export default function Announcement() {
       />
       <FormError error={send.error} />
     </Screen>
+  );
+}
+
+export default function AnnouncementRoute() {
+  return (
+    <ModalFrame>
+      <Announcement />
+    </ModalFrame>
   );
 }

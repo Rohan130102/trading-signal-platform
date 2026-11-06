@@ -41,6 +41,7 @@ import {
   type InputHandle,
   KeyboardArea,
   Loading,
+  ModalFrame,
   Notice,
   PriceField,
   Segmented,
@@ -83,7 +84,7 @@ const EMPTY: FormState = {
 const RECENT_KEY = 'recent-instruments';
 const DEADLINES = [1, 4, 12, 24];
 
-export default function Compose() {
+function Compose() {
   const router = useRouter();
   const params = useLocalSearchParams<{ direction?: string; symbol?: string; draft?: string }>();
   const c = useColors();
@@ -769,3 +770,11 @@ const styles = StyleSheet.create({
     marginTop: space.xl,
   },
 });
+
+export default function ComposeRoute() {
+  return (
+    <ModalFrame>
+      <Compose />
+    </ModalFrame>
+  );
+}

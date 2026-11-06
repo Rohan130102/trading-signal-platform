@@ -258,8 +258,21 @@ export class Device {
             Math.abs(n.x2 - s.x2) <= 2 ||
             Math.abs(n.x1 - s.x1) <= 2),
       );
+    // A control inside a larger tappable row is not the target: the row is.
+    const insideLargerTarget = (n) =>
+      nodes.some(
+        (o) =>
+          o !== n &&
+          o.clickable &&
+          o.x1 <= n.x1 &&
+          o.y1 <= n.y1 &&
+          o.x2 >= n.x2 &&
+          o.y2 >= n.y2 &&
+          (o.y2 - o.y1) / scale >= minDp &&
+          (o.x2 - o.x1) / scale >= minDp,
+      );
     for (const n of nodes) {
-      if (n.clickable && n.enabled && !clipped(n)) {
+      if (n.clickable && n.enabled && !clipped(n) && !insideLargerTarget(n)) {
         const w = (n.x2 - n.x1) / scale;
         const h = (n.y2 - n.y1) / scale;
         if ((w < minDp || h < minDp) && n.x1 >= 0 && n.y1 >= 0) {
