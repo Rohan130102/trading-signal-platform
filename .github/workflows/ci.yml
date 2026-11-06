@@ -24,9 +24,9 @@ jobs:
           fetch-depth: 0
       # File types and patterns specific to this project. Prints locations only, never the values.
       - run: node scripts/scan-secrets.mjs
-      # Whole history, with values redacted from the log.
+      # Whole history. Reports where a finding is, with the value redacted from the log.
       - name: Gitleaks
-        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect --source /repo --redact --no-banner
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.24.3 detect --source /repo --redact --verbose --no-banner
 
   checks:
     name: Lint, types, unit and integration tests
