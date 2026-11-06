@@ -12,7 +12,7 @@ the mobile work, on one Apple Silicon Mac with 8 GB of memory, Node 22.23.
 | TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                   |
 | ESLint, zero warnings allowed                                   | Pass                                                   |
 | Prettier                                                        | Pass                                                   |
-| Unit tests                                                      | **@@UNITSHORT@@**                                      |
+| Unit tests                                                      | **154 of 154**                                         |
 | Integration tests                                               | **178 of 178**                                         |
 | End-to-end tests                                                | **77 of 77**                                           |
 | `npm audit --omit=dev`                                          | **0 vulnerabilities**                                  |

@@ -1,5 +1,7 @@
 # Final audit
 
+> This covers the backend and web app, as of 5 November 2026. For the native app, see [MOBILE_AUDIT.md](MOBILE_AUDIT.md).
+
 Audit date: 5 November 2026. Full evidence: [TESTING.md](TESTING.md).
 
 ## Readiness

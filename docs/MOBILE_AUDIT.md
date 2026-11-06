@@ -23,11 +23,11 @@ Neither platform has received a real push notification, or been on a real phone.
 | TypeScript across all four packages                                       | Pass                                                                                                                                             |
 | ESLint, zero warnings allowed                                             | Pass                                                                                                                                             |
 | Prettier                                                                  | Pass                                                                                                                                             |
-| Shared logic tests                                                        | **@@UNIT@@**                                                                                                                                     |
+| Shared logic tests                                                        | **154 of 154**                                                                                                                                   |
 | API integration tests, including 32 new ones for native clients           | **178 of 178**                                                                                                                                   |
 | Web end-to-end tests, confirming the shared-code refactor broke nothing   | **77 of 77**                                                                                                                                     |
 | Mobile component and logic tests                                          | **56 of 56**                                                                                                                                     |
-| Emulator journeys in the real app against a real API, worker and database | **@@JOURNEYS@@**                                                                                                                                 |
+| Emulator journeys in the real app against a real API, worker and database | **20 of 22 finished on the final code, all passing. The last 2, the screen-size sweeps, are still running**                                      |
 | Expo project health check                                                 | 20 of 20                                                                                                                                         |
 | JavaScript bundle for Android and iOS, production settings                | Pass                                                                                                                                             |
 | Secret scan of every tracked file                                         | Clean                                                                                                                                            |
@@ -107,4 +107,4 @@ No Critical or High defect is known to be open. Two High fixes depend on things 
 
 ## CI status
 
-@@CI@@
+First run in progress on the pull request. Results are added here when known.

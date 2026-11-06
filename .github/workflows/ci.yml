@@ -3,7 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore: ['docs/**', '**/*.md']
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md']
 
 permissions:
   contents: read
@@ -118,7 +120,6 @@ jobs:
       # A test build. It talks to a server on the same computer through adb reverse. See docs/MOBILE.md.
       APP_VARIANT: development
       EXPO_PUBLIC_API_URL: http://localhost:4200
-      NODE_ENV: production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -136,6 +137,8 @@ jobs:
       - name: Compile the APK
         run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,x86_64
         working-directory: apps/mobile/android
+        env:
+          NODE_ENV: production
       - uses: actions/upload-artifact@v4
         with:
           name: signaldesk-android-test-apk

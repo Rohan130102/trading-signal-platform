@@ -389,7 +389,9 @@ J['subscriber-account'] = async () => {
   await expectText('Days left');
   await d.screenshot('account');
   await d.waitFor({ id: 'notifications' });
-  await expectText(/Expo Go cannot receive alerts|Not set up in this build|Turn on notifications/);
+  await expectText(
+    /Expo Go cannot receive alerts|Simulators cannot receive alerts|Not set up in this build|Turn on notifications/,
+  );
   await d.scrollTo({ id: 'pref-pushUpdates' });
   const before = await d.waitFor({ id: 'pref-pushUpdates' });
   // Tapping the words works, because the whole row is the target.

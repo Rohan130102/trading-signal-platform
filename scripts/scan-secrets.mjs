@@ -21,11 +21,16 @@ const PATTERNS = [
   ['Expo access token', /\bEXPO_TOKEN\s*[:=]\s*['"]?[A-Za-z0-9_-]{20,}/],
   ['encryption key value', /\bAPP_ENCRYPTION_KEY\s*[:=]\s*['"]?[A-Za-z0-9+/]{40,}={0,2}/],
   ['VAPID private key value', /\bVAPID_PRIVATE_KEY\s*[:=]\s*['"]?[A-Za-z0-9_-]{40,}/],
-  ['database URL with a real password', /postgres(ql)?:\/\/(?!signaldesk:signaldesk@|unused:unused@|x@|\$\{)[^\s:'"`/]+:(?!\$\{)[^\s@'"`]+@/],
+  [
+    'database URL with a real password',
+    /postgres(ql)?:\/\/(?!signaldesk:signaldesk@|unused:unused@|x@|\$\{)[^\s:'"`/]+:(?!\$\{)[^\s@'"`]+@/,
+  ],
 ];
 
 const list = (args) => execFileSync('git', args, { encoding: 'utf8' }).split('\0').filter(Boolean);
-const files = [...new Set([...list(['ls-files', '-z']), ...list(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'])])];
+const files = [
+  ...new Set([...list(['ls-files', '-z']), ...list(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z'])]),
+];
 
 const problems = [];
 for (const file of files) {
