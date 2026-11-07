@@ -4,14 +4,18 @@ A platform for broadcasting structured trading signals to paying subscribers, wi
 
 It communicates signals. **It does not place orders or connect to brokers**, and it never assumes anyone acted on a signal.
 
-> **Status: ready for local development and testing. Not ready for real subscribers.** Compliance review is a hard blocker,
-> and deployment and real-device push are unverified. See [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md).
+> **Status: ready for local development and testing. Not ready for real subscribers.** The Android app is tested end to end on an
+> emulator, and the app has been confirmed by hand on a real iPhone in Expo Go. No real push notification has reached any device yet.
+> Compliance review is a hard blocker, and deployment is unverified. See [docs/MOBILE_AUDIT.md](docs/MOBILE_AUDIT.md) and
+> [docs/FINAL_AUDIT.md](docs/FINAL_AUDIT.md).
 
 ## What it does
 
+The main product is the **native Android and iOS app** in `apps/mobile` (React Native, Expo, TypeScript). The web app stays alongside it, and both use the same API. See [docs/MOBILE.md](docs/MOBILE.md).
+
 **Administrators** publish a signal in a few keystrokes: levels are calculated per instrument and previewed before anything is sent. They then activate, move stops, book partial profit, close and correct trades, manage subscribers, and watch delivery health and internal performance.
 
-**Subscribers** get a live feed on their phone, see the current levels of every active trade, and can search history. Updates always read as updates, tied to their trade.
+**Subscribers** get a live feed in the app, with native notifications, see the current levels of every active trade, and can search history. Updates always read as updates, tied to their trade.
 
 **Visitors** see a service description and risk disclosure. Public results are built, but closed behind two independent compliance keys.
 
@@ -51,6 +55,8 @@ Before anything else, check the instrument assumptions: see [docs/ASSUMPTIONS.md
 | `npm run test:integration`                                  | Real API, worker and PostgreSQL. Starts its own                                                                                  |
 | `npm run test:e2e`                                          | Browser journeys. First: `PLAYWRIGHT_BROWSERS_PATH=0 npx playwright install chromium webkit`, and run with the same variable set |
 | `npm run test:perf`                                         | Measured latency and throughput                                                                                                  |
+| `npm run mobile`                                            | Start the phone app's development server. See [docs/MOBILE.md](docs/MOBILE.md)                                                   |
+| `npm run test:mobile`                                       | The phone app's component and logic tests                                                                                        |
 | `npm run lint`, `npm run typecheck`, `npm run format:check` | Static checks                                                                                                                    |
 | `npm run db:migrate`, `npm run db:seed`                     | Database setup                                                                                                                   |
 | `npm run admin:create -- <login> "<Name>"`                  | Provision an administrator                                                                                                       |

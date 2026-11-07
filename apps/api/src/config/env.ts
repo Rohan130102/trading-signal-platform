@@ -49,6 +49,14 @@ const schema = z
     PUSH_ENDPOINT_ALLOWLIST: list(
       'fcm.googleapis.com,updates.push.services.mozilla.com,*.push.services.mozilla.com,web.push.apple.com,*.push.apple.com,*.notify.windows.com',
     ),
+    /** Native push through Expo's service. Tokens are per device and need no key on this server. */
+    EXPO_PUSH_ENABLED: flag(true),
+    EXPO_PUSH_API_URL: z.string().default('https://exp.host/--/api/v2/push'),
+    /** Optional. Required only if "enhanced push security" is turned on for the Expo project. */
+    EXPO_ACCESS_TOKEN: z.string().optional(),
+    /** Expo advises waiting about 15 minutes before asking what happened to a message. */
+    EXPO_RECEIPT_DELAY_SECONDS: z.coerce.number().int().min(0).default(900),
+    EXPO_RECEIPT_POLL_SECONDS: z.coerce.number().int().min(1).default(60),
     /** Second key for the public performance gate. Useless without a current approval record. */
     PUBLIC_PERFORMANCE_ENABLED: flag(false),
     RUN_WORKER_IN_API: flag(false),

@@ -1,12 +1,13 @@
 'use client';
 
+import type { SubscriberDetail } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, KeyRound, LogOut, PauseCircle, PlayCircle, RefreshCw, CalendarClock } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { toast } from 'sonner';
-import { AccessBadge, CredentialsCard, type SubscriberRow } from '@/components/admin/subscriber-parts';
+import { AccessBadge, CredentialsCard } from '@/components/admin/subscriber-parts';
 import {
   Button,
   Card,
@@ -24,20 +25,7 @@ import {
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime, formatLocalDate, newKey } from '@/lib/format';
 
-interface Detail extends SubscriberRow {
-  events: {
-    id: string;
-    type: string;
-    mode: string | null;
-    durationDays: number | null;
-    lastValidDate: string;
-    note: string | null;
-    actorName: string;
-    createdAt: string;
-  }[];
-  devices: { id: string; deviceLabel: string | null; createdAt: string; lastAcceptedAt: string | null }[];
-  sessions: { id: string; deviceLabel: string | null; lastSeenAt: string }[];
-}
+type Detail = SubscriberDetail;
 
 const EVENT_LABEL = (e: Detail['events'][number]) => {
   if (e.type === 'CREATED') return `Created for ${e.durationDays} days`;

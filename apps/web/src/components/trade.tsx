@@ -2,10 +2,11 @@
 
 import {
   BASIS_LABELS,
+  basisShort,
   type CalculationBasis,
+  eventHeading,
   CLOSE_REASON_LABELS,
   type Direction,
-  type EventCategory,
   type FeedEvent,
   formatPrice,
   type PublicOutcome,
@@ -76,19 +77,6 @@ const TONE_TEXT: Record<TemplateTone, string> = {
   STOP: 'text-stop',
   NEUTRAL: 'text-muted',
 };
-
-function categoryLabel(category: EventCategory, ref?: string): string {
-  switch (category) {
-    case 'NEW_SIGNAL':
-      return 'New signal';
-    case 'UPDATE':
-      return `Update to ${ref ?? 'trade'}`;
-    case 'CLOSURE':
-      return `Closed: ${ref ?? 'trade'}`;
-    case 'ANNOUNCEMENT':
-      return 'Announcement';
-  }
-}
 
 const nowListeners = new Set<() => void>();
 let nowValue = Date.now();
@@ -213,11 +201,6 @@ export function Levels({
   );
 }
 
-/** A figure is never shown without saying what it rests on. */
-function basisShort(basis: CalculationBasis | undefined): string {
-  return basis === 'ADMIN_DECLARED_EXECUTION' ? 'declared by the administrator, unverified' : 'hypothetical';
-}
-
 /** Shows a change as before → after, which is what makes an update readable at a glance. */
 function ChangeLine({ event }: { event: FeedEvent }) {
   const p = event.payload;
@@ -309,7 +292,7 @@ export function FeedCard({ event, fresh }: { event: FeedEvent; fresh?: boolean }
   const heading = (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className={clsx('text-xs font-semibold uppercase tracking-wide', TONE_TEXT[tone])}>
-        {categoryLabel(event.category, p.ref)}
+        {eventHeading(event.type, event.category, p.ref)}
       </span>
       {urgent && (
         <Badge tone="update">

@@ -16,6 +16,7 @@ const GATED_API_PORT = 4102;
 const CONTROL_PORT = 4103;
 const PUSH_PORT = 4104;
 const LIMITED_API_PORT = 4105;
+const EXPO_PORT = 4106;
 const ORIGIN = 'http://app.test';
 
 declare module 'vitest' {
@@ -94,6 +95,9 @@ export default async function setup(project: TestProject): Promise<() => Promise
     VAPID_PRIVATE_KEY: vapid.privateKey,
     VAPID_SUBJECT: 'mailto:test@example.test',
     PUSH_ENDPOINT_ALLOWLIST: 'localhost,fcm.googleapis.com',
+    EXPO_PUSH_API_URL: `http://localhost:${EXPO_PORT}`,
+    EXPO_RECEIPT_DELAY_SECONDS: '1',
+    EXPO_RECEIPT_POLL_SECONDS: '1',
     NODE_TLS_REJECT_UNAUTHORIZED: '0',
     WORKER_POLL_MS: '200',
     WORKER_LOCK_TIMEOUT_SECONDS: '4',
@@ -147,6 +151,54 @@ export default async function setup(project: TestProject): Promise<() => Promise
     },
   );
   await new Promise<void>((r) => pushServer.listen(PUSH_PORT, r));
+
+  // Stands in for Expo's push service. A token's name decides how it behaves.
+  const expoLog: { message: Record<string, unknown>; ticket: unknown; httpStatus: number }[] = [];
+  const expoReceipts = new Map<string, unknown>();
+  const expoSeen = new Map<string, number>();
+  const expoServer = createServer((req, res) => {
+    void json(req).then((raw) => {
+      const body = JSON.parse(raw.toString() || '{}') as { ids?: string[] } | Record<string, unknown>[];
+      const reply = (status: number, value: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(value));
+      };
+      if (req.url === '/getReceipts') {
+        const ids = (body as { ids: string[] }).ids;
+        return reply(200, {
+          data: Object.fromEntries(ids.filter((id) => expoReceipts.has(id)).map((id) => [id, expoReceipts.get(id)])),
+        });
+      }
+      const messages = body as Record<string, unknown>[];
+      const message = messages[0] as Record<string, unknown>;
+      const token = String(message.to);
+      const seen = expoSeen.get(token) ?? 0;
+      expoSeen.set(token, seen + 1);
+      if (token.includes('[http500') && seen === 0) {
+        expoLog.push({ message, ticket: null, httpStatus: 500 });
+        return reply(500, { errors: [{ code: 'INTERNAL', message: 'try later' }] });
+      }
+      let ticket: Record<string, unknown>;
+      if (token.includes('[gone'))
+        ticket = { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } };
+      else if (token.includes('[toobig'))
+        ticket = { status: 'error', message: 'big', details: { error: 'MessageTooBig' } };
+      else if (token.includes('[rate') && seen === 0)
+        ticket = { status: 'error', message: 'slow', details: { error: 'MessageRateExceeded' } };
+      else {
+        const id = randomBytes(8).toString('hex');
+        ticket = { status: 'ok', id };
+        if (token.includes('[lategone'))
+          expoReceipts.set(id, { status: 'error', details: { error: 'DeviceNotRegistered' } });
+        else if (token.includes('[latefail'))
+          expoReceipts.set(id, { status: 'error', details: { error: 'MismatchSenderId' } });
+        else expoReceipts.set(id, { status: 'ok' });
+      }
+      expoLog.push({ message, ticket, httpStatus: 200 });
+      return reply(200, { data: [ticket] });
+    });
+  });
+  await new Promise<void>((r) => expoServer.listen(EXPO_PORT, r));
 
   const start = (entry: string, env: NodeJS.ProcessEnv): ChildProcess => {
     const child = spawn('node', [entry], { cwd: apiDir, env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -223,6 +275,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
       switch (req.url) {
         case '/push-log':
           return reply(pushLog);
+        case '/expo-log':
+          return reply(expoLog);
         case '/worker/kill':
           await stopChild(worker, 'SIGKILL');
           worker = null;
@@ -273,6 +327,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
       stopChild(secondWorker),
     ]);
     await new Promise<void>((r) => control.close(() => r()));
+    expoServer.closeAllConnections();
+    await new Promise<void>((r) => expoServer.close(() => r()));
     pushServer.closeAllConnections();
     await new Promise<void>((r) => pushServer.close(() => r()));
     await pg.stop().catch(() => undefined);

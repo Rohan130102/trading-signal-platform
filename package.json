@@ -22,7 +22,7 @@
     "start:api": "npm run start -w @signaldesk/api",
     "start:worker": "npm run start:worker -w @signaldesk/api",
     "start:web": "npm run start -w @signaldesk/web",
-    "typecheck": "npm run build -w @signaldesk/domain && npm run typecheck -w @signaldesk/domain && npm run typecheck -w @signaldesk/api && npm run typecheck -w @signaldesk/web",
+    "typecheck": "npm run build -w @signaldesk/domain && npm run typecheck -w @signaldesk/domain && npm run typecheck -w @signaldesk/api && npm run typecheck -w @signaldesk/web && npm run typecheck -w @signaldesk/mobile",
     "lint": "eslint . --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -32,7 +32,9 @@
     "test:e2e": "playwright test",
     "test:perf": "node scripts/perf.mjs",
     "openapi": "npm run openapi -w @signaldesk/api",
-    "admin:reset": "npm run admin:reset -w @signaldesk/api"
+    "admin:reset": "npm run admin:reset -w @signaldesk/api",
+    "test:mobile": "npm run build -w @signaldesk/domain && npm test -w @signaldesk/mobile",
+    "mobile": "npm start -w @signaldesk/mobile"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.14.0",
@@ -48,5 +50,9 @@
     "web-push": "3.6.7",
     "ws": "8.22.1",
     "eslint-plugin-react-hooks": "7.1.1"
+  },
+  "overrides": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
   }
 }

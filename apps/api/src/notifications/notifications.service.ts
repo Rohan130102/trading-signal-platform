@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { pushSubscribeSchema } from '@signaldesk/domain';
+import {
+  type NotificationPreferences,
+  type PushConfig,
+  type PushDevice,
+  pushSubscribeSchema,
+  registerDeviceSchema,
+} from '@signaldesk/domain';
 import type { z } from 'zod';
 import { AppError } from '../common/http.js';
 import { CH_PUSH } from '../db/listener.service.js';
@@ -17,8 +23,37 @@ export class NotificationsService {
     private readonly audit: AuditService,
   ) {}
 
-  config() {
-    return { available: this.transport.available, publicKey: this.transport.publicKey, mode: this.transport.mode };
+  config(): PushConfig {
+    return {
+      available: this.transport.webAvailable,
+      publicKey: this.transport.publicKey,
+      mode: this.transport.mode,
+      nativeAvailable: this.transport.nativeAvailable,
+    };
+  }
+
+  /** A token belongs to one installed app. Registering moves it, so a shared phone follows whoever signed in last. */
+  async registerNativeDevice(userId: string, sessionId: string, input: z.infer<typeof registerDeviceSchema>) {
+    if (!this.transport.nativeAvailable) {
+      throw new AppError(503, 'NATIVE_PUSH_UNAVAILABLE', 'Notifications are not available on this service right now.');
+    }
+    const fields = {
+      userId,
+      sessionId,
+      channel: 'EXPO' as const,
+      platform: input.platform,
+      deviceLabel: input.deviceLabel,
+    };
+    const row = await this.prisma.pushSubscription.upsert({
+      where: { endpoint: input.token },
+      create: { ...fields, endpoint: input.token },
+      update: { ...fields, invalidatedAt: null },
+    });
+    return { id: row.id };
+  }
+
+  async unregisterNativeDevice(userId: string, token: string): Promise<void> {
+    await this.unsubscribe(userId, token);
   }
 
   /** An endpoint belongs to one browser. Re-registering moves it, so a shared device stops getting the previous person's alerts. */
@@ -55,7 +90,7 @@ export class NotificationsService {
     });
   }
 
-  async devices(userId: string, sessionId: string) {
+  async devices(userId: string, sessionId: string): Promise<PushDevice[]> {
     const rows = await this.prisma.pushSubscription.findMany({
       where: { userId, invalidatedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -63,6 +98,8 @@ export class NotificationsService {
     return rows.map((r) => ({
       id: r.id,
       deviceLabel: r.deviceLabel,
+      channel: r.channel,
+      platform: r.platform,
       createdAt: r.createdAt.toISOString(),
       lastAcceptedAt: r.lastAcceptedAt?.toISOString() ?? null,
       thisDevice: r.sessionId === sessionId,
@@ -76,13 +113,17 @@ export class NotificationsService {
     const results = await Promise.all(
       devices.map((d) =>
         this.transport.send(
-          { endpoint: d.endpoint, p256dh: d.p256dh, auth: d.auth },
+          d.channel === 'EXPO'
+            ? { channel: 'EXPO', endpoint: d.endpoint }
+            : { channel: 'WEB_PUSH', endpoint: d.endpoint, p256dh: d.p256dh as string, auth: d.auth as string },
           {
             title: 'Test notification',
             body: 'If you can read this, notifications reach this device.',
             url: '/app/account',
+            path: '/account',
             tag: `test-${d.id}`,
             urgent: false,
+            androidChannel: 'announcements',
           },
         ),
       ),
@@ -94,7 +135,7 @@ export class NotificationsService {
     };
   }
 
-  async getPreferences(userId: string) {
+  async getPreferences(userId: string): Promise<NotificationPreferences> {
     const row = await this.prisma.notificationPreference.findUnique({ where: { userId } });
     return {
       pushNewSignals: row?.pushNewSignals ?? true,
@@ -182,6 +223,7 @@ export class NotificationsService {
       },
       push: {
         transport: this.transport.mode,
+        nativeAvailable: this.transport.nativeAvailable,
         last24h: {
           accepted: counts.ACCEPTED ?? 0,
           pending: (counts.PENDING ?? 0) + (counts.SENDING ?? 0) + (counts.RETRY ?? 0),

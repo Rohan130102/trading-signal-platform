@@ -85,6 +85,17 @@ transfers no assets, but that alone does not settle the question.
 subscriber data, so erasure would touch `users`, `sessions`, `push_subscriptions` and audit metadata, and must be
 balanced against record-keeping duties. It is a manual procedure today. Decide this before the obligations begin.
 
+## App stores
+
+A native app adds gatekeepers beyond the regulators. None of this has been tested with a real review. Details are in
+[MOBILE.md](MOBILE.md).
+
+- [ ] Apple's rules on financial trading and investing apps, including who may submit them
+- [ ] Google Play's financial features declaration and country-specific rules
+- [ ] Privacy labels and the data safety form
+- [ ] In-app account deletion: decide whether it applies, since only administrators create accounts
+- [ ] A demo account for reviewers, with no real signals
+
 ## Sign-off list
 
 Nothing below is complete. Each needs a named owner and evidence.

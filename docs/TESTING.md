@@ -1,6 +1,8 @@
 # Testing
 
-Everything below was executed on 5 November 2026, on the final code, on one Apple Silicon Mac with 8 GB of memory, Node 22.23.
+The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The tables below were
+executed on 5 November 2026 on the web platform. The unit, integration and web end-to-end suites were run again on 6 November after
+the mobile work, on one Apple Silicon Mac with 8 GB of memory, Node 22.23.
 
 ## Results
 
@@ -10,8 +12,8 @@ Everything below was executed on 5 November 2026, on the final code, on one Appl
 | TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                   |
 | ESLint, zero warnings allowed                                   | Pass                                                   |
 | Prettier                                                        | Pass                                                   |
-| Unit tests                                                      | **117 of 117**                                         |
-| Integration tests                                               | **146 of 146**                                         |
+| Unit tests                                                      | **154 of 154**                                         |
+| Integration tests                                               | **178 of 178**                                         |
 | End-to-end tests                                                | **77 of 77**                                           |
 | `npm audit --omit=dev`                                          | **0 vulnerabilities**                                  |
 | `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship |
@@ -39,7 +41,7 @@ npm run build && PLAYWRIGHT_BROWSERS_PATH=0 npm run test:e2e
 ulimit -n 20000 && SOCKETS=1000 EVENTS=100 DEVICES=500 npm run test:perf
 ```
 
-Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 3000 and 4000 free (E2E) or 4101 to 4105 free (integration).
+Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 3000 and 4000 free (E2E) or 4101 to 4106 free (integration).
 
 ## Layers
 
@@ -51,16 +53,17 @@ Pure logic with no I/O: BUY and SELL calculations, ranges, per-instrument point 
 
 Black-box. Real API and worker **processes**, real PostgreSQL, real `ws` clients, and a local HTTPS push service. Nothing is mocked inside the application.
 
-| File             | Tests | Highlights                                                                                                                                                                                                                                               |
-| ---------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth`           | 27    | No account enumeration, throttling, forced password change, session revocation, MFA including code replay and single-use recovery codes, malformed input                                                                                                 |
-| `authorization`  | 14    | **Walks the live route table**, so a new route is covered automatically: anonymous gets 401 and subscribers get 403 on every admin route, expired gets 403 on every signal route. Position and money never reach subscribers                             |
-| `signals`        | 43    | The brief's worked example; twenty simultaneous identical submissions make one signal; concurrent administrators; full lifecycle; corrections; **direct SQL attempts to alter history are refused**; tampering is detected; timestamps are true instants |
-| `subscription`   | 18    | Expiry at the exact instant; renewal policies; sockets closing on expiry, suspension, revocation and sign-out                                                                                                                                            |
-| `realtime`       | 12    | Missed events exactly once and in order; concurrent publishers arrive in the same order at every client; bad messages                                                                                                                                    |
-| `push`           | 20    | **Decrypts real Web Push payloads** using RFC 8291 and checks VAPID headers; hidden previews contain no prices; invalid devices removed; backoff; access re-checked at send time; **worker killed with SIGKILL**; two workers do not double-send         |
-| `public`         | 10    | Public performance needs both keys; revocation closes it; no private data crosses                                                                                                                                                                        |
-| `zz-reliability` | 2     | **PostgreSQL actually stopped and restarted**: safe errors, recovery, retry publishes once, sockets catch up; rate limiting                                                                                                                              |
+| File             | Tests | Highlights                                                                                                                                                                                                                                                                         |
+| ---------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth`           | 27    | No account enumeration, throttling, forced password change, session revocation, MFA including code replay and single-use recovery codes, malformed input                                                                                                                           |
+| `authorization`  | 14    | **Walks the live route table**, so a new route is covered automatically: anonymous gets 401 and subscribers get 403 on every admin route, expired gets 403 on every signal route. Position and money never reach subscribers                                                       |
+| `signals`        | 43    | The brief's worked example; twenty simultaneous identical submissions make one signal; concurrent administrators; full lifecycle; corrections; **direct SQL attempts to alter history are refused**; tampering is detected; timestamps are true instants                           |
+| `subscription`   | 18    | Expiry at the exact instant; renewal policies; sockets closing on expiry, suspension, revocation and sign-out                                                                                                                                                                      |
+| `realtime`       | 12    | Missed events exactly once and in order; concurrent publishers arrive in the same order at every client; bad messages                                                                                                                                                              |
+| `push`           | 20    | **Decrypts real Web Push payloads** using RFC 8291 and checks VAPID headers; hidden previews contain no prices; invalid devices removed; backoff; access re-checked at send time; **worker killed with SIGKILL**; two workers do not double-send                                   |
+| `public`         | 10    | Public performance needs both keys; revocation closes it; no private data crosses                                                                                                                                                                                                  |
+| `mobile`         | 32    | Native clients: bearer sign-in and access, no Origin needed but no cookie exemption, live stream with a token, device registration and ownership, push payloads and Android channels, hidden previews, receipts removing dead devices, retries, a worker crash with no double send |
+| `zz-reliability` | 2     | **PostgreSQL actually stopped and restarted**: safe errors, recovery, retry publishes once, sockets catch up; rate limiting                                                                                                                                                        |
 
 ### End-to-end: `e2e`
 
@@ -115,14 +118,14 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 
 ## Not covered
 
-| Gap                                                             | Why                                                         | What to do                                                                            |
-| --------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Real push services and real phones                              | Headless browsers cannot subscribe to FCM, Apple or Mozilla | On staging with HTTPS, test Android Chrome and an iPhone installed to the Home Screen |
-| Tapping a notification opens the trade                          | The handler exists, with no automated test                  | Check by hand in the same session                                                     |
-| Real iOS and Android devices                                    | Emulation only                                              | As above                                                                              |
-| Firefox                                                         | Browser not included                                        | Add to Playwright                                                                     |
-| Docker, Compose, Caddy, CI workflow, backup and restore scripts | No Docker daemon or `pg_dump` here. Syntax checked only     | First staging deployment, and rehearse a restore                                      |
-| Screen reader use                                               | Needs a person                                              | VoiceOver and TalkBack pass                                                           |
-| Load beyond 1,000 sockets, multiple API instances               | Not measured. Multiple workers are tested                   | Load test on staging hardware                                                         |
-| Slow mobile networks                                            | Not simulated beyond disconnects                            | Throttled test on staging                                                             |
-| Independent security testing                                    | Self-review only                                            | Commission a penetration test                                                         |
+| Gap                                                             | Why                                                                                            | What to do                                                                                                        |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Real push services and real phones                              | Headless browsers cannot subscribe to FCM, Apple or Mozilla, and native push needs credentials | On staging with HTTPS, test Android Chrome and an iPhone installed to the Home Screen, and the native app on both |
+| Tapping a notification opens the trade                          | The handler exists, with no automated test                                                     | Check by hand in the same session                                                                                 |
+| Real iOS and Android devices                                    | Emulation only                                                                                 | As above                                                                                                          |
+| Firefox                                                         | Browser not included                                                                           | Add to Playwright                                                                                                 |
+| Docker, Compose, Caddy, CI workflow, backup and restore scripts | No Docker daemon or `pg_dump` here. Syntax checked only                                        | First staging deployment, and rehearse a restore                                                                  |
+| Screen reader use                                               | Needs a person                                                                                 | VoiceOver and TalkBack pass                                                                                       |
+| Load beyond 1,000 sockets, multiple API instances               | Not measured. Multiple workers are tested                                                      | Load test on staging hardware                                                                                     |
+| Slow mobile networks                                            | Not simulated beyond disconnects                                                               | Throttled test on staging                                                                                         |
+| Independent security testing                                    | Self-review only                                                                               | Commission a penetration test                                                                                     |

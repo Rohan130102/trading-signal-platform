@@ -7,12 +7,13 @@ import {
   CLOSE_REASON_LABELS,
   CLOSE_REASONS,
   type CloseReason,
-  computeClosureResult,
+  defaultExitBasis,
   formatPoints,
   formatPrice,
   isDecimalLiteral,
-  pointsToPriceDistance,
-  toDec,
+  previewExit,
+  remainingFraction,
+  trailStopPrice,
   type InstrumentSpec,
 } from '@signaldesk/domain';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -406,11 +407,10 @@ function TrailForm({ trade, run, pending, error }: FormProps) {
   const [points, setPoints] = useState('');
   const [comment, setComment] = useState('');
   const spec = specOf(trade);
-  const computed = useMemo(() => {
-    if (!isDecimalLiteral(reference.trim()) || !isDecimalLiteral(points.trim())) return null;
-    const distance = pointsToPriceDistance(spec, points.trim());
-    return trade.direction === 'BUY' ? toDec(reference.trim()).minus(distance) : toDec(reference.trim()).plus(distance);
-  }, [points, reference, spec, trade.direction]);
+  const computed = useMemo(
+    () => trailStopPrice(spec, trade.direction, reference, points),
+    [points, reference, spec, trade.direction],
+  );
   const submit = (e: FormEvent) => {
     e.preventDefault();
     run({ referencePrice: reference.trim(), trailPoints: points.trim(), comment: optional(comment) });
@@ -508,9 +508,7 @@ function TargetsForm({ trade, run, pending, error }: FormProps) {
 }
 
 function ExitForm({ trade, run, pending, error, final }: FormProps & { final: boolean }) {
-  const defaultBasis: CalculationBasis =
-    trade.closures.find((c) => !c.superseded)?.basis ??
-    (trade.execution ? 'ADMIN_DECLARED_EXECUTION' : trade.entryType === 'SINGLE' ? 'HYPOTHETICAL_OUTCOME' : 'NONE');
+  const defaultBasis = defaultExitBasis(trade);
   const [exitPrice, setExitPrice] = useState('');
   const [reason, setReason] = useState<CloseReason>('MANUAL');
   const [basis, setBasis] = useState<CalculationBasis>(defaultBasis);
@@ -522,33 +520,13 @@ function ExitForm({ trade, run, pending, error, final }: FormProps & { final: bo
   const hasBasisLocked = trade.closures.some((c) => !c.superseded);
   const openTargets = trade.targets.filter((t) => t.status === 'OPEN');
 
-  const remaining = toDec('1').minus(toDec(trade.closedFraction));
-  const fraction = final ? remaining : isDecimalLiteral(percent.trim()) ? toDec(percent.trim()).dividedBy(100) : null;
-  const quantity =
-    trade.execution?.quantity && basis === 'ADMIN_DECLARED_EXECUTION' && fraction
-      ? toDec(trade.execution.quantity).times(fraction).toFixed()
-      : null;
-
-  const preview = useMemo(() => {
-    if (!isDecimalLiteral(exitPrice.trim())) return null;
-    const entryPrice =
-      basis === 'ADMIN_DECLARED_EXECUTION'
-        ? (trade.execution?.entryPrice ?? null)
-        : basis === 'HYPOTHETICAL_OUTCOME' && isDecimalLiteral(hypothetical.trim())
-          ? hypothetical.trim()
-          : null;
-    return computeClosureResult({
-      direction: trade.direction,
-      basis,
-      entryPrice,
-      exitPrice: exitPrice.trim(),
-      fraction: fraction?.toFixed() ?? '1',
-      quantity,
-      contractMultiplier: quantity ? trade.contractMultiplier : null,
-      fees: isDecimalLiteral(fees.trim()) ? fees.trim() : null,
-      pointSize: trade.pointSize,
-    });
-  }, [basis, exitPrice, fees, fraction, hypothetical, quantity, trade]);
+  const remaining = remainingFraction(trade);
+  const exit = useMemo(
+    () => previewExit({ trade, basis, exitPrice, hypotheticalEntry: hypothetical, fees, final, percent }),
+    [basis, exitPrice, fees, final, hypothetical, percent, trade],
+  );
+  const preview = exit?.result ?? null;
+  const quantity = exit?.quantity ?? null;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();

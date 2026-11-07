@@ -3,9 +3,8 @@
 import {
   BASIS_LABELS,
   type CalculationBasis,
+  type PerformanceReport,
   type PerformanceStats,
-  type TradeAggregate,
-  type TradeSummary,
   formatPrice,
   toDec,
 } from '@signaldesk/domain';
@@ -31,16 +30,7 @@ import {
 import { api, queryString } from '@/lib/api';
 import { formatDateTime, money, signedPoints } from '@/lib/format';
 
-interface Report {
-  lifecycle: PerformanceStats;
-  byBasis: { basis: CalculationBasis; stats: PerformanceStats }[];
-  byInstrument: { symbol: string; byBasis: { basis: CalculationBasis; stats: PerformanceStats }[] }[];
-  records: (TradeSummary & { aggregate: TradeAggregate | null; corrected: boolean })[];
-  truncated: boolean;
-  quoteCurrency: string | null;
-  pointsComparable: boolean;
-  methodology: { version: string; statements: string[] };
-}
+type Report = PerformanceReport;
 
 const pct = (value: string | null) =>
   value === null ? 'n/a' : `${toDec(value).times(100).toDecimalPlaces(1).toFixed()}%`;

@@ -1,29 +1,11 @@
 'use client';
 
+import type { SubscriberRow } from '@signaldesk/domain';
 import { Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { Badge, Button } from '@/components/ui';
 
-export interface SubscriberRow {
-  id: string;
-  name: string;
-  email: string | null;
-  phone: string | null;
-  loginId: string;
-  status: 'ACTIVE' | 'SUSPENDED' | 'DISABLED';
-  notes: string | null;
-  mustChangePassword: boolean;
-  lastLoginAt: string | null;
-  createdAt: string;
-  subscription: {
-    state: string;
-    startsAt: string | null;
-    expiresAt: string | null;
-    lastValidDate: string | null;
-    daysRemaining: number;
-    timezone: string;
-  };
-}
+export type { SubscriberRow };
 
 export function AccessBadge({ row }: { row: Pick<SubscriberRow, 'status' | 'subscription'> }) {
   if (row.status !== 'ACTIVE')

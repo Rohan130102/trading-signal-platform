@@ -39,3 +39,5 @@ apps/mobile/dist/
 google-services.json
 GoogleService-Info.plist
 *-service-account*.json
+apps/mobile/e2e/.state.json
+apps/mobile/e2e/artifacts/

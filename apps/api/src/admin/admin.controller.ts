@@ -90,7 +90,7 @@ export class AdminController {
         href: '/admin/notifications',
       });
     }
-    if (health.push.transport === 'disabled') {
+    if (health.push.transport === 'disabled' && !health.push.nativeAvailable) {
       alerts.push({
         level: 'WARNING',
         message: 'Push notifications are not configured. Subscribers get in-app updates only.',

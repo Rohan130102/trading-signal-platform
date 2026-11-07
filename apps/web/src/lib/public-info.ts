@@ -1,13 +1,6 @@
-export interface PublicInfo {
-  serviceName: string;
-  serviceDescription: string;
-  legalEntityName: string;
-  regulatoryStatement: string;
-  riskDisclosure: string;
-  privacyNotice: string;
-  supportContact: string;
-  publicResultsAvailable: boolean;
-}
+import type { PublicInfo } from '@signaldesk/domain';
+
+export type { PublicInfo };
 
 const FALLBACK: PublicInfo = {
   serviceName: 'SignalDesk',

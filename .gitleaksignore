@@ -1,0 +1,7 @@
+# Each entry was read and confirmed not to be a real secret. History is never rewritten, so a false
+# positive in an old commit is recorded here rather than removed.
+#
+# Made-up push subscription keys in a test that checks an invalid endpoint is refused.
+529b042b11959114b523d8a0aa93b67f6e1799ef:apps/api/test/authorization.test.ts:generic-api-key:141
+# A throwaway password for a local load test, against a database the script creates and deletes.
+529b042b11959114b523d8a0aa93b67f6e1799ef:scripts/perf.mjs:generic-api-key:156

@@ -103,7 +103,12 @@ export class AuthService {
     const context = this.buildContext(row, now);
     if (!context) return null;
     if (now.getTime() - row.lastSeenAt.getTime() > 60_000) {
-      await this.prisma.session.update({ where: { id: row.id }, data: { lastSeenAt: now } });
+      // A subscriber who keeps using the app stays signed in, and so keeps getting alerts on that device.
+      const slide =
+        row.user.role === 'SUBSCRIBER'
+          ? { expiresAt: new Date(now.getTime() + env.SESSION_TTL_DAYS * 86_400_000) }
+          : {};
+      await this.prisma.session.update({ where: { id: row.id }, data: { lastSeenAt: now, ...slide } });
     }
     return context;
   }

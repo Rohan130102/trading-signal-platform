@@ -1,11 +1,17 @@
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
-import { eventCategory, type EventType, evaluateSignalAccess } from '@signaldesk/domain';
+import {
+  androidChannelFor,
+  eventCategory,
+  type EventType,
+  evaluateSignalAccess,
+  mobileDeepLinkPath,
+} from '@signaldesk/domain';
 import { log } from '../common/log.js';
 import { env } from '../config/env.js';
 import { CH_EVENTS, CH_PUSH, ListenerService } from '../db/listener.service.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { TradesService } from '../trades/trades.service.js';
-import { PUSH_TTL_SECONDS, type PushMessage, PushTransport } from './push-transport.js';
+import { PUSH_TTL_SECONDS, type PushMessage, type PushTarget, PushTransport } from './push-transport.js';
 
 const OUTBOX_MAX_ATTEMPTS = 8;
 const PUSH_MAX_ATTEMPTS = 6;
@@ -67,6 +73,10 @@ export class WorkerService implements OnModuleDestroy {
       setInterval(guarded('heartbeat', beat), 5000),
       setInterval(() => void this.runOutbox(), env.WORKER_POLL_MS),
       setInterval(() => void this.runPush(), env.WORKER_POLL_MS),
+      setInterval(
+        guarded('expo_receipts', () => this.checkExpoReceipts()),
+        env.EXPO_RECEIPT_POLL_SECONDS * 1000,
+      ),
       setInterval(
         guarded('sweep', () => this.sweep()),
         15_000,
@@ -154,6 +164,13 @@ export class WorkerService implements OnModuleDestroy {
         ANNOUNCEMENT: 'COALESCE(np.push_announcements, true)',
       }[category],
     );
+    const channelAllowed = Prisma.raw(
+      [this.transport.webAvailable ? "'WEB_PUSH'" : null, this.transport.nativeAvailable ? "'EXPO'" : null]
+        .filter(Boolean)
+        .map((name) => `ps.channel = ${name}`)
+        .join(' OR ')
+        .replace(/^(.*)$/, '($1)'),
+    );
     const inserted = await this.prisma.$executeRaw`
       INSERT INTO push_deliveries (id, event_id, push_subscription_id, user_id, status, next_attempt_at, updated_at)
       SELECT gen_random_uuid(), ${eventId}::uuid, ps.id, ps.user_id, 'PENDING', now(), now()
@@ -163,6 +180,7 @@ export class WorkerService implements OnModuleDestroy {
       LEFT JOIN subscriptions sub ON sub.user_id = u.id
       LEFT JOIN notification_preferences np ON np.user_id = u.id
       WHERE ps.invalidated_at IS NULL
+        AND ${channelAllowed}
         AND ${preference}
         AND (u.role = 'ADMIN' OR (sub.starts_at <= now() AND sub.expires_at > now()))
       ON CONFLICT (event_id, push_subscription_id) DO NOTHING`;
@@ -257,15 +275,23 @@ export class WorkerService implements OnModuleDestroy {
     const hide = user.preferences?.hidePreview ?? false;
     const message: PushMessage = {
       title: hide ? 'New update' : event.title,
-      body: hide ? 'Open the app to read it.' : event.body.split('\n').slice(0, 4).join('\n'),
+      body: hide ? 'Open the app to read it.' : event.body.split('\n').slice(0, 4).join('\n').slice(0, 1000),
       url: event.tradeId ? `/app/trades/${event.tradeId}` : '/app',
+      path: mobileDeepLinkPath(event.tradeId),
       tag: event.id,
       urgent: event.priority === 'PRIORITY' || event.type === 'SIGNAL_PUBLISHED',
+      androidChannel: androidChannelFor(eventCategory(event.type as EventType), event.priority),
     };
-    const result = await this.transport.send(
-      { endpoint: device.endpoint, p256dh: device.p256dh, auth: device.auth },
-      message,
-    );
+    const target: PushTarget =
+      device.channel === 'EXPO'
+        ? { channel: 'EXPO', endpoint: device.endpoint }
+        : {
+            channel: 'WEB_PUSH',
+            endpoint: device.endpoint,
+            p256dh: device.p256dh as string,
+            auth: device.auth as string,
+          };
+    const result = await this.transport.send(target, message);
     switch (result.kind) {
       case 'ACCEPTED':
         await this.prisma.$transaction([
@@ -277,6 +303,7 @@ export class WorkerService implements OnModuleDestroy {
               lastStatusCode: result.statusCode,
               lastError: null,
               lockedAt: null,
+              receiptId: result.receiptId ?? null,
             },
           }),
           this.prisma.pushSubscription.update({ where: { id: device.id }, data: { lastAcceptedAt: now } }),
@@ -328,6 +355,58 @@ export class WorkerService implements OnModuleDestroy {
       where: { id },
       data: { status, lastStatusCode: statusCode, lastError: error, lockedAt: null },
     });
+  }
+
+  /**
+   * Expo first accepts a message, then later says whether Apple or Google took it. This is how a device
+   * that uninstalled the app gets removed. Safe to repeat, and to run on several workers at once.
+   */
+  async checkExpoReceipts(): Promise<void> {
+    if (!this.transport.nativeAvailable) return;
+    const now = Date.now();
+    const due = await this.prisma.pushDelivery.findMany({
+      where: {
+        receiptId: { not: null },
+        receiptCheckedAt: null,
+        acceptedAt: { lte: new Date(now - env.EXPO_RECEIPT_DELAY_SECONDS * 1000) },
+      },
+      orderBy: { acceptedAt: 'asc' },
+      take: 300,
+      select: { id: true, receiptId: true, acceptedAt: true, pushSubscriptionId: true },
+    });
+    if (due.length === 0) return;
+    const receipts = await this.transport.fetchExpoReceipts(due.map((d) => d.receiptId as string));
+    for (const delivery of due) {
+      const receipt = receipts[delivery.receiptId as string];
+      const checkedAt = new Date();
+      if (!receipt) {
+        // Expo keeps receipts for a day. After that nothing more can be learned.
+        if (now - (delivery.acceptedAt as Date).getTime() > 86_400_000) {
+          await this.prisma.pushDelivery.update({ where: { id: delivery.id }, data: { receiptCheckedAt: checkedAt } });
+        }
+        continue;
+      }
+      if (receipt.status === 'ok') {
+        await this.prisma.pushDelivery.update({ where: { id: delivery.id }, data: { receiptCheckedAt: checkedAt } });
+        continue;
+      }
+      const code = receipt.details?.error ?? 'Unknown';
+      const gone = code === 'DeviceNotRegistered';
+      await this.prisma.$transaction([
+        this.prisma.pushDelivery.update({
+          where: { id: delivery.id },
+          data: { status: gone ? 'GONE' : 'FAILED', lastError: `Expo receipt: ${code}`, receiptCheckedAt: checkedAt },
+        }),
+        ...(gone
+          ? [
+              this.prisma.pushSubscription.update({
+                where: { id: delivery.pushSubscriptionId },
+                data: { invalidatedAt: checkedAt },
+              }),
+            ]
+          : []),
+      ]);
+    }
   }
 
   /**

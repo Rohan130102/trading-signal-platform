@@ -14,6 +14,8 @@ export default tseslint.config(
       'test-results/**',
       'apps/web/public/**',
       'apps/web/next-env.d.ts',
+      'apps/mobile/.expo/**',
+      'apps/mobile/expo-env.d.ts',
     ],
   },
   js.configs.recommended,
@@ -26,7 +28,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/web/src/**/*.{ts,tsx}'],
+    files: ['apps/web/src/**/*.{ts,tsx}', 'apps/mobile/{app,src,test}/**/*.{ts,tsx}'],
     plugins: { 'react-hooks': reactHooks },
     rules: {
       'react-hooks/rules-of-hooks': 'error',
@@ -34,7 +36,25 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**', 'apps/api/src/scripts/**', 'apps/api/test/**', 'e2e/**', '**/*.test.ts'],
+    files: ['apps/mobile/*.js'],
+    languageOptions: {
+      sourceType: 'commonjs',
+      globals: { module: 'writable', require: 'readonly', __dirname: 'readonly' },
+    },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
+    files: [
+      'scripts/**',
+      'apps/api/src/scripts/**',
+      'apps/api/test/**',
+      'apps/mobile/e2e/**',
+      'apps/mobile/scripts/**',
+      'apps/mobile/test/**',
+      'e2e/**',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+    ],
     rules: { 'no-console': 'off', '@typescript-eslint/no-explicit-any': 'off' },
   },
   {
@@ -48,6 +68,8 @@ export default tseslint.config(
         clearTimeout: 'readonly',
         URL: 'readonly',
         performance: 'readonly',
+        Buffer: 'readonly',
+        AbortSignal: 'readonly',
       },
     },
   },

@@ -138,7 +138,7 @@ describe('web push', () => {
     await waitForPush(device);
     const eventId = trade.events[0].id;
     const rows = await waitUntil(async () => {
-      const r = await deliveries(eventId);
+      const r = await deliveries(eventId, device);
       return r.some((x) => x.status === 'ACCEPTED') ? r : false;
     });
     expect(rows.find((r) => r.status === 'ACCEPTED')?.last_status_code).toBe(201);

@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream';
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import { type AccessDecision, clientMessageSchema, type FeedEvent } from '@signaldesk/domain';
 import { WebSocket, WebSocketServer } from 'ws';
-import { parseCookies } from '../common/http.js';
+import { bearerToken, parseCookies } from '../common/http.js';
 import { log } from '../common/log.js';
 import { env } from '../config/env.js';
 import { AuthService } from '../auth/auth.service.js';
@@ -105,9 +105,13 @@ export class RealtimeGateway implements OnModuleDestroy {
   private async onUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     const url = new URL(req.url ?? '/', 'http://internal');
     if (url.pathname !== '/ws') return this.rejectUpgrade(socket, 404);
-    // Browsers attach cookies to cross-site WebSockets, so the Origin must be checked explicitly.
-    if (!req.headers.origin || !env.APP_ORIGINS.includes(req.headers.origin)) return this.rejectUpgrade(socket, 403);
-    const token = parseCookies(req.headers.cookie)[SESSION_COOKIE];
+    // Browsers attach cookies to cross-site WebSockets, so a cookie needs an allowed Origin. A browser
+    // page cannot set this header, so a bearer token needs no such check (native apps send their own Origin).
+    const bearer = bearerToken(req.headers.authorization);
+    if (!bearer && (!req.headers.origin || !env.APP_ORIGINS.includes(req.headers.origin))) {
+      return this.rejectUpgrade(socket, 403);
+    }
+    const token = bearer ?? parseCookies(req.headers.cookie)[SESSION_COOKIE];
     const context = token ? await this.auth.authenticate(token) : null;
     if (!context || context.next) return this.rejectUpgrade(socket, 401);
 

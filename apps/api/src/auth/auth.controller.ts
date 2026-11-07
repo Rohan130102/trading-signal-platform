@@ -7,6 +7,8 @@ import {
   mfaCodeSchema,
   type MeResponse,
   subscriptionState,
+  tokenLoginSchema,
+  type TokenLoginResponse,
 } from '@signaldesk/domain';
 import type { Request, Response } from 'express';
 import type { z } from 'zod';
@@ -46,6 +48,18 @@ export class AuthController {
       maxAge: ttlMs,
     });
     return { ok: true };
+  }
+
+  @Post('token')
+  @Public()
+  @HttpCode(200)
+  @Summary('Sign in from a native app. Returns a bearer token, once, for secure device storage.')
+  async nativeLogin(
+    @ZBody(tokenLoginSchema) body: z.infer<typeof tokenLoginSchema>,
+    @ClientIp() ip: string,
+  ): Promise<TokenLoginResponse> {
+    const { token, ttlMs } = await this.auth.login(body.identifier, body.password, ip, body.deviceLabel);
+    return { token, expiresAt: new Date(Date.now() + ttlMs).toISOString() };
   }
 
   @Post('logout')

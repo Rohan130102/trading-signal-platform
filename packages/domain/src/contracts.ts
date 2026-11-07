@@ -35,6 +35,12 @@ export const loginSchema = z.strictObject({
   identifier: z.string().trim().min(1, 'Enter your login ID').max(200),
   password: z.string().min(1, 'Enter your password').max(200),
 });
+/** Native clients: the session token comes back in the body rather than as a cookie. */
+export const tokenLoginSchema = z.strictObject({
+  identifier: z.string().trim().min(1, 'Enter your login ID').max(200),
+  password: z.string().min(1, 'Enter your password').max(200),
+  deviceLabel: z.string().trim().max(120).optional(),
+});
 export const changePasswordSchema = z.strictObject({
   currentPassword: z.string().min(1).max(200),
   newPassword: passwordSchema,
@@ -347,6 +353,16 @@ export const pushSubscribeSchema = z.strictObject({
   deviceLabel: shortText(120).optional(),
 });
 export const pushUnsubscribeSchema = z.strictObject({ endpoint: z.string().max(2000) });
+const expoPushToken = z
+  .string()
+  .trim()
+  .regex(/^Expo(nent)?PushToken\[[A-Za-z0-9_-]{8,200}\]$/, 'That is not a valid device token');
+export const registerDeviceSchema = z.strictObject({
+  token: expoPushToken,
+  platform: z.enum(['ios', 'android']),
+  deviceLabel: z.string().trim().max(120).optional(),
+});
+export const unregisterDeviceSchema = z.strictObject({ token: expoPushToken });
 export const preferencesSchema = z.strictObject({
   pushNewSignals: z.boolean(),
   pushUpdates: z.boolean(),

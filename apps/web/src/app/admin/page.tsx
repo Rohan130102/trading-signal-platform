@@ -1,6 +1,6 @@
 'use client';
 
-import type { DispatchSummary, TradeSummary } from '@signaldesk/domain';
+import type { DashboardResponse, TradeSummary } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, ArrowRight, CheckCircle2, CircleAlert, FileEdit, Megaphone, Plus } from 'lucide-react';
 import Link from 'next/link';
@@ -27,32 +27,6 @@ import {
 import { api } from '@/lib/api';
 import { formatDateTime, formatRelative, newKey, signedPoints } from '@/lib/format';
 import { formatPrice } from '@signaldesk/domain';
-
-interface Dashboard {
-  active: (TradeSummary & { aggregate: unknown })[];
-  awaitingEntry: TradeSummary[];
-  recentlyClosed: (TradeSummary & { aggregate: { weightedPoints: string | null; outcome: string } | null })[];
-  recentEvents: {
-    seq: number;
-    id: string;
-    tradeId: string | null;
-    title: string;
-    type: string;
-    tone: string;
-    createdAt: string;
-    dispatch: DispatchSummary | null;
-  }[];
-  drafts: number;
-  subscribers: { total: number; active: number; expired: number; expiringSoon: number };
-  expiring: { id: string; name: string; loginId: string; expiresAt: string | null }[];
-  health: {
-    status: string;
-    worker: { healthy: boolean; lastSeenSecondsAgo: number | null };
-    outbox: { pending: number; dead: number };
-    push: { transport: string };
-  };
-  alerts: { level: 'WARNING' | 'CRITICAL'; message: string; href: string }[];
-}
 
 function TradeRow({ trade }: { trade: TradeSummary }) {
   return (
@@ -158,7 +132,7 @@ export default function AdminDashboard() {
   const [announcing, setAnnouncing] = useState(false);
   const dash = useQuery({
     queryKey: ['admin', 'dashboard'],
-    queryFn: () => api.get<Dashboard>('/admin/dashboard'),
+    queryFn: () => api.get<DashboardResponse>('/admin/dashboard'),
     refetchInterval: 15_000,
   });
   const publish = (

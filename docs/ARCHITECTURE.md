@@ -22,6 +22,13 @@ Push services ◀──Web Push── worker (NestJS) ◀──▶ PostgreSQL �
 | `e2e`             | Playwright journeys and accessibility checks.                                                                                                                                                                                                    |
 | `scripts`         | Local database, environment setup, performance measurement.                                                                                                                                                                                      |
 
+## Native app
+
+`apps/mobile` is another client of the same API. It uses Expo Router for native navigation, TanStack Query for server state, and
+`LiveConnection` from `packages/domain` for the same live stream the web uses. It has no trade logic of its own: `composeSignal`,
+`previewExit`, `trailStopPrice`, `formatPrice` and the request schemas are the same code the server and web run. Native push is a
+second channel in the existing outbox and delivery pipeline. See [MOBILE.md](MOBILE.md).
+
 ## Key decisions
 
 | Decision         | Choice                                                               | Why                                                                                                                                                                                                                                                                                                                                              |

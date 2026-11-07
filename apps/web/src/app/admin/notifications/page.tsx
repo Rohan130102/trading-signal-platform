@@ -1,5 +1,6 @@
 'use client';
 
+import type { NotificationHealth } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
 import Link from 'next/link';
@@ -8,30 +9,7 @@ import { Badge, Button, Card, CardHeader, ErrorState, Loading, PageHeader, Stat 
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 
-interface Health {
-  status: 'HEALTHY' | 'ATTENTION';
-  worker: { healthy: boolean; lastSeenSecondsAgo: number | null; instances: number };
-  outbox: { pending: number; dead: number; oldestPendingSeconds: number | null };
-  push: {
-    transport: string;
-    last24h: { accepted: number; pending: number; failed: number; invalidated: number; skipped: number };
-    note: string;
-  };
-  live: {
-    last24h: { samples: number; p50Ms: number | null; p95Ms: number | null; maxMs: number | null };
-    sloTargetP95Ms: number;
-    note: string;
-  };
-  recentFailures: {
-    id: string;
-    attempts: number;
-    statusCode: number | null;
-    error: string | null;
-    at: string;
-    title: string;
-    tradeId: string | null;
-  }[];
-}
+type Health = NotificationHealth;
 
 export default function NotificationsPage() {
   const client = useQueryClient();

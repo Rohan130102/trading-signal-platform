@@ -6,16 +6,16 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 ## Conventions
 
-| Topic                   | Rule                                                                                                             |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Base path               | `/api/v1`. Health checks are at `/health/live` and `/health/ready`, outside it.                                  |
-| Authentication          | Session cookie, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Routes are private unless explicitly public. |
-| State-changing requests | Must carry an allowed `Origin` header, otherwise `403 BAD_ORIGIN`.                                               |
-| Prices and quantities   | Strings, such as `"3300.50"`. Never JSON numbers.                                                                |
-| Unknown fields          | Rejected with `422`.                                                                                             |
-| Idempotency             | Writes that could be repeated take an `idempotencyKey` (UUID). Repeating returns the original result.            |
-| Concurrency             | Trade commands take `expectedVersion`. A stale version returns `409 STALE_VERSION`.                              |
-| Caching                 | Everything is `Cache-Control: no-store` except `/public/info`.                                                   |
+| Topic                   | Rule                                                                                                                                                                                                                                                                                          |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path               | `/api/v1`. Health checks are at `/health/live` and `/health/ready`, outside it.                                                                                                                                                                                                               |
+| Authentication          | Browsers: session cookie, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Native apps: `Authorization: Bearer`, from `POST /auth/token`. Routes are private unless explicitly public. A bearer token is never combined with a cookie: if one is sent and invalid, the request is refused. |
+| State-changing requests | Must carry an allowed `Origin` header, otherwise `403 BAD_ORIGIN`. A request with a bearer token and no `Origin` is exempt, as is `POST /auth/token` with no `Origin`.                                                                                                                        |
+| Prices and quantities   | Strings, such as `"3300.50"`. Never JSON numbers.                                                                                                                                                                                                                                             |
+| Unknown fields          | Rejected with `422`.                                                                                                                                                                                                                                                                          |
+| Idempotency             | Writes that could be repeated take an `idempotencyKey` (UUID). Repeating returns the original result.                                                                                                                                                                                         |
+| Concurrency             | Trade commands take `expectedVersion`. A stale version returns `409 STALE_VERSION`.                                                                                                                                                                                                           |
+| Caching                 | Everything is `Cache-Control: no-store` except `/public/info`.                                                                                                                                                                                                                                |
 
 ## Errors
 
@@ -39,13 +39,21 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 ## Route groups
 
-| Prefix                                       | Who                          | Purpose                                             |
-| -------------------------------------------- | ---------------------------- | --------------------------------------------------- |
-| `/public/*`, `/health/*`                     | Anyone                       | Service information, gated results, health          |
-| `/auth/*`                                    | Signing in                   | Login, logout, password, MFA, current session state |
-| `/feed`, `/trades/*`, `/instruments/symbols` | Active subscription or admin | Signals. Enforced on every request                  |
-| `/push/*`, `/me/*`                           | Signed in                    | Devices and notification preferences                |
-| `/admin/*`                                   | Administrator with MFA       | Everything else                                     |
+| Prefix                                       | Who                          | Purpose                                              |
+| -------------------------------------------- | ---------------------------- | ---------------------------------------------------- |
+| `/public/*`, `/health/*`                     | Anyone                       | Service information, gated results, health           |
+| `/auth/*`                                    | Signing in                   | Login, logout, password, MFA, current session state  |
+| `/feed`, `/trades/*`, `/instruments/symbols` | Active subscription or admin | Signals. Enforced on every request                   |
+| `/push/*`, `/me/*`                           | Signed in                    | Web and native devices, and notification preferences |
+| `/admin/*`                                   | Administrator with MFA       | Everything else                                      |
+
+## Native apps
+
+| Route                  | Purpose                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| `POST /auth/token`     | Same credentials and throttling as `/auth/login`. Returns `{ token, expiresAt }`, and sets no cookie |
+| `POST /push/devices`   | Register `{ token, platform, deviceLabel }`. A token already known moves to the current user         |
+| `DELETE /push/devices` | Remove `{ token }`, only if it belongs to the caller                                                 |
 
 ## Trade commands
 
@@ -56,7 +64,7 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 ## Live stream
 
-`GET /ws`, upgraded to a WebSocket. Authenticated by the session cookie. The `Origin` header must be allowed.
+`GET /ws`, upgraded to a WebSocket. Authenticated by the session cookie, with an allowed `Origin`, or by `Authorization: Bearer`, where `Origin` is not checked because native apps send their own and a browser page cannot set this header.
 
 | Direction       | Message                                                                                     |
 | --------------- | ------------------------------------------------------------------------------------------- |

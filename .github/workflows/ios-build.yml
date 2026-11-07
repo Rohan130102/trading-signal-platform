@@ -1,0 +1,47 @@
+name: iOS simulator build
+
+# macOS minutes cost ten times as much as Linux, so this runs only when asked:
+#   gh workflow run ios-build.yml --ref <branch>
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  simulator:
+    name: Compile for the iOS simulator
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      APP_VARIANT: development
+      EXPO_PUBLIC_API_URL: http://localhost:4200
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build -w @signaldesk/domain
+      - run: npx expo prebuild --platform ios --clean
+        working-directory: apps/mobile
+      - name: Compile
+        working-directory: apps/mobile/ios
+        env:
+          NODE_ENV: production
+        run: |
+          WORKSPACE=$(ls -d *.xcworkspace | head -1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO
+      - name: Package the app
+        working-directory: apps/mobile/ios/build/Build/Products/Release-iphonesimulator
+        run: ditto -c -k --keepParent ./*.app "$GITHUB_WORKSPACE/signaldesk-ios-simulator.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signaldesk-ios-simulator
+          path: signaldesk-ios-simulator.zip
+          retention-days: 14
