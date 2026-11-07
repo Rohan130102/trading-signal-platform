@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { act, activeTrade, admin, instrumentId, nextEntry, publish, signalBody, withDb } from './helpers.js';
+import {
+  act,
+  activeTrade,
+  admin,
+  instrumentId,
+  newSubscriber,
+  nextEntry,
+  publish,
+  signalBody,
+  withDb,
+} from './helpers.js';
 
 describe('publishing', () => {
   it('publishes a BUY matching the requested presets and persists the exact message', async () => {
@@ -516,11 +526,29 @@ describe('database guarantees', () => {
       await expect(db.query('DELETE FROM signal_events WHERE trade_id = $1', [trade.id])).rejects.toThrow(
         /append-only/,
       );
-      await expect(db.query('TRUNCATE signal_events CASCADE')).rejects.toThrow(/append-only/);
+      // CASCADE locks every table that references the events, which can deadlock with the worker handling
+      // the signal just published. PostgreSQL then cancels the TRUNCATE before the trigger runs, so a
+      // deadlock is tried again. Only the trigger's own refusal passes, and nothing else may succeed.
+      const refusal = async (): Promise<string> => {
+        for (let attempt = 0; attempt < 10; attempt += 1) {
+          const message = await db.query('TRUNCATE signal_events CASCADE').then(
+            () => 'TRUNCATE succeeded',
+            (error: Error) => error.message,
+          );
+          if (!message.includes('deadlock')) return message;
+          await new Promise((r) => setTimeout(r, 300));
+        }
+        return 'TRUNCATE kept deadlocking';
+      };
+      expect(await refusal()).toMatch(/append-only/);
+      const kept = await db.query('SELECT count(*)::int AS n FROM signal_events WHERE trade_id = $1', [trade.id]);
+      expect(kept.rows[0].n).toBeGreaterThan(0);
     });
   });
 
   it('audit records and subscription history are append-only too', async () => {
+    // These triggers fire per row, so an empty table would refuse nothing and prove nothing.
+    await newSubscriber();
     await withDb(async (db) => {
       await expect(db.query("UPDATE audit_logs SET action = 'x'")).rejects.toThrow(/append-only/);
       await expect(db.query('DELETE FROM audit_logs')).rejects.toThrow(/append-only/);

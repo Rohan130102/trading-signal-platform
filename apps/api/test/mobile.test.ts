@@ -546,6 +546,161 @@ describe('native push delivery', () => {
     expect(await instrumentId()).toBeTruthy();
   });
 
+  /** With the worker stopped everything queues up, so it is all claimed together when the worker returns. */
+  async function publishWhileWorkerIsDown() {
+    await drained();
+    await control('/worker/kill');
+    const trade = await publish();
+    await control('/worker/start');
+    return trade;
+  }
+
+  const expoRequestSizes = async () => (await control('/expo-requests')) as number[];
+
+  async function outcomes(tokens: string[], eventId: string) {
+    const result = await withDb((db) =>
+      db.query(
+        `SELECT s.endpoint, s.invalidated_at, d.status, d.attempts, d.last_error, d.receipt_id
+         FROM push_deliveries d JOIN push_subscriptions s ON s.id = d.push_subscription_id
+         WHERE d.event_id = $1 AND s.endpoint = ANY($2)`,
+        [eventId, tokens],
+      ),
+    );
+    return new Map<string, any>(result.rows.map((row) => [row.endpoint, row]));
+  }
+
+  const retire = (tokens: string[]) =>
+    withDb((db) => db.query('UPDATE push_subscriptions SET invalidated_at = now() WHERE endpoint = ANY($1)', [tokens]));
+
+  it('sends a large fan-out in batches Expo accepts, matching each receipt to its own device', async () => {
+    const { native } = await nativeSubscriber();
+    const first = expoToken();
+    await native.post('/push/devices', { token: first, platform: 'android' });
+    const others = Array.from({ length: 249 }, () => expoToken());
+    await withDb((db) =>
+      db.query(
+        `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint, channel, platform)
+         SELECT gen_random_uuid(), s.user_id, s.session_id, t, 'EXPO', 'android'
+         FROM push_subscriptions s, unnest($2::text[]) AS t WHERE s.endpoint = $1`,
+        [first, others],
+      ),
+    );
+    const tokens = [first, ...others];
+    try {
+      const sentBefore = (await expoRequestSizes()).length;
+      const trade = await publishWhileWorkerIsDown();
+      const eventId = trade.events[0].id as string;
+      const rows = await waitUntil(
+        async () => {
+          const found = await outcomes(tokens, eventId);
+          return found.size === tokens.length && [...found.values()].every((r) => r.status === 'ACCEPTED')
+            ? found
+            : false;
+        },
+        30_000,
+        'every device accepted',
+      );
+
+      const sizes = (await expoRequestSizes()).slice(sentBefore);
+      expect(Math.max(...sizes)).toBeLessThanOrEqual(100);
+      // One at a time this would be at least 250 requests.
+      expect(sizes.length).toBeLessThan(20);
+
+      const log = (await control('/expo-log')) as { message: Record<string, any>; ticket: any }[];
+      const sent = log.filter((entry) => entry.message.data.eventId === eventId && tokens.includes(entry.message.to));
+      expect(sent).toHaveLength(tokens.length);
+      expect(new Set(sent.map((entry) => entry.message.to)).size).toBe(tokens.length);
+      const ticketFor = new Map(sent.map((entry) => [entry.message.to, entry.ticket.id]));
+      for (const token of tokens) {
+        expect(rows.get(token).receipt_id).toBe(ticketFor.get(token));
+        expect(rows.get(token).attempts).toBe(1);
+      }
+    } finally {
+      await retire(tokens);
+    }
+  }, 60_000);
+
+  it('gives each device in a batch its own outcome', async () => {
+    const { native } = await nativeSubscriber();
+    const ok = expoToken();
+    const gone = expoToken('gone');
+    const big = expoToken('toobig');
+    const rate = expoToken('rate');
+    const tokens = [ok, gone, big, rate];
+    for (const token of tokens) await native.post('/push/devices', { token, platform: 'android' });
+
+    const sentBefore = (await expoRequestSizes()).length;
+    const trade = await publishWhileWorkerIsDown();
+    const rows = await waitUntil(
+      async () => {
+        const found = await outcomes(tokens, trade.events[0].id);
+        return found.get(rate)?.status === 'ACCEPTED' ? found : false;
+      },
+      20_000,
+      'the rate-limited device to be retried',
+    );
+
+    expect((await expoRequestSizes()).slice(sentBefore).some((size) => size >= tokens.length)).toBe(true);
+    expect(rows.get(ok)).toMatchObject({ status: 'ACCEPTED', attempts: 1 });
+    expect(rows.get(gone)).toMatchObject({ status: 'GONE', attempts: 1 });
+    expect(rows.get(gone).invalidated_at).not.toBeNull();
+    expect(rows.get(big)).toMatchObject({ status: 'FAILED', attempts: 1 });
+    expect(rows.get(big).last_error).toContain('MessageTooBig');
+    expect(rows.get(big).invalidated_at).toBeNull();
+    expect(rows.get(rate)).toMatchObject({ status: 'ACCEPTED', attempts: 2 });
+    await retire(tokens);
+  }, 40_000);
+
+  it('one bad token cannot hold back the rest of its batch', async () => {
+    const { native } = await nativeSubscriber();
+    const good = [expoToken(), expoToken(), expoToken()];
+    const bad = expoToken('otherproject');
+    const tokens = [...good, bad];
+    for (const token of tokens) await native.post('/push/devices', { token, platform: 'android' });
+    try {
+      const trade = await publishWhileWorkerIsDown();
+      const rows = await waitUntil(
+        async () => {
+          const found = await outcomes(tokens, trade.events[0].id);
+          return found.get(bad)?.status === 'FAILED' && good.every((t) => found.get(t)?.status === 'ACCEPTED')
+            ? found
+            : false;
+        },
+        20_000,
+        'the good devices to be accepted and the bad one to fail',
+      );
+      expect(rows.get(bad).last_error).toContain('InvalidCredentials');
+      for (const token of good) {
+        expect(rows.get(token).attempts).toBe(1);
+        expect(await expoMessages(token)).toHaveLength(1);
+      }
+    } finally {
+      await retire(tokens);
+    }
+  }, 40_000);
+
+  it('retries everything when Expo answers with the wrong number of tickets, losing nothing', async () => {
+    const { native } = await nativeSubscriber();
+    const short = expoToken('shorttickets');
+    const other = expoToken();
+    const tokens = [short, other];
+    for (const token of tokens) await native.post('/push/devices', { token, platform: 'android' });
+    const trade = await publishWhileWorkerIsDown();
+    const rows = await waitUntil(
+      async () => {
+        const found = await outcomes(tokens, trade.events[0].id);
+        return tokens.every((t) => found.get(t)?.status === 'ACCEPTED') ? found : false;
+      },
+      20_000,
+      'both devices to be accepted on the retry',
+    );
+    for (const token of tokens) {
+      expect(rows.get(token).attempts).toBe(2);
+      expect(await expoMessages(token)).toHaveLength(1);
+    }
+    await retire(tokens);
+  }, 40_000);
+
   it('the admin health view says whether native push is available', async () => {
     const health = await admin().get('/admin/notifications/health');
     expect(health.body.push.nativeAvailable).toBe(true);

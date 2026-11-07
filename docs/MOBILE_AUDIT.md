@@ -26,7 +26,7 @@ review has not happened.
 | ESLint, zero warnings allowed                                           | Pass                                                                                                                                              |
 | Prettier                                                                | Pass                                                                                                                                              |
 | Shared logic tests                                                      | **154 of 154**                                                                                                                                    |
-| API integration tests, including 32 new ones for native clients         | **178 of 178**                                                                                                                                    |
+| API integration tests, including 36 new ones for native clients         | **186 of 186**                                                                                                                                    |
 | Web end-to-end tests, confirming the shared-code refactor broke nothing | **77 of 77**                                                                                                                                      |
 | Mobile component and logic tests                                        | **61 of 61**                                                                                                                                      |
 | Emulator journeys in Expo Go, against a real API, worker and database   | **22 of 22**, before the keyboard and iPhone fixes in `ffa576b`. Afterwards only keyboard and large-text were rerun here, not the two size sweeps |
@@ -113,7 +113,6 @@ No Critical or High defect is known to be open. One High fix depends on somethin
 | Severity | Item                                                                             |
 | -------- | -------------------------------------------------------------------------------- |
 | Medium   | Date fields are typed rather than picked                                         |
-| Medium   | Expo messages are not batched                                                    |
 | Medium   | No self-service account deletion. May be required by the stores                  |
 | Medium   | No screen reader pass                                                            |
 | Low      | Status bar dims behind sheets on Android                                         |
