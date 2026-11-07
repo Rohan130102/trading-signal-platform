@@ -156,6 +156,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const expoLog: { message: Record<string, unknown>; ticket: unknown; httpStatus: number }[] = [];
   const expoReceipts = new Map<string, unknown>();
   const expoSeen = new Map<string, number>();
+  /** How many messages arrived in each request. */
+  const expoRequests: number[] = [];
   const expoServer = createServer((req, res) => {
     void json(req).then((raw) => {
       const body = JSON.parse(raw.toString() || '{}') as { ids?: string[] } | Record<string, unknown>[];
@@ -170,32 +172,53 @@ export default async function setup(project: TestProject): Promise<() => Promise
         });
       }
       const messages = body as Record<string, unknown>[];
-      const message = messages[0] as Record<string, unknown>;
-      const token = String(message.to);
-      const seen = expoSeen.get(token) ?? 0;
-      expoSeen.set(token, seen + 1);
-      if (token.includes('[http500') && seen === 0) {
-        expoLog.push({ message, ticket: null, httpStatus: 500 });
+      expoRequests.push(messages.length);
+      if (messages.length > 100) {
+        return reply(400, { errors: [{ code: 'PUSH_TOO_MANY_NOTIFICATIONS', message: 'at most 100' }] });
+      }
+      // Expo sends none of a request that mixes tokens from more than one project.
+      if (messages.length > 1 && messages.some((m) => String(m.to).includes('[otherproject'))) {
+        return reply(400, { errors: [{ code: 'PUSH_TOO_MANY_EXPERIENCE_IDS', message: 'mixed projects' }] });
+      }
+      const unseen = (m: Record<string, unknown>, kind: string) =>
+        String(m.to).includes(`[${kind}`) && !expoSeen.has(String(m.to));
+      const failing = messages.find((m) => unseen(m, 'http500'));
+      if (failing) {
+        expoSeen.set(String(failing.to), 1);
+        expoLog.push({ message: failing, ticket: null, httpStatus: 500 });
         return reply(500, { errors: [{ code: 'INTERNAL', message: 'try later' }] });
       }
-      let ticket: Record<string, unknown>;
-      if (token.includes('[gone'))
-        ticket = { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } };
-      else if (token.includes('[toobig'))
-        ticket = { status: 'error', message: 'big', details: { error: 'MessageTooBig' } };
-      else if (token.includes('[rate') && seen === 0)
-        ticket = { status: 'error', message: 'slow', details: { error: 'MessageRateExceeded' } };
-      else {
-        const id = randomBytes(8).toString('hex');
-        ticket = { status: 'ok', id };
-        if (token.includes('[lategone'))
-          expoReceipts.set(id, { status: 'error', details: { error: 'DeviceNotRegistered' } });
-        else if (token.includes('[latefail'))
-          expoReceipts.set(id, { status: 'error', details: { error: 'MismatchSenderId' } });
-        else expoReceipts.set(id, { status: 'ok' });
+      const shortReply = messages.find((m) => unseen(m, 'shorttickets'));
+      if (shortReply) {
+        expoSeen.set(String(shortReply.to), 1);
+        return reply(200, { data: [] });
       }
-      expoLog.push({ message, ticket, httpStatus: 200 });
-      return reply(200, { data: [ticket] });
+      const tickets = messages.map((message) => {
+        const token = String(message.to);
+        const seen = expoSeen.get(token) ?? 0;
+        expoSeen.set(token, seen + 1);
+        let ticket: Record<string, unknown>;
+        if (token.includes('[gone'))
+          ticket = { status: 'error', message: 'gone', details: { error: 'DeviceNotRegistered' } };
+        else if (token.includes('[toobig'))
+          ticket = { status: 'error', message: 'big', details: { error: 'MessageTooBig' } };
+        else if (token.includes('[otherproject'))
+          ticket = { status: 'error', message: 'wrong project', details: { error: 'InvalidCredentials' } };
+        else if (token.includes('[rate') && seen === 0)
+          ticket = { status: 'error', message: 'slow', details: { error: 'MessageRateExceeded' } };
+        else {
+          const id = randomBytes(8).toString('hex');
+          ticket = { status: 'ok', id };
+          if (token.includes('[lategone'))
+            expoReceipts.set(id, { status: 'error', details: { error: 'DeviceNotRegistered' } });
+          else if (token.includes('[latefail'))
+            expoReceipts.set(id, { status: 'error', details: { error: 'MismatchSenderId' } });
+          else expoReceipts.set(id, { status: 'ok' });
+        }
+        expoLog.push({ message, ticket, httpStatus: 200 });
+        return ticket;
+      });
+      return reply(200, { data: tickets });
     });
   });
   await new Promise<void>((r) => expoServer.listen(EXPO_PORT, r));
@@ -230,6 +253,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
     PORT: String(LIMITED_API_PORT),
     INSTANCE_ID: 'api-limited',
     RATE_LIMIT_PER_MINUTE: '20',
+    // Lets a test say which address a request came from, as a reverse proxy would.
+    TRUST_PROXY_HOPS: '1',
   });
   let worker: ChildProcess | null = start('dist/worker.js', { ...baseEnv, INSTANCE_ID: 'worker-1' });
   let secondWorker: ChildProcess | null = null;
@@ -277,6 +302,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
           return reply(pushLog);
         case '/expo-log':
           return reply(expoLog);
+        case '/expo-requests':
+          return reply(expoRequests);
         case '/worker/kill':
           await stopChild(worker, 'SIGKILL');
           worker = null;

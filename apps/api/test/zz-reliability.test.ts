@@ -14,6 +14,65 @@ describe('rate limiting', () => {
     expect(limited.headers.get('retry-after')).toBeTruthy();
     expect((await fetch(`${base.replace('/api/v1', '')}/health/live`)).status).toBe(200);
   });
+
+  // The limited API allows 20 requests a minute. Each test uses its own made-up public address.
+  const from = (address: string, path: string, headers: Record<string, string> = {}) =>
+    fetch(`${ctx().limitedApi}${path}`, { headers: { 'x-forwarded-for': address, ...headers } }).then((r) => r.status);
+
+  const sessionCookie = async () => {
+    const { client } = await newSubscriber(30);
+    return { cookie: client.cookie as string };
+  };
+
+  it("does not let subscribers behind one shared address use up each other's allowance", async () => {
+    const address = '203.0.113.10';
+    const sessions = await Promise.all([sessionCookie(), sessionCookie(), sessionCookie()]);
+    const statuses: number[] = [];
+    for (let round = 0; round < 15; round += 1) {
+      statuses.push(...(await Promise.all(sessions.map((headers) => from(address, '/auth/me', headers)))));
+    }
+    expect(statuses).toHaveLength(45);
+    expect(statuses.every((status) => status === 200)).toBe(true);
+  }, 60_000);
+
+  it('still limits one busy session, without blocking others on the same address', async () => {
+    const address = '203.0.113.11';
+    const busy = await sessionCookie();
+    const quiet = await sessionCookie();
+    expect(await from(address, '/auth/me', quiet)).toBe(200);
+    const statuses: number[] = [];
+    for (let i = 0; i < 30; i += 1) statuses.push(await from(address, '/auth/me', busy));
+    expect(statuses).toContain(429);
+    expect(await from(address, '/auth/me', quiet)).toBe(200);
+  }, 60_000);
+
+  it('gives made-up credentials no allowance of their own', async () => {
+    const address = '203.0.113.12';
+    const real = await sessionCookie();
+    expect(await from(address, '/auth/me', real)).toBe(200);
+    const statuses: number[] = [];
+    for (let i = 0; i < 30; i += 1) {
+      statuses.push(await from(address, '/public/info', { authorization: `Bearer made-up-${i}` }));
+    }
+    expect(statuses).toContain(429);
+    expect(await from(address, '/public/info')).toBe(429);
+    expect(await from(address, '/auth/me', real)).toBe(200);
+  }, 60_000);
+
+  it('takes the separate allowance away once a session has ended', async () => {
+    const address = '203.0.113.13';
+    const ended = await sessionCookie();
+    expect(await from(address, '/auth/me', ended)).toBe(200);
+    const signedOut = await fetch(`${ctx().limitedApi}/auth/logout`, {
+      method: 'POST',
+      headers: { 'x-forwarded-for': address, origin: ctx().origin, ...ended },
+    });
+    expect(signedOut.ok).toBe(true);
+    const statuses: number[] = [];
+    for (let i = 0; i < 25; i += 1) statuses.push(await from(address, '/auth/me', ended));
+    expect(statuses[0]).toBe(401);
+    expect(statuses).toContain(429);
+  }, 60_000);
 });
 
 describe('database outage', () => {

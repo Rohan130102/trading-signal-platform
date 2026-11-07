@@ -11,12 +11,40 @@ import { env } from '../config/env.js';
 import { CH_EVENTS, CH_PUSH, ListenerService } from '../db/listener.service.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { TradesService } from '../trades/trades.service.js';
-import { PUSH_TTL_SECONDS, type PushMessage, type PushTarget, PushTransport } from './push-transport.js';
+import {
+  EXPO_BATCH_LIMIT,
+  PUSH_TTL_SECONDS,
+  type PushMessage,
+  type PushResult,
+  type PushTarget,
+  PushTransport,
+} from './push-transport.js';
 
 const OUTBOX_MAX_ATTEMPTS = 8;
 const PUSH_MAX_ATTEMPTS = 6;
-const PUSH_BATCH = 50;
+/** One claim always fits in a single request to Expo. */
+const PUSH_BATCH = EXPO_BATCH_LIMIT;
 const PUSH_CONCURRENCY = 20;
+
+const DELIVERY_INCLUDE = {
+  event: {
+    select: { id: true, tradeId: true, title: true, body: true, type: true, priority: true, createdAt: true },
+  },
+  pushSubscription: {
+    include: {
+      session: true,
+      user: { include: { subscription: true, preferences: true } },
+    },
+  },
+} satisfies Prisma.PushDeliveryInclude;
+
+type DeliveryRow = Prisma.PushDeliveryGetPayload<{ include: typeof DELIVERY_INCLUDE }>;
+
+interface PreparedPush {
+  delivery: DeliveryRow;
+  target: PushTarget;
+  message: PushMessage;
+}
 
 export function retryDelayMs(attempt: number): number {
   return Math.min(5 * 60_000, 2000 * 2 ** Math.max(0, attempt - 1));
@@ -216,60 +244,108 @@ export class WorkerService implements OnModuleDestroy {
         ORDER BY next_attempt_at FOR UPDATE SKIP LOCKED LIMIT ${PUSH_BATCH}
       )
       RETURNING id`;
-    const queue = claimed.map((c) => c.id);
-    await Promise.all(
-      Array.from({ length: Math.min(PUSH_CONCURRENCY, queue.length) }, async () => {
-        for (let id = queue.shift(); id !== undefined; id = queue.shift()) await this.deliverSafely(id);
-      }),
-    );
+    const ids = claimed.map((c) => c.id);
+    if (ids.length === 0) return 0;
+    try {
+      const deliveries = await this.prisma.pushDelivery.findMany({
+        where: { id: { in: ids } },
+        include: DELIVERY_INCLUDE,
+      });
+      const now = new Date();
+      const web: PreparedPush[] = [];
+      const expo: PreparedPush[] = [];
+      for (const delivery of deliveries) {
+        const prepared = await this.prepare(delivery, now);
+        if (prepared) (prepared.target.channel === 'EXPO' ? expo : web).push(prepared);
+      }
+      await Promise.all([this.sendWebPushes(web), this.sendExpoPushes(expo)]);
+    } catch (error) {
+      await this.releaseForRetry(ids, error);
+    }
     return claimed.length;
   }
 
-  /** One failing row must not strand the rest of its batch until their claims expire. */
-  private async deliverSafely(id: string): Promise<void> {
+  private async sendWebPushes(items: PreparedPush[]): Promise<void> {
+    const queue = [...items];
+    await Promise.all(
+      Array.from({ length: Math.min(PUSH_CONCURRENCY, queue.length) }, async () => {
+        for (let item = queue.shift(); item !== undefined; item = queue.shift()) {
+          try {
+            await this.recordResult(item.delivery, await this.transport.send(item.target, item.message));
+          } catch (error) {
+            await this.releaseForRetry([item.delivery.id], error);
+          }
+        }
+      }),
+    );
+  }
+
+  /** Expo takes a whole batch in one request, so the last phone is not left waiting behind the first. */
+  private async sendExpoPushes(items: PreparedPush[]): Promise<void> {
+    if (items.length === 0) return;
+    let results: PushResult[];
     try {
-      await this.deliver(id);
+      results = await this.transport.sendExpoBatch(
+        items.map(({ target, message }) => ({ token: target.endpoint, message })),
+      );
     } catch (error) {
-      const message = (error as Error).message.slice(0, 200);
-      log('warn', 'push_delivery_failed', { id, error: message });
-      await this.prisma.pushDelivery
-        .update({
-          where: { id },
-          data: { status: 'RETRY', nextAttemptAt: new Date(Date.now() + 30_000), lastError: message, lockedAt: null },
-        })
-        .catch(() => undefined);
+      await this.releaseForRetry(
+        items.map((item) => item.delivery.id),
+        error,
+      );
+      return;
+    }
+    const pairs = items.map((item, index) => ({ delivery: item.delivery, result: results[index] as PushResult }));
+    const accepted = pairs.filter(
+      (pair): pair is { delivery: DeliveryRow; result: Extract<PushResult, { kind: 'ACCEPTED' }> } =>
+        pair.result.kind === 'ACCEPTED',
+    );
+    try {
+      await this.recordAccepted(accepted);
+    } catch (error) {
+      await this.releaseForRetry(
+        accepted.map((pair) => pair.delivery.id),
+        error,
+      );
+    }
+    for (const { delivery, result } of pairs) {
+      if (result.kind === 'ACCEPTED') continue;
+      try {
+        await this.recordResult(delivery, result);
+      } catch (error) {
+        await this.releaseForRetry([delivery.id], error);
+      }
     }
   }
 
-  private async deliver(id: string): Promise<void> {
-    const delivery = await this.prisma.pushDelivery.findUniqueOrThrow({
-      where: { id },
-      include: {
-        event: {
-          select: { id: true, tradeId: true, title: true, body: true, type: true, priority: true, createdAt: true },
-        },
-        pushSubscription: {
-          include: {
-            session: true,
-            user: { include: { subscription: true, preferences: true } },
-          },
-        },
-      },
-    });
-    const { event, pushSubscription: device } = delivery;
+  /** A failure on some rows must not strand them until their claims expire. */
+  private async releaseForRetry(ids: string[], error: unknown): Promise<void> {
+    if (ids.length === 0) return;
+    const message = (error as Error).message.slice(0, 200);
+    log('warn', 'push_delivery_failed', { count: ids.length, error: message });
+    await this.prisma.pushDelivery
+      .updateMany({
+        where: { id: { in: ids }, status: 'SENDING' },
+        data: { status: 'RETRY', nextAttemptAt: new Date(Date.now() + 30_000), lastError: message, lockedAt: null },
+      })
+      .catch(() => undefined);
+  }
+
+  /** Decides whether this delivery should still be sent. If not, it is finished here and null comes back. */
+  private async prepare(delivery: DeliveryRow, now: Date): Promise<PreparedPush | null> {
+    const { id, event, pushSubscription: device } = delivery;
     const { user, session } = device;
-    const now = new Date();
 
     // Checked again immediately before sending: access may have ended since the job was queued.
     const access = evaluateSignalAccess(user, user.subscription, now);
     const sessionLive = session !== null && session.revokedAt === null && session.expiresAt > now;
     if (!access.allowed || !sessionLive || device.invalidatedAt) {
       await this.finish(id, 'SKIPPED', null, access.allowed ? 'Device signed out' : `Access ended: ${access.reason}`);
-      return;
+      return null;
     }
     if (now.getTime() - event.createdAt.getTime() > PUSH_TTL_SECONDS * 1000) {
       await this.finish(id, 'FAILED', null, 'Too old to be useful');
-      return;
+      return null;
     }
 
     const hide = user.preferences?.hidePreview ?? false;
@@ -291,23 +367,42 @@ export class WorkerService implements OnModuleDestroy {
             p256dh: device.p256dh as string,
             auth: device.auth as string,
           };
-    const result = await this.transport.send(target, message);
+    return { delivery, target, message };
+  }
+
+  /** One statement for the whole batch, so recording results stays cheap at any number of phones. */
+  private async recordAccepted(
+    accepted: { delivery: DeliveryRow; result: Extract<PushResult, { kind: 'ACCEPTED' }> }[],
+  ): Promise<void> {
+    if (accepted.length === 0) return;
+    const now = new Date();
+    const rows = JSON.stringify(
+      accepted.map(({ delivery, result }) => ({
+        id: delivery.id,
+        status_code: result.statusCode,
+        receipt_id: result.receiptId ?? null,
+      })),
+    );
+    await this.prisma.$transaction([
+      this.prisma.$executeRaw`
+        UPDATE push_deliveries AS d
+        SET status = 'ACCEPTED', accepted_at = ${now}, last_status_code = r.status_code, last_error = NULL,
+            locked_at = NULL, receipt_id = r.receipt_id, updated_at = ${now}
+        FROM jsonb_to_recordset(${rows}::jsonb) AS r(id uuid, status_code int, receipt_id text)
+        WHERE d.id = r.id`,
+      this.prisma.pushSubscription.updateMany({
+        where: { id: { in: accepted.map(({ delivery }) => delivery.pushSubscriptionId) } },
+        data: { lastAcceptedAt: now },
+      }),
+    ]);
+  }
+
+  private async recordResult(delivery: DeliveryRow, result: PushResult): Promise<void> {
+    const { id, pushSubscription: device } = delivery;
+    const now = new Date();
     switch (result.kind) {
       case 'ACCEPTED':
-        await this.prisma.$transaction([
-          this.prisma.pushDelivery.update({
-            where: { id },
-            data: {
-              status: 'ACCEPTED',
-              acceptedAt: now,
-              lastStatusCode: result.statusCode,
-              lastError: null,
-              lockedAt: null,
-              receiptId: result.receiptId ?? null,
-            },
-          }),
-          this.prisma.pushSubscription.update({ where: { id: device.id }, data: { lastAcceptedAt: now } }),
-        ]);
+        await this.recordAccepted([{ delivery, result }]);
         break;
       case 'GONE':
         await this.prisma.$transaction([

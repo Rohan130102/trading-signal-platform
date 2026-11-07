@@ -32,6 +32,9 @@ export type ExpoReceipt = { status: 'ok' } | { status: 'error'; message?: string
 /** The time a push stays useful. A trading instruction hours late does more harm than none. */
 export const PUSH_TTL_SECONDS = 3600;
 
+/** The most messages Expo accepts in one request. */
+export const EXPO_BATCH_LIMIT = 100;
+
 const EXPO_RETRYABLE = new Set(['MessageRateExceeded']);
 
 interface ExpoTicket {
@@ -39,6 +42,19 @@ interface ExpoTicket {
   id?: string;
   message?: string;
   details?: { error?: string };
+}
+
+export interface ExpoSend {
+  token: string;
+  message: PushMessage;
+}
+
+function expoTicketResult(ticket: ExpoTicket, statusCode: number): PushResult {
+  if (ticket.status === 'ok') return { kind: 'ACCEPTED', statusCode, receiptId: ticket.id };
+  const code = ticket.details?.error ?? 'Unknown';
+  if (code === 'DeviceNotRegistered') return { kind: 'GONE', statusCode, error: 'Device is no longer registered' };
+  if (EXPO_RETRYABLE.has(code)) return { kind: 'RETRY', statusCode, error: `Expo: ${code}` };
+  return { kind: 'FAILED', statusCode, error: `Expo: ${code}` };
 }
 
 /** Boundary to the outside world, so SMS or another channel can be added beside these later. */
@@ -88,7 +104,9 @@ export class PushTransport {
   }
 
   async send(target: PushTarget, message: PushMessage): Promise<PushResult> {
-    return target.channel === 'EXPO' ? this.sendExpo(target.endpoint, message) : this.sendWeb(target, message);
+    if (target.channel === 'WEB_PUSH') return this.sendWeb(target, message);
+    const [result] = await this.sendExpoBatch([{ token: target.endpoint, message }]);
+    return result as PushResult;
   }
 
   private async sendWeb(
@@ -130,18 +148,27 @@ export class PushTransport {
     };
   }
 
-  private async sendExpo(token: string, message: PushMessage): Promise<PushResult> {
+  /**
+   * One result per message, in the same order. At most EXPO_BATCH_LIMIT messages.
+   *
+   * A rejected request does not say which message caused it, so the batch is split and each half tried
+   * again. One bad token, such as one from another Expo project, then fails alone and cannot hold back
+   * everyone else's alert.
+   */
+  async sendExpoBatch(items: ExpoSend[]): Promise<PushResult[]> {
+    const forAll = (result: PushResult) => items.map(() => result);
+    if (items.length === 0) return [];
     if (!env.EXPO_PUSH_ENABLED) {
-      return { kind: 'FAILED', statusCode: null, error: 'Native push is not configured' };
+      return forAll({ kind: 'FAILED', statusCode: null, error: 'Native push is not configured' });
     }
     let response: Response;
     try {
       response = await fetch(`${env.EXPO_PUSH_API_URL}/send`, {
         method: 'POST',
         headers: this.expoHeaders(),
-        signal: AbortSignal.timeout(10_000),
-        body: JSON.stringify([
-          {
+        signal: AbortSignal.timeout(15_000),
+        body: JSON.stringify(
+          items.map(({ token, message }) => ({
             to: token,
             title: message.title,
             body: message.body,
@@ -150,28 +177,40 @@ export class PushTransport {
             channelId: message.androidChannel,
             ttl: PUSH_TTL_SECONDS,
             data: { path: message.path, eventId: message.tag },
-          },
-        ]),
+          })),
+        ),
       });
     } catch (error) {
-      return { kind: 'RETRY', statusCode: null, error: `Network error: ${(error as Error).message}`.slice(0, 200) };
+      return forAll({
+        kind: 'RETRY',
+        statusCode: null,
+        error: `Network error: ${(error as Error).message}`.slice(0, 200),
+      });
     }
     if (response.status === 429 || response.status >= 500) {
-      return { kind: 'RETRY', statusCode: response.status, error: `Expo responded ${response.status}` };
+      return forAll({ kind: 'RETRY', statusCode: response.status, error: `Expo responded ${response.status}` });
     }
     if (!response.ok) {
-      return { kind: 'FAILED', statusCode: response.status, error: `Expo rejected the request (${response.status})` };
+      if (items.length > 1) {
+        const middle = Math.ceil(items.length / 2);
+        return [
+          ...(await this.sendExpoBatch(items.slice(0, middle))),
+          ...(await this.sendExpoBatch(items.slice(middle))),
+        ];
+      }
+      return forAll({
+        kind: 'FAILED',
+        statusCode: response.status,
+        error: `Expo rejected the request (${response.status})`,
+      });
     }
     const payload = (await response.json().catch(() => null)) as { data?: ExpoTicket[] } | null;
-    const ticket = payload?.data?.[0];
-    if (!ticket) return { kind: 'RETRY', statusCode: response.status, error: 'Expo returned no ticket' };
-    if (ticket.status === 'ok') return { kind: 'ACCEPTED', statusCode: response.status, receiptId: ticket.id };
-    const code = ticket.details?.error ?? 'Unknown';
-    if (code === 'DeviceNotRegistered') {
-      return { kind: 'GONE', statusCode: response.status, error: 'Device is no longer registered' };
+    const tickets = payload?.data;
+    // Tickets are matched by position, so a list of the wrong length cannot be trusted at all.
+    if (!Array.isArray(tickets) || tickets.length !== items.length) {
+      return forAll({ kind: 'RETRY', statusCode: response.status, error: 'Expo returned the wrong number of tickets' });
     }
-    if (EXPO_RETRYABLE.has(code)) return { kind: 'RETRY', statusCode: response.status, error: `Expo: ${code}` };
-    return { kind: 'FAILED', statusCode: response.status, error: `Expo: ${code}` };
+    return tickets.map((ticket) => expoTicketResult(ticket, response.status));
   }
 
   /** Absent ids are not known yet, or have expired after a day. */
