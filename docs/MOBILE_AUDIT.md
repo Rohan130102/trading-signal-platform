@@ -20,22 +20,22 @@ review has not happened.
 
 ## What ran
 
-| Gate                                                                    | Result                                                                                                                                           |
-| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| TypeScript across all four packages                                     | Pass                                                                                                                                             |
-| ESLint, zero warnings allowed                                           | Pass                                                                                                                                             |
-| Prettier                                                                | Pass                                                                                                                                             |
-| Shared logic tests                                                      | **154 of 154**                                                                                                                                   |
-| API integration tests, including 32 new ones for native clients         | **178 of 178**                                                                                                                                   |
-| Web end-to-end tests, confirming the shared-code refactor broke nothing | **77 of 77**                                                                                                                                     |
-| Mobile component and logic tests                                        | **61 of 61**                                                                                                                                     |
-| Emulator journeys in Expo Go, against a real API, worker and database   | **22 of 22** on the final app code, across two runs because a session restart split them                                                         |
-| The same journeys in a real installed APK, except the two size sweeps   | **20 of 20** on the fixed build. The first APK scored 18 of 20: a real keyboard bug, listed below, and a false alarm in a layout check           |
-| Expo project health check                                               | 20 of 20                                                                                                                                         |
-| JavaScript bundle for Android and iOS, production settings              | Pass                                                                                                                                             |
-| Secret scan of tracked files and full history, including Gitleaks in CI | Clean. Two false positives are recorded by fingerprint in `.gitleaksignore`: made-up test keys and a throwaway load-test password                |
-| `npm audit --omit=dev`, high or critical                                | **0**                                                                                                                                            |
-| `npm audit --omit=dev`, moderate or low                                 | 22, all `minimatch` and `deepmerge` in Expo's and Jest's command-line tools. No fix exists without downgrading Expo. None of it ships in the app |
+| Gate                                                                    | Result                                                                                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TypeScript across all four packages                                     | Pass                                                                                                                                              |
+| ESLint, zero warnings allowed                                           | Pass                                                                                                                                              |
+| Prettier                                                                | Pass                                                                                                                                              |
+| Shared logic tests                                                      | **154 of 154**                                                                                                                                    |
+| API integration tests, including 32 new ones for native clients         | **178 of 178**                                                                                                                                    |
+| Web end-to-end tests, confirming the shared-code refactor broke nothing | **77 of 77**                                                                                                                                      |
+| Mobile component and logic tests                                        | **61 of 61**                                                                                                                                      |
+| Emulator journeys in Expo Go, against a real API, worker and database   | **22 of 22**, before the keyboard and iPhone fixes in `ffa576b`. Afterwards only keyboard and large-text were rerun here, not the two size sweeps |
+| The same journeys in a real installed APK, except the two size sweeps   | **20 of 20** on the fixed build. The first APK scored 18 of 20: a real keyboard bug, listed below, and a false alarm in a layout check            |
+| Expo project health check                                               | 20 of 20                                                                                                                                          |
+| JavaScript bundle for Android and iOS, production settings              | Pass                                                                                                                                              |
+| Secret scan of tracked files and full history, including Gitleaks in CI | Clean. Two false positives are recorded by fingerprint in `.gitleaksignore`: made-up test keys and a throwaway load-test password                 |
+| `npm audit --omit=dev`, high or critical                                | **0**                                                                                                                                             |
+| `npm audit --omit=dev`, moderate or low                                 | 22, all `minimatch` and `deepmerge` in Expo's and Jest's command-line tools. No fix exists without downgrading Expo. None of it ships in the app  |
 
 ## iPhone
 
