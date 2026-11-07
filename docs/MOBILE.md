@@ -80,6 +80,8 @@ flowchart LR
 - Native devices are a second channel in the pipeline the web already uses, so eligibility checks, retries, duplicate protection
   and dispatch reporting are the same code.
 - **Access is re-checked at send time.** Someone who expired while a message was queued does not get it.
+- **Messages go to Expo in batches of up to 100.** If Expo rejects a whole batch, it is split and tried again, so one bad token fails
+  alone and cannot hold back everyone else's alert.
 - A device Expo reports as `DeviceNotRegistered`, at send or later in a receipt, is removed. Rate limits and server errors retry
   with backoff. Other rejections fail permanently and show in notification health.
 - Tapping a notification opens the trade. Only known paths are accepted from notification data.

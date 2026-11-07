@@ -6,9 +6,11 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { AppModule, CONTROLLERS } from './app.module.js';
+import { SESSION_COOKIE } from './auth/session.guard.js';
 import { type AuthedRequest, bearerToken } from './common/http.js';
 import { log } from './common/log.js';
 import { buildOpenApi } from './common/openapi.js';
+import { rateLimiter } from './common/rate-limit.js';
 import { env, isProduction } from './config/env.js';
 import { WorkerService } from './notifications/worker.service.js';
 import { RealtimeGateway } from './realtime/realtime.gateway.js';
@@ -19,33 +21,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 process.on('unhandledRejection', (reason) => {
   log('error', 'unhandled_rejection', { error: reason instanceof Error ? reason.message : String(reason) });
 });
-
-function rateLimiter() {
-  const windows = new Map<string, { count: number; resetAt: number }>();
-  setInterval(() => {
-    const now = Date.now();
-    for (const [key, entry] of windows) if (entry.resetAt <= now) windows.delete(key);
-  }, 60_000).unref();
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.path.startsWith('/api/')) return next();
-    const key = req.ip ?? 'unknown';
-    const now = Date.now();
-    let entry = windows.get(key);
-    if (!entry || entry.resetAt <= now) {
-      entry = { count: 0, resetAt: now + 60_000 };
-      windows.set(key, entry);
-    }
-    entry.count += 1;
-    if (entry.count > env.RATE_LIMIT_PER_MINUTE) {
-      res.setHeader('Retry-After', String(Math.ceil((entry.resetAt - now) / 1000)));
-      res.status(429).json({
-        error: { code: 'RATE_LIMITED', message: 'Too many requests. Please slow down and try again shortly.' },
-      });
-      return;
-    }
-    next();
-  };
-}
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -83,7 +58,7 @@ async function bootstrap(): Promise<void> {
     });
     next();
   });
-  app.use(rateLimiter());
+  app.use(rateLimiter(env.RATE_LIMIT_PER_MINUTE, SESSION_COOKIE));
   // Cross-site request protection for cookie authentication, including login. Browsers always send
   // Origin on these requests. Native apps send none and authenticate with a header that a cross-site
   // page cannot set, so only they may omit it.

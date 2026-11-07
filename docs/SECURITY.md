@@ -18,7 +18,7 @@
 | **A native session token being stolen**      | Kept in the device's secure storage, not backed up and not moved to another phone; only its hash is on the server; subject to the same revocation and expiry as any session; sent only over HTTPS in non-development builds, which refuse to start otherwise     | `mobile.test.ts`, `apps/mobile/test`                                                  |
 | **Malicious content in a push notification** | Only a fixed set of in-app paths can be opened from notification data                                                                                                                                                                                            | `apps/mobile/test`, domain tests                                                      |
 | **Sending to someone else's device**         | Device tokens are validated by shape, cannot be listed back, and can only be removed by their owner. Consider Expo's enhanced push security with `EXPO_ACCESS_TOKEN`                                                                                             | `mobile.test.ts`                                                                      |
-| **Denial of service**                        | Per-IP limit per instance; slow sockets dropped; bounded page sizes; per-user socket cap. **Put real protection at the proxy or CDN too**                                                                                                                        | `zz-reliability.test.ts`                                                              |
+| **Denial of service**                        | Request limit per signed-in session and, for anything else, per IP; slow sockets dropped; bounded page sizes; per-user socket cap. **Put real protection at the proxy or CDN too**                                                                               | `zz-reliability.test.ts`                                                              |
 | **Cross-site attacks**                       | Origin check on all writes including login, waived only for a bearer token with no `Origin`, which a browser cannot forge from another site; `SameSite=Lax`; Origin check on WebSocket upgrade; nonce-based CSP with no inline scripts; `frame-ancestors 'none'` | `auth.test.ts`, `authorization.test.ts`, `security.spec.ts`                           |
 
 ## Authentication flow
@@ -45,7 +45,9 @@ ESLint. They do not ship and do not process untrusted input here. Versions are p
 
 ## Known limits
 
-- The per-IP limit is per instance and held in memory. Sign-in throttling is shared through PostgreSQL.
+- The general request limit is per instance and held in memory. Sign-in throttling is shared through PostgreSQL.
+- A session gets its own request allowance only after it has passed authentication, so subscribers sharing a mobile network's public address do not use up each other's. A made-up credential earns nothing and counts against its address.
+- Failed sign-ins still count per address as well as per login ID: 40 in 15 minutes blocks sign-in from that address for the rest of the window. On a shared mobile address, someone else's failures could block a new sign-in. People already signed in are not affected.
 - The hash chain detects tampering, but someone with database superuser access could rewrite it. Anchor the latest hash externally for stronger evidence.
 - The MFA encryption key has no rotation procedure.
 - There is no independent penetration test. Get one before handling real subscribers.

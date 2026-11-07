@@ -1,12 +1,13 @@
 // Measures what the product actually promises, on this machine, against a real stack: its own
 // PostgreSQL, one API process and one worker. Every number it prints is measured, none is assumed.
 //
-//   ulimit -n 20000 && SOCKETS=1000 EVENTS=100 DEVICES=500 npm run test:perf
+//   ulimit -n 20000 && SOCKETS=1000 EVENTS=100 DEVICES=500 EXPO_DEVICES=1200 npm run test:perf
 //
 // Run after `npm run build`. Results go to stdout and test-results/perf.json.
 import { execFileSync, spawn } from 'node:child_process';
 import { createECDH, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:https';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -19,10 +20,14 @@ import { WebSocket } from 'ws';
 const SOCKETS = Number(process.env.SOCKETS ?? 1000);
 const EVENTS = Number(process.env.EVENTS ?? 100);
 const DEVICES = Number(process.env.DEVICES ?? 500);
+const EXPO_DEVICES = Number(process.env.EXPO_DEVICES ?? 1200);
+// How long the local stand-in for Expo takes to answer each request. An assumption, not a measurement of Expo.
+const EXPO_LATENCY_MS = Number(process.env.EXPO_LATENCY_MS ?? 200);
 const GAP_MS = Number(process.env.GAP_MS ?? 100);
 const PG_PORT = 54399;
 const API_PORT = 4301;
 const PUSH_PORT = 4302;
+const EXPO_PORT = 4303;
 const ORIGIN = 'http://perf.test';
 const root = resolve(import.meta.dirname, '..');
 const apiDir = resolve(root, 'apps/api');
@@ -75,6 +80,7 @@ try {
     VAPID_PRIVATE_KEY: vapid.privateKey,
     VAPID_SUBJECT: 'mailto:perf@example.test',
     PUSH_ENDPOINT_ALLOWLIST: 'localhost',
+    EXPO_PUSH_API_URL: `http://localhost:${EXPO_PORT}`,
     NODE_TLS_REJECT_UNAUTHORIZED: '0',
     RATE_LIMIT_PER_MINUTE: '100000000',
     RUN_WORKER_IN_API: 'false',
@@ -123,6 +129,26 @@ try {
   );
   await new Promise((r) => pushServer.listen(PUSH_PORT, r));
 
+  // A local stand-in for Expo that answers after a fixed delay and records how it was called.
+  const expoStats = { requests: 0, messages: 0, largestRequest: 0, lastAt: 0 };
+  const expoServer = createHttpServer((req, res) => {
+    const chunks = [];
+    req.on('data', (chunk) => chunks.push(chunk));
+    req.on('end', () => {
+      setTimeout(() => {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        if (req.url !== '/send') return res.end('{"data":{}}');
+        const messages = JSON.parse(Buffer.concat(chunks).toString());
+        expoStats.requests += 1;
+        expoStats.messages += messages.length;
+        expoStats.largestRequest = Math.max(expoStats.largestRequest, messages.length);
+        expoStats.lastAt = performance.now();
+        res.end(JSON.stringify({ data: messages.map(() => ({ status: 'ok', id: randomUUID() })) }));
+      }, EXPO_LATENCY_MS);
+    });
+  });
+  await new Promise((r) => expoServer.listen(EXPO_PORT, r));
+
   const api = spawn('node', ['dist/main.js'], { cwd: apiDir, env, stdio: 'ignore' });
   const worker = spawn('node', ['dist/worker.js'], { cwd: apiDir, env, stdio: 'ignore' });
   children.push(api, worker);
@@ -165,7 +191,7 @@ try {
   await sql.connect();
   const placeholderHash = '$argon2id$v=19$m=65536,t=3,p=4$cGVyZnBlcmZwZXJm$Pz6Vq9c6Yw0qg0J7Xh0m0wYz1x0m0wYz1x0m0wYz1x0';
   const tokens = [];
-  const total = Math.max(SOCKETS, DEVICES);
+  const total = Math.max(SOCKETS, DEVICES, EXPO_DEVICES);
   for (let i = 0; i < total; i += 200) {
     const batch = Array.from({ length: Math.min(200, total - i) }, (_, n) => ({
       id: randomUUID(),
@@ -402,9 +428,61 @@ try {
     note: 'Real encryption and signing, against a local HTTPS endpoint with no network latency.',
   };
 
+  // ---------- Native push throughput ----------
+  await sql.query('UPDATE push_subscriptions SET invalidated_at = now()');
+  const expoRows = tokens.slice(0, EXPO_DEVICES).map((t, i) => ({
+    id: randomUUID(),
+    userId: t.id,
+    sessionId: t.sessionId,
+    endpoint: `ExponentPushToken[perf-${i}]`,
+  }));
+  await sql.query(
+    `INSERT INTO push_subscriptions (id, user_id, session_id, endpoint, channel, platform)
+    SELECT r.id, r."userId", r."sessionId", r.endpoint, 'EXPO', 'android'
+    FROM jsonb_to_recordset($1::jsonb) AS r(id uuid, "userId" uuid, "sessionId" uuid, endpoint text)`,
+    [JSON.stringify(expoRows)],
+  );
+  const expoT0 = performance.now();
+  const expoEntry = 21000;
+  const expoPublished = await call('POST', '/admin/signals', {
+    instrumentId: xau,
+    direction: 'BUY',
+    entryType: 'SINGLE',
+    entryLow: String(expoEntry),
+    entryHigh: String(expoEntry),
+    targets: [String(expoEntry + 150)],
+    stopLoss: String(expoEntry - 180),
+    idempotencyKey: randomUUID(),
+  });
+  if (expoPublished.status !== 201) throw new Error('Native push publish failed');
+  const expoEventId = expoPublished.body.trade.events[0].id;
+  const expoDeadline = Date.now() + 180_000;
+  let recorded = 0;
+  while (recorded < EXPO_DEVICES && Date.now() < expoDeadline) {
+    await sleep(50);
+    const { rows: counted } = await sql.query(
+      "SELECT count(*)::int AS n FROM push_deliveries WHERE event_id = $1 AND status = 'ACCEPTED'",
+      [expoEventId],
+    );
+    recorded = counted[0].n;
+  }
+  results.nativePushThroughput = {
+    devices: EXPO_DEVICES,
+    assumedExpoResponseMs: EXPO_LATENCY_MS,
+    messagesSent: expoStats.messages,
+    requests: expoStats.requests,
+    largestRequest: expoStats.largestRequest,
+    secondsToLastHandover: Number(((expoStats.lastAt - expoT0) / 1000).toFixed(2)),
+    secondsUntilAllRecorded: Number(((performance.now() - expoT0) / 1000).toFixed(2)),
+    allRecorded: recorded === EXPO_DEVICES,
+    note: 'Against a local stand-in for Expo with an assumed delay. Apple and Google delivery comes after this.',
+  };
+
   await sql.end();
   pushServer.closeAllConnections();
   pushServer.close();
+  expoServer.closeAllConnections();
+  expoServer.close();
   mkdirSync(resolve(root, 'test-results'), { recursive: true });
   writeFileSync(resolve(root, 'test-results/perf.json'), `${JSON.stringify(results, null, 2)}\n`);
   console.log(JSON.stringify(results, null, 2));
