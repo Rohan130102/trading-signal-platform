@@ -8,7 +8,7 @@ import { Pressable, View } from 'react-native';
 import { api, ApiError } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
 import { useRealtime } from '@/lib/realtime';
-import { useScreenProtection, Watermark } from '@/security/Protected';
+import { useScreenProtection } from '@/security/Protected';
 import { DirectionBadge, Levels, OutcomeSummary, StatusBadge, Timeline } from '@/trade';
 import { useColors } from '@/theme';
 import { space } from '@/theme/tokens';
@@ -199,7 +199,6 @@ export default function TradeScreen() {
           </>
         )}
       </Screen>
-      <Watermark />
     </View>
   );
 }

@@ -2,9 +2,7 @@ import * as ScreenCapture from 'expo-screen-capture';
 import { type ReactNode, useEffect, useRef } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
 import { api } from '@/lib/api';
-import { useSession } from '@/lib/session';
-import { useColors } from '@/theme';
-import { T, useToast } from '@/ui';
+import { useToast } from '@/ui';
 
 /**
  * Development bundles only: lets automated visual checks take screenshots. `__DEV__` is false in every
@@ -24,9 +22,9 @@ const usePrevent: (key: string) => void = ALLOW_CAPTURE_FOR_QA
  * iPhone: Apple offers no supported way to block screenshots of an app. Expo's module hides the content
  * from screenshots and recordings on recent iOS versions using the system's secure-text layer, which Apple
  * does not document for this purpose and may change, so it is treated as best effort. On top of it the
- * app-switcher preview is blurred, a screenshot is noticed (after it was taken) and recorded in the audit
- * log, and every protected screen carries a faint watermark with the subscriber's login ID, so a capture
- * that does get out can be traced. None of this is described to subscribers as complete protection.
+ * app-switcher preview is blurred, and a screenshot is noticed (after it was taken) and recorded in the audit
+ * log. Nothing is drawn over the content: the owner chose a clean screen over a visible watermark. None of
+ * this is described to subscribers as complete protection.
  */
 export function useScreenProtection(key: string, screen: string): void {
   usePrevent(key);
@@ -53,58 +51,11 @@ export function useScreenProtection(key: string, screen: string): void {
   }, [screen, toast]);
 }
 
-/** A faint, repeating watermark with the subscriber's login ID. Invisible to screen readers and to touch. */
-export function Watermark() {
-  const { me } = useSession();
-  const c = useColors();
-  if (!me || me.role !== 'SUBSCRIBER') return null;
-  const label = `${me.loginId} · SignalDesk`;
-  return (
-    <View
-      pointerEvents="none"
-      importantForAccessibility="no-hide-descendants"
-      accessibilityElementsHidden
-      style={StyleSheet.absoluteFill}
-      testID="watermark"
-    >
-      {Array.from({ length: 7 }, (_, row) => (
-        <View key={row} style={[styles.row, { top: `${row * 15 + 4}%` }]}>
-          {Array.from({ length: 2 }, (_, column) => (
-            <T
-              key={column}
-              v="caption"
-              style={[styles.mark, { color: c.text, opacity: c.scheme === 'dark' ? 0.05 : 0.06 }]}
-              numberOfLines={1}
-              allowFontScaling={false}
-            >
-              {label}
-            </T>
-          ))}
-        </View>
-      ))}
-    </View>
-  );
-}
-
 export function ProtectedScreen({ id, screen, children }: { id: string; screen: string; children: ReactNode }) {
   useScreenProtection(id, screen);
-  return (
-    <View style={styles.fill}>
-      {children}
-      <Watermark />
-    </View>
-  );
+  return <View style={styles.fill}>{children}</View>;
 }
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
-  row: {
-    position: 'absolute',
-    left: '-10%',
-    right: '-10%',
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    transform: [{ rotate: '-24deg' }],
-  },
-  mark: { fontSize: 13, fontWeight: '600', letterSpacing: 1 },
 });

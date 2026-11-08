@@ -2,12 +2,14 @@ import type { FeedEvent, MeResponse, SignalCard as Card } from '@signaldesk/doma
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import * as Haptics from 'expo-haptics';
-import { Platform, Pressable, Text } from 'react-native';
+import { Platform, Pressable, Text, Vibration } from 'react-native';
 import OnboardingScreen from '../app/onboarding';
+import { LiveAlertBanner, UPDATE_BANNER_MS } from '@/alerts/LiveAlertBanner';
 import { FilterBar } from '@/filters';
-import { haptics, setHapticsEnabled } from '@/lib/haptics';
+import { ALERT_PATTERNS, haptics, setHapticsEnabled } from '@/lib/haptics';
+import { alertWeight, type LiveAlert } from '@/lib/realtime';
 import { gateRedirect } from '@/lib/routing';
-import { Watermark } from '@/security/Protected';
+import { ProtectedScreen } from '@/security/Protected';
 import { SignalCard } from '@/trade/SignalCard';
 import { ThemeProvider } from '@/theme';
 import { ToastProvider, useToast } from '@/ui';
@@ -108,7 +110,7 @@ describe('a grouped signal card', () => {
     await wrap(<SignalCard card={card} onMenu={jest.fn()} />);
     expect(screen.getByText('SELL')).toBeTruthy();
     expect(screen.getByText('XAU/USD')).toBeTruthy();
-    expect(screen.getByText('Latest update')).toBeTruthy();
+    expect(screen.getByTestId('latest-update')).toBeTruthy();
     // Once as the current stop-loss, once as what it was moved to.
     expect(screen.getAllByText('3,150.00').length).toBe(2);
     expect(screen.getByText('3,100.00')).toBeTruthy();
@@ -132,6 +134,20 @@ describe('a grouped signal card', () => {
     const menu = screen.getByTestId('signal-menu-T-7');
     await fireEvent.press(menu);
     expect(onMenu).toHaveBeenCalledWith(card);
+  });
+
+  it('shows nothing extra for a trade with no updates yet', async () => {
+    await wrap(<SignalCard card={{ ...card, recentUpdates: [], updatesCount: 0 }} onMenu={jest.fn()} />);
+    expect(screen.queryByTestId('latest-update')).toBeNull();
+    expect(screen.queryByText(/No updates yet/)).toBeNull();
+    expect(screen.getByTestId('card-stop').props.accessibilityLabel).toBe('Stop-loss (now): 3,150.00');
+    expect(screen.getByTestId('card-targets').props.accessibilityLabel).toBe('Target 1 3,200.00');
+  });
+
+  it('outlines a signal that just arrived and labels it New', async () => {
+    await wrap(<SignalCard card={card} onMenu={jest.fn()} fresh />);
+    expect(screen.getByTestId('fresh-badge')).toBeTruthy();
+    expect(screen.queryByTestId('unread-dot')).toBeNull();
   });
 });
 
@@ -179,21 +195,107 @@ describe('the filter bar', () => {
 });
 
 describe('screen protection', () => {
-  it('marks every protected screen with the subscriber’s login, hidden from screen readers', async () => {
+  it('blocks capture on a subscriber screen without drawing anything over it', async () => {
+    const capture = jest.requireMock('expo-screen-capture') as { usePreventScreenCapture: jest.Mock };
+    capture.usePreventScreenCapture.mockClear();
     mockMe = { role: 'SUBSCRIBER', loginId: 'jane.doe' };
-    await wrap(<Watermark />);
-    // Hidden from assistive technology, so it has to be looked up with hidden elements included.
-    expect(screen.queryByTestId('watermark')).toBeNull();
-    const mark = screen.getByTestId('watermark', { includeHiddenElements: true });
-    expect(mark.props.importantForAccessibility).toBe('no-hide-descendants');
-    expect(mark.props.pointerEvents).toBe('none');
-    expect(screen.getAllByText('jane.doe · SignalDesk', { includeHiddenElements: true }).length).toBeGreaterThan(4);
+    await wrap(
+      <ProtectedScreen id="feed" screen="feed">
+        <Text>Signals</Text>
+      </ProtectedScreen>,
+    );
+    expect(capture.usePreventScreenCapture).toHaveBeenCalledWith('feed');
+    expect(screen.getByText('Signals')).toBeTruthy();
+    expect(screen.queryByTestId('watermark', { includeHiddenElements: true })).toBeNull();
+    expect(screen.queryAllByText(/jane\.doe|SignalDesk/, { includeHiddenElements: true })).toHaveLength(0);
+  });
+});
+
+describe('the in-app alert', () => {
+  const alert = (overrides: Partial<LiveAlert> = {}): LiveAlert => ({
+    eventId: 'e1',
+    title: 'BUY XAU/USD',
+    body: 'Entry 3,300.00, stop-loss 3,150.00',
+    tradeId: 't1',
+    category: 'NEW_SIGNAL',
+    priority: 'NORMAL',
+    direction: 'BUY',
+    ...overrides,
   });
 
-  it('does not watermark an administrator', async () => {
-    mockMe = { role: 'ADMIN', loginId: 'root.admin' };
-    await wrap(<Watermark />);
-    expect(screen.queryByTestId('watermark', { includeHiddenElements: true })).toBeNull();
+  afterEach(() => jest.useRealTimers());
+
+  it('keeps a new signal on screen until it is opened or dismissed', async () => {
+    jest.useFakeTimers();
+    const onOpen = jest.fn();
+    const onDismiss = jest.fn();
+    await wrap(
+      <LiveAlertBanner
+        shown={{ key: 1, alert: alert(), more: 0, sticky: true, important: true }}
+        onOpen={onOpen}
+        onDismiss={onDismiss}
+      />,
+    );
+    expect(screen.getByText('New signal')).toBeTruthy();
+    expect(screen.getByText('BUY XAU/USD')).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(UPDATE_BANNER_MS * 3);
+    });
+    expect(onDismiss).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByTestId('live-alert-open'));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    await fireEvent.press(screen.getByTestId('live-alert-close'));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('lets an ordinary update go by itself, and offers the others that arrived', async () => {
+    jest.useFakeTimers();
+    const onDismiss = jest.fn();
+    const onSeeAll = jest.fn();
+    await wrap(
+      <LiveAlertBanner
+        shown={{
+          key: 2,
+          alert: alert({ category: 'UPDATE', title: 'Stop-loss moved', direction: null }),
+          more: 2,
+          sticky: false,
+          important: false,
+        }}
+        onOpen={jest.fn()}
+        onDismiss={onDismiss}
+        onSeeAll={onSeeAll}
+      />,
+    );
+    expect(screen.getByText('Signal update')).toBeTruthy();
+    expect(screen.getByText('View trade')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('live-alert-more'));
+    expect(onSeeAll).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(UPDATE_BANNER_MS + 1000);
+    });
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('weighs a new signal and a priority alert above an update', () => {
+    expect(alertWeight({ category: 'NEW_SIGNAL', priority: 'NORMAL' })).toBe('signal');
+    expect(alertWeight({ category: 'UPDATE', priority: 'PRIORITY' })).toBe('priority');
+    expect(alertWeight({ category: 'CLOSURE', priority: 'NORMAL' })).toBe('update');
+  });
+
+  it('vibrates in a pattern per kind on Android, and not at all when haptics are off', async () => {
+    const os = jest.replaceProperty(Platform, 'OS', 'android');
+    const vibrate = jest.spyOn(Vibration, 'vibrate').mockImplementation(() => undefined);
+    haptics.alert('signal');
+    expect(vibrate).toHaveBeenLastCalledWith([...ALERT_PATTERNS.signal]);
+    haptics.alert('priority');
+    expect(vibrate).toHaveBeenLastCalledWith([...ALERT_PATTERNS.priority]);
+    await setHapticsEnabled(false);
+    vibrate.mockClear();
+    haptics.alert('signal');
+    expect(vibrate).not.toHaveBeenCalled();
+    await setHapticsEnabled(true);
+    vibrate.mockRestore();
+    os.restore();
   });
 });
 

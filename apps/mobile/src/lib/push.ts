@@ -30,8 +30,15 @@ function notifications(): NotificationsModule | null {
 
 const OPTED_OUT = 'push-opted-out';
 
+/**
+ * The Expo project that issues this app's push tokens, or nothing when this build cannot receive pushes.
+ * On Android that also needs Firebase compiled in (`google-services.json`): without it a token request
+ * fails, so such a build says it is not set up instead of failing when someone taps Turn on.
+ */
 function projectId(): string | undefined {
-  return (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+  const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string }; androidPush?: boolean } | undefined;
+  if (Platform.OS === 'android' && !extra?.androidPush) return undefined;
+  return extra?.eas?.projectId;
 }
 
 export async function setUpAndroidChannels(): Promise<void> {
@@ -133,6 +140,7 @@ export interface PushArrival {
   seq: number | null;
   category: string | null;
   priority: 'NORMAL' | 'PRIORITY';
+  direction: 'BUY' | 'SELL' | null;
 }
 
 function readArrival(content: {
@@ -152,6 +160,7 @@ function readArrival(content: {
     seq: typeof data.seq === 'number' ? data.seq : null,
     category: typeof data.category === 'string' ? data.category : null,
     priority: data.priority === 'PRIORITY' ? 'PRIORITY' : 'NORMAL',
+    direction: data.direction === 'BUY' || data.direction === 'SELL' ? data.direction : null,
   };
 }
 

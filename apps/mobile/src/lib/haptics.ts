@@ -1,5 +1,17 @@
 import * as Haptics from 'expo-haptics';
+import { Platform, Vibration } from 'react-native';
 import { prefs } from './storage';
+
+/**
+ * Android patterns for alerts that arrive while the app is open: wait, buzz, pause, buzz (milliseconds).
+ * A new signal is two firm pulses, a priority alert three, an update one short one, so they can be told
+ * apart without looking.
+ */
+export const ALERT_PATTERNS = {
+  signal: [0, 220, 110, 220],
+  priority: [0, 300, 100, 300, 100, 300],
+  update: [0, 120],
+} as const;
 
 /**
  * The only way the app vibrates. Haptics confirm; they never carry information on their own, and they can
@@ -43,6 +55,24 @@ export const haptics = {
         }[kind],
       ),
     ),
+  /**
+   * An alert arrived while the app is open. Stronger than a confirmation, so a new signal is felt even with
+   * the phone on the desk. Android vibrates in a pattern per kind; iPhone plays the system's notification
+   * haptic, followed by a firm tap for a new signal or a priority alert.
+   */
+  alert: (kind: keyof typeof ALERT_PATTERNS) => {
+    if (off) return;
+    if (Platform.OS === 'android') {
+      Vibration.vibrate([...ALERT_PATTERNS[kind]]);
+      return;
+    }
+    run(() =>
+      Haptics.notificationAsync(
+        kind === 'priority' ? Haptics.NotificationFeedbackType.Warning : Haptics.NotificationFeedbackType.Success,
+      ),
+    );
+    if (kind !== 'update') setTimeout(() => run(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy)), 180);
+  },
 };
 
 export function hapticsEnabled(): boolean {

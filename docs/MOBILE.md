@@ -124,7 +124,7 @@ flowchart LR
 See [SECURITY.md](SECURITY.md#one-subscriber-per-phone). In short: a phone is bound to the first subscriber who signs in
 on it, a second account is refused with a message that says to ask the administrator, and the administrator releases it
 from the subscriber's page. Subscriber screens are blank in Android screenshots and recordings; on iPhone protection is
-best effort, with a watermark and a logged notice.
+best effort, with a logged notice. No watermark is drawn over the screens.
 
 For automated screenshots in a development bundle only, start Metro with `EXPO_PUBLIC_E2E_ALLOW_CAPTURE=1`.
 
@@ -175,7 +175,15 @@ This puts your development server on the public internet for as long as it runs.
 | Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Rebuild if the address changes |
 | iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                |
 
-The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. It has no notifications, because it has no Expo project. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
+The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. Until notifications are set up it says "Not set up in this build" under Alerts, and alerts arrive only while the app is open.
+
+To switch notifications on in that APK (all three are needed; nothing secret goes in the repository):
+
+1. Create the Expo project once: `npx eas-cli init` in `apps/mobile`, signed in to your Expo account. Put the project ID it prints in the repository variable `EAS_PROJECT_ID`.
+2. In a Firebase project, add an Android app with the package `com.signaldesk.app.preview`. Store its `google-services.json` as the repository secret `GOOGLE_SERVICES_JSON` (`gh secret set GOOGLE_SERVICES_JSON < google-services.json`). The build writes it to a temporary file and never prints it.
+3. In Firebase, create a service account key (Project settings, Service accounts) and upload it on expo.dev under the project's Credentials, Android, FCM V1 service account key. It stays with Expo: never in the repository, a variable or a chat.
+
+The app checks that the build contains Firebase before it offers to turn alerts on, so a half-configured build says it is not set up rather than failing. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
 
 ## What you need to provide
 

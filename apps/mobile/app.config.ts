@@ -75,5 +75,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     variant,
     eas: process.env.EAS_PROJECT_ID ? { projectId: process.env.EAS_PROJECT_ID } : undefined,
+    // Android receives pushes only when Firebase is compiled in; the app checks this before asking.
+    androidPush: Boolean(process.env.GOOGLE_SERVICES_FILE),
   },
 });

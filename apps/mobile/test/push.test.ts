@@ -7,6 +7,7 @@ import {
   syncPushToken,
   unregisterThisDevice,
 } from '@/lib/push';
+import { Platform } from 'react-native';
 
 // A real notification cannot reach an emulator here, so the app's decisions are tested against the
 // library's documented interface. The server's side of this is tested for real in apps/api/test/mobile.test.ts.
@@ -101,6 +102,14 @@ describe('where notifications stand on this phone', () => {
     mockConstants.expoConfig = { extra: {} };
     expect(await readPushStatus()).toBe('not-configured');
     expect(await enablePush()).toBe('not-configured');
+  });
+
+  it('says an Android build without Firebase is not set up, rather than failing on Turn on', async () => {
+    const os = jest.replaceProperty(Platform, 'OS', 'android');
+    expect(await readPushStatus()).toBe('not-configured');
+    mockConstants.expoConfig = { extra: { eas: { projectId: 'project-1' }, androidPush: true } };
+    expect(await readPushStatus()).not.toBe('not-configured');
+    os.restore();
   });
 
   it('says when the server is not sending', async () => {
@@ -257,14 +266,27 @@ describe('tapping a notification', () => {
         content: {
           title: 'Stop-loss moved',
           body: 'XAU/USD',
-          data: { eventId: id, path: `/trades/${id}`, tradeId: id, seq: 42, category: 'UPDATE', priority: 'PRIORITY' },
+          data: {
+            eventId: id,
+            path: `/trades/${id}`,
+            tradeId: id,
+            seq: 42,
+            category: 'UPDATE',
+            priority: 'PRIORITY',
+            direction: 'SIDEWAYS',
+          },
         },
       },
     });
     received({ request: { content: { title: 'x', body: 'y', data: { path: 'https://evil.example' } } } });
+    received({
+      request: {
+        content: { title: 'New', body: 'z', data: { eventId: 'e2', category: 'NEW_SIGNAL', direction: 'SELL' } },
+      },
+    });
     stop();
-    expect(onForeground).toHaveBeenCalledTimes(1);
-    expect(onForeground).toHaveBeenCalledWith({
+    expect(onForeground).toHaveBeenCalledTimes(2);
+    expect(onForeground).toHaveBeenNthCalledWith(1, {
       eventId: id,
       title: 'Stop-loss moved',
       body: 'XAU/USD',
@@ -273,7 +295,9 @@ describe('tapping a notification', () => {
       seq: 42,
       category: 'UPDATE',
       priority: 'PRIORITY',
+      direction: null,
     });
+    expect(onForeground).toHaveBeenNthCalledWith(2, expect.objectContaining({ direction: 'SELL' }));
   });
 
   it('reports an opened notification once, so the desk can see real opens', async () => {

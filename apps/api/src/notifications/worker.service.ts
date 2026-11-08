@@ -423,6 +423,11 @@ export class WorkerService implements OnModuleDestroy {
         tradeVersion: event.tradeVersion,
         category,
         priority: event.priority,
+        // Left out when previews are hidden: the direction is part of the signal.
+        direction:
+          !hide && category === 'NEW_SIGNAL'
+            ? ((event.payload as { direction?: string } | null)?.direction ?? null)
+            : null,
       },
     };
     const target: PushTarget =
