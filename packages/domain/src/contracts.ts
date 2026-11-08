@@ -107,6 +107,12 @@ export const publishSignalSchema = signalFieldsSchema.extend({
   draftVersion: expectedVersionSchema.optional(),
   /** Set after the administrator has seen and accepted a duplicate-signal warning. */
   confirmDuplicate: z.boolean().default(false),
+  /**
+   * The desk's rule: a published signal is active at once. The activation is recorded in the same
+   * transaction as the publication, as its own (internal) event, and is still not a fill. False keeps
+   * the older flow, where a signal waits for entry until an administrator activates it.
+   */
+  activateOnPublish: z.boolean().default(true),
 });
 
 /** Drafts may be incomplete: only publication requires the full signal. */

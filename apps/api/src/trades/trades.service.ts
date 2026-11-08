@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   calculateLevels,
@@ -226,6 +227,7 @@ export class TradesService {
             },
           },
         });
+        if (input.activateOnPublish) await this.activateOnPublish(tx, id, input.idempotencyKey, actor);
         await this.audit.record(
           {
             actorId: actor.id,
@@ -286,6 +288,72 @@ export class TradesService {
       throw new AppError(422, 'TEMPLATE_MISMATCH', `"${chosen.name}" is written for the opposite direction.`);
     }
     return chosen;
+  }
+
+  /**
+   * The ordinary ACTIVATE action, applied inside the publish transaction: the same domain rules, its own
+   * event and audit entry. The event is internal (not broadcast) because the new-signal alert already says
+   * everything, so subscribers get one alert, not two. No execution record is created: active is not filled.
+   */
+  private async activateOnPublish(tx: Tx, tradeId: string, publishKey: string, actor: Actor): Promise<void> {
+    const row = await tx.trade.findUniqueOrThrow({ where: { id: tradeId }, include: { closures: true } });
+    const state = toTradeState(row);
+    const command: TradeCommand = {
+      action: 'ACTIVATE',
+      expectedVersion: state.version,
+      idempotencyKey: randomUUID(),
+    };
+    const decision = decide(state, command, new Date());
+    let version = state.version;
+    for (const [i, event] of decision.events.entries()) {
+      version += 1;
+      const template = event.templateKind ? await this.templates.resolve(event.templateKind, tx) : null;
+      const rendered = template
+        ? this.templates.render(template, event.templateContext)
+        : { title: 'Activated on publication', body: '' };
+      await this.events.append(tx, {
+        tradeId,
+        tradeVersion: version,
+        type: event.type,
+        broadcast: false,
+        priority: row.priority,
+        tone: template?.tone ?? 'NEUTRAL',
+        title: rendered.title,
+        body: rendered.body,
+        payload: event.payload,
+        templateId: template?.id ?? null,
+        actorId: actor.id,
+        idempotencyKey: `${publishKey}:activate${i === 0 ? '' : `:${i}`}`,
+      });
+    }
+    const next = decision.next;
+    await tx.trade.update({
+      where: { id: tradeId },
+      data: {
+        status: next.status,
+        version: next.version,
+        activatedAt: next.activatedAt ? new Date(next.activatedAt) : new Date(),
+        // Entry expiry only applies while a signal waits for entry.
+        entryExpiresAt: null,
+      },
+    });
+    await this.audit.record(
+      {
+        actorId: actor.id,
+        action: 'TRADE_ACTIVATE',
+        targetType: 'trade',
+        targetId: tradeId,
+        metadata: {
+          ref: state.ref,
+          fromStatus: state.status,
+          toStatus: next.status,
+          version: next.version,
+          activatedOnPublish: true,
+        } as unknown as Prisma.InputJsonValue,
+        requestId: actor.requestId,
+      },
+      tx,
+    );
   }
 
   async execute(tradeId: string, command: TradeCommand, actor: Actor): Promise<{ tradeId: string; replayed: boolean }> {

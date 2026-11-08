@@ -10,6 +10,7 @@ import {
   newSubscriber,
   PASSWORD,
   publish,
+  signalBody,
   waitUntil,
   withDb,
 } from './helpers.js';
@@ -672,5 +673,77 @@ describe('small subscriber settings', () => {
       expect((await anonymous.get(path)).status).toBe(401);
     }
     expect(ctx().api).toContain('/api/v1');
+  });
+});
+
+describe('publishing activates at once', () => {
+  it('makes a published signal active in the same request, with one alert and no fill', async () => {
+    const { app } = await appSubscriber();
+    const token = expoToken();
+    expect((await app.post('/push/devices', { token, platform: 'android' })).status).toBe(201);
+    const trade = await publish({ activateOnPublish: true });
+    expect(trade).toMatchObject({ status: 'ACTIVE', version: 2, entryExpiresAt: null, execution: null });
+    expect(trade.activatedAt).toEqual(expect.any(String));
+    expect(trade.allowedActions).not.toContain('ACTIVATE');
+    expect(trade.allowedActions).toContain('RECORD_EXECUTION');
+    expect(trade.events.map((e: { type: string; broadcast: boolean }) => [e.type, e.broadcast])).toEqual([
+      ['SIGNAL_PUBLISHED', true],
+      ['ENTRY_ACTIVATED', false],
+    ]);
+
+    // One alert, the new signal itself: the activation adds nothing a subscriber needs to hear twice.
+    await expoFor(token, 1);
+    await new Promise((r) => setTimeout(r, 1500));
+    const sent = ((await control('/expo-log')) as { message: Record<string, any> }[]).filter(
+      (e) => e.message.to === token,
+    );
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.message.data.category).toBe('NEW_SIGNAL');
+
+    const detail = (await app.get(`/trades/${trade.id}`)).body;
+    expect(detail.status).toBe('ACTIVE');
+    expect(detail.events.map((e: { type: string }) => e.type)).toEqual(['SIGNAL_PUBLISHED']);
+    const card = (await app.get('/signals?status=LIVE&limit=50')).body.cards.find(
+      (c: { id: string }) => c.id === trade.id,
+    );
+    expect(card?.status).toBe('ACTIVE');
+    expect((await audit('TRADE_ACTIVATE', trade.id))[0]?.metadata).toMatchObject({
+      activatedOnPublish: true,
+      fromStatus: 'PUBLISHED',
+      toStatus: 'ACTIVE',
+    });
+    const fills = await withDb((db) =>
+      db.query('SELECT count(*)::int AS n FROM trade_execution_records WHERE trade_id = $1', [trade.id]),
+    );
+    expect(fills.rows[0].n).toBe(0);
+  });
+
+  it('is what happens when the field is left out', async () => {
+    const { activateOnPublish: _flag, ...body } = await signalBody();
+    const res = await admin().post('/admin/signals', body);
+    expect(res.status).toBe(201);
+    expect(res.body.trade.status).toBe('ACTIVE');
+  });
+
+  it('activates once, even when the same request arrives twice at the same moment', async () => {
+    const body = { ...(await signalBody()), activateOnPublish: true };
+    const [a, b] = await Promise.all([admin().post('/admin/signals', body), admin().post('/admin/signals', body)]);
+    expect(a.body.trade.id).toBe(b.body.trade.id);
+    const rows = await withDb((db) =>
+      db.query(
+        'SELECT type, count(*)::int AS n FROM signal_events WHERE trade_id = $1 GROUP BY type ORDER BY type::text',
+        [a.body.trade.id],
+      ),
+    );
+    expect(rows.rows).toEqual([
+      { type: 'ENTRY_ACTIVATED', n: 1 },
+      { type: 'SIGNAL_PUBLISHED', n: 1 },
+    ]);
+  });
+
+  it('can still be told to wait for entry, the older flow', async () => {
+    const trade = await publish({ activateOnPublish: false });
+    expect(trade.status).toBe('PUBLISHED');
+    expect(trade.allowedActions).toContain('ACTIVATE');
   });
 });

@@ -45,6 +45,8 @@ export async function publishViaApi(api: APIRequestContext, entry = nextPrice(),
       targets: [String(entry + 150)],
       stopLoss: String(entry - 180),
       idempotencyKey: randomUUID(),
+      // The older flow, so lifecycle tests can activate explicitly. Publishing activates at once by default.
+      activateOnPublish: false,
       ...fields,
     },
   });

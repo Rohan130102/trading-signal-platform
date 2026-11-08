@@ -16,8 +16,10 @@ export const TERMINAL_STATUSES: readonly TradeStatus[] = ['CLOSED', 'CANCELLED',
 export const LIVE_STATUSES: readonly TradeStatus[] = ['PUBLISHED', 'ACTIVE', 'PARTIALLY_CLOSED'];
 
 /**
- * Publication is not a fill: PUBLISHED only ever becomes ACTIVE through an explicit ACTIVATE action.
- * There is deliberately no edge that skips a state, and terminal states have no way out.
+ * PUBLISHED only ever becomes ACTIVE through an ACTIVATE action. By default publishing applies that action in
+ * the same transaction (see `activateOnPublish`), so a new signal is active at once; the activation is still
+ * recorded as its own event, and is never a fill. There is deliberately no edge that skips a state, and
+ * terminal states have no way out.
  */
 export const TRANSITIONS: Record<TradeStatus, readonly TradeStatus[]> = {
   DRAFT: ['PUBLISHED'],
