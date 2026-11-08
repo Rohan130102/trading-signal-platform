@@ -130,6 +130,9 @@ export async function signalBody(overrides: Record<string, unknown> = {}) {
     targets: [String(entry + 150)],
     stopLoss: String(entry - 180),
     idempotencyKey: randomUUID(),
+    // These tests exercise the whole lifecycle, including waiting for entry. Publishing activates at once by
+    // default, which experience.test.ts covers.
+    activateOnPublish: false,
     ...rest,
   };
 }

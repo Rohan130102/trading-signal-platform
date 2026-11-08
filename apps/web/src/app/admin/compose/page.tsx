@@ -882,7 +882,7 @@ function Published({ trade, onAnother }: { trade: AdminTradeDetail; onAnother: (
           Published as <span className="num">{live.data.ref}</span>
         </h1>
         <p className="mt-1 text-sm text-muted">
-          It is now in every active subscriber&rsquo;s feed. The signal is awaiting entry until you activate it.
+          It is now in every active subscriber&rsquo;s feed, and the trade is active straight away.
         </p>
       </div>
       <Card className="mt-4 p-4">

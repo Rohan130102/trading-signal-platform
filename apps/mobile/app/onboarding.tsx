@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
 import { enablePush, type PushStatus, readPushStatus } from '@/lib/push';
-import { DirectionBadge, Levels } from '@/trade';
+import { DirectionBadge, Levels, StatusBadge } from '@/trade';
 import { useColors } from '@/theme';
 import { radius, space } from '@/theme/tokens';
 import { Badge, Button, ModalFrame, T } from '@/ui';
@@ -96,7 +96,7 @@ function Onboarding() {
           <T v="heading" style={{ fontWeight: '700' }}>
             GOLD
           </T>
-          <Badge tone="update">Awaiting entry</Badge>
+          <StatusBadge status="ACTIVE" />
         </View>
         <Levels
           precision={2}

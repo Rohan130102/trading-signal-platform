@@ -117,6 +117,9 @@ async function publish({ direction = 'BUY', symbol = 'XAU/USD', entry, ...rest }
     stopLoss: String(Number(price) + (up ? -180 : 180)),
     idempotencyKey: randomUUID(),
     confirmDuplicate: true,
+    // The journeys below walk the whole lifecycle, waiting for entry included. The composer journey checks
+    // that publishing activates at once, which is the default.
+    activateOnPublish: false,
     ...rest,
   });
   return result.trade;
@@ -577,16 +580,18 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.waitFor({ id: 'admin-trade' }, 15_000);
   await d.screenshot('admin-trade');
 
-  // Activate, with a declared fill and quantity.
-  await d.tap({ id: 'do-ACTIVATE' });
-  await d.waitFor({ id: 'activate-entry' });
-  await d.type({ id: 'activate-entry' }, entry);
-  await d.type({ id: 'activate-quantity' }, '2');
+  // Published means active: there is nothing to activate. A declared fill and quantity can still be recorded.
+  await expectText('Active');
+  assert(!(await d.has({ id: 'do-ACTIVATE' })), 'There is no separate activation step');
+  await d.scrollTo({ id: 'do-RECORD_EXECUTION' }).catch(() => undefined);
+  await d.tap({ id: 'do-RECORD_EXECUTION' });
+  await d.waitFor({ id: 'execution-entry' });
+  await d.type({ id: 'execution-entry' }, entry);
+  await d.type({ id: 'execution-quantity' }, '2');
   await d.hideKeyboard();
-  await d.screenshot('action-activate');
+  await d.screenshot('action-record-execution');
   await d.tap({ id: 'action-submit' });
   await d.waitFor({ id: 'do-MOVE_STOP' }, 15_000);
-  await expectText('Active');
   await expectText(/Declared execution \(private\)/);
 
   // Move the stop tighter.
