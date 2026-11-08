@@ -17,6 +17,8 @@ jobs:
     env:
       APP_VARIANT: preview
       EXPO_PUBLIC_API_URL: ${{ vars.SHARE_API_URL }}
+      # The Expo project that issues push tokens. Not a secret; empty until the owner creates the project.
+      EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
       EXPO_NO_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@v4
@@ -30,6 +32,19 @@ jobs:
           java-version: 17
       - run: npm ci --no-audit --no-fund
       - run: npm run build -w @signaldesk/domain
+      # Android notifications need Firebase compiled in. The file is written to a temporary folder outside the
+      # checkout and never printed; without it (or without the project ID) the app says alerts are not set up.
+      - name: Firebase configuration for notifications
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ] && [ -n "$EAS_PROJECT_ID" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > "$RUNNER_TEMP/google-services.json"
+            echo "GOOGLE_SERVICES_FILE=$RUNNER_TEMP/google-services.json" >> "$GITHUB_ENV"
+            echo "Notifications: included in this APK."
+          else
+            echo "::warning::Notifications are not in this APK. Set the EAS_PROJECT_ID variable and the GOOGLE_SERVICES_JSON secret (docs/MOBILE.md)."
+          fi
       - run: npx expo prebuild --platform android --no-install --clean
         working-directory: apps/mobile
       - name: Compile the APK
