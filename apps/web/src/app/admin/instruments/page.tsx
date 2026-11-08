@@ -227,7 +227,9 @@ export default function InstrumentsPage() {
       api.post(`/admin/instruments/${row.id}/${restore ? 'restore' : 'archive'}`),
     onSuccess: (_d, { row, restore }) => {
       void client.invalidateQueries({ queryKey: ['admin', 'instruments'] });
-      toast.success(restore ? `${row.symbol} restored. It stays off until you switch it on.` : `${row.symbol} archived`);
+      toast.success(
+        restore ? `${row.symbol} restored. It stays off until you switch it on.` : `${row.symbol} archived`,
+      );
     },
     onError: (error: Error) => toast.error(error.message),
   });
@@ -266,7 +268,12 @@ export default function InstrumentsPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
-        <Select aria-label="Show" value={show} onChange={(e) => setShow(e.target.value as typeof show)} className="max-w-[12rem]">
+        <Select
+          aria-label="Show"
+          value={show}
+          onChange={(e) => setShow(e.target.value as typeof show)}
+          className="max-w-[12rem]"
+        >
           <option value="current">Current</option>
           <option value="archived">Archived</option>
           <option value="all">All</option>
@@ -311,18 +318,33 @@ export default function InstrumentsPage() {
                   <td className="num px-4 py-2.5">{formatPoints(i.defaultStopPoints)} pts</td>
                   <td className="num px-4 py-2.5">{i.tradeCount}</td>
                   <td className="px-4 py-2.5">
-                    {i.archivedAt ? <Badge>Archived</Badge> : i.active ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}
+                    {i.archivedAt ? (
+                      <Badge>Archived</Badge>
+                    ) : i.active ? (
+                      <Badge tone="success">On</Badge>
+                    ) : (
+                      <Badge>Off</Badge>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2.5 text-right">
                     <Button size="sm" onClick={() => setEditing(i)} aria-label={`Edit ${i.symbol}`}>
                       Edit
                     </Button>{' '}
                     {i.archivedAt ? (
-                      <Button size="sm" onClick={() => archive.mutate({ row: i, restore: true })} aria-label={`Restore ${i.symbol}`}>
+                      <Button
+                        size="sm"
+                        onClick={() => archive.mutate({ row: i, restore: true })}
+                        aria-label={`Restore ${i.symbol}`}
+                      >
                         Restore
                       </Button>
                     ) : (
-                      <Button size="sm" variant="ghost" onClick={() => confirmArchive(i)} aria-label={`Archive ${i.symbol}`}>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => confirmArchive(i)}
+                        aria-label={`Archive ${i.symbol}`}
+                      >
                         Archive
                       </Button>
                     )}

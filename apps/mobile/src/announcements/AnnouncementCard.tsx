@@ -25,7 +25,11 @@ export const CATEGORY_LOOK: Record<AnnouncementCategory, { icon: IconName; tone:
 };
 
 function accent(category: AnnouncementCategory, c: Palette): string {
-  return category === 'URGENT' ? c.stop : category === 'IMPORTANT' || category === 'MARKET_UPDATE' ? c.update : c.lineStrong;
+  return category === 'URGENT'
+    ? c.stop
+    : category === 'IMPORTANT' || category === 'MARKET_UPDATE'
+      ? c.update
+      : c.lineStrong;
 }
 
 /** Links open in the browser after a confirmation, and only https links are ever shown. */
@@ -85,7 +89,7 @@ export const AnnouncementCard = memo(function AnnouncementCard({
       <T v="heading" accessibilityRole="header">
         {item.title}
       </T>
-      <T selectable={!preview}>{item.body}</T>
+      <T>{item.body}</T>
       {item.linkUrl && (
         <Pressable
           accessibilityRole="link"

@@ -191,7 +191,9 @@ export class NotificationsService {
     const hourAgo = new Date(now.getTime() - 3_600_000);
     const [worker, stuckOutbox, dead, stuckPush, recent] = await Promise.all([
       this.prisma.workerHeartbeat.findFirst({ orderBy: { lastSeenAt: 'desc' }, select: { lastSeenAt: true } }),
-      this.prisma.outboxEvent.count({ where: { status: { in: ['PENDING', 'PROCESSING'] }, createdAt: { lt: backlogCutoff } } }),
+      this.prisma.outboxEvent.count({
+        where: { status: { in: ['PENDING', 'PROCESSING'] }, createdAt: { lt: backlogCutoff } },
+      }),
       this.prisma.outboxEvent.count({ where: { status: 'DEAD' } }),
       this.prisma.pushDelivery.count({
         where: { status: { in: ['PENDING', 'SENDING', 'RETRY'] }, createdAt: { lt: backlogCutoff } },
@@ -208,8 +210,10 @@ export class NotificationsService {
       alerts.push('The notification worker is not running, so no alerts are being sent.');
     }
     if (stuckOutbox > 0) alerts.push(`${stuckOutbox} events have waited over a minute to be queued for sending.`);
-    if (dead > 0) alerts.push(`${dead} events failed to queue after every retry. Use "Retry failed" once the cause is fixed.`);
-    if (stuckPush > 0) alerts.push(`${stuckPush} notifications have waited over a minute to be handed to the push service.`);
+    if (dead > 0)
+      alerts.push(`${dead} events failed to queue after every retry. Use "Retry failed" once the cause is fixed.`);
+    if (stuckPush > 0)
+      alerts.push(`${stuckPush} notifications have waited over a minute to be handed to the push service.`);
     const accepted = recent.find((g) => g.status === 'ACCEPTED')?._count._all ?? 0;
     const failed = recent.find((g) => g.status === 'FAILED')?._count._all ?? 0;
     if (failed >= 5 && failed / Math.max(1, accepted + failed) > FAILURE_RATE_ALERT) {
@@ -227,7 +231,10 @@ export class NotificationsService {
       where: { eventId, userId, openedAt: null, pushSubscription: { sessionId } },
       data: { openedAt: new Date() },
     });
-    const event = await this.prisma.signalEvent.findFirst({ where: { id: eventId, broadcast: true }, select: { id: true } });
+    const event = await this.prisma.signalEvent.findFirst({
+      where: { id: eventId, broadcast: true },
+      select: { id: true },
+    });
     if (event) {
       await this.prisma.notificationRead.createMany({ data: [{ userId, eventId }], skipDuplicates: true });
     }
@@ -344,8 +351,7 @@ export class NotificationsService {
         queue: percentiles(queue[0]),
         providerAcceptance: percentiles(acceptance[0]),
         opened: { ...percentiles(opened[0]), opens: Number(opened[0]?.samples ?? 0) },
-        note:
-          'Measured over the last 24 hours from stored timestamps. Acceptance by Apple or Google is not arrival on the phone, which they do not report; an open is the only confirmed receipt.',
+        note: 'Measured over the last 24 hours from stored timestamps. Acceptance by Apple or Google is not arrival on the phone, which they do not report; an open is the only confirmed receipt.',
       },
       alerts,
       recentFailures: recentFailures.map((f) => ({

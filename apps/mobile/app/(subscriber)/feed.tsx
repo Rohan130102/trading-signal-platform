@@ -192,7 +192,12 @@ export default function Signals() {
           signals.isFetchingNextPage ? (
             <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
           ) : filtered && cards.length > 0 ? (
-            <Button label="Reset filters" variant="ghost" small onPress={() => setFilter({ symbols: [], direction: null, status: 'ALL' })} />
+            <Button
+              label="Reset filters"
+              variant="ghost"
+              small
+              onPress={() => setFilter({ symbols: [], direction: null, status: 'ALL' })}
+            />
           ) : undefined
         }
         ItemSeparatorComponent={() => <View style={{ height: space.md }} />}

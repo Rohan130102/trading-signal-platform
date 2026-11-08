@@ -73,7 +73,14 @@ function TypedConfirm({ title, onConfirm, onClose }: { title: string; onConfirm:
       }
     >
       <T c="muted">This announcement was never sent, so it can be removed completely. This cannot be undone.</T>
-      <Field label="Type DELETE to confirm" value={typed} onChangeText={setTyped} autoCapitalize="characters" autoCorrect={false} testID="purge-typed" />
+      <Field
+        label="Type DELETE to confirm"
+        value={typed}
+        onChangeText={setTyped}
+        autoCapitalize="characters"
+        autoCorrect={false}
+        testID="purge-typed"
+      />
     </Sheet>
   );
 }
@@ -107,10 +114,17 @@ export default function Announcements() {
   };
 
   const single = useMutation({
-    mutationFn: async ({ a, action }: { a: AdminAnnouncement; action: 'publish' | 'unschedule' | 'archive' | 'restore' | 'delete' | 'purge' }) => {
+    mutationFn: async ({
+      a,
+      action,
+    }: {
+      a: AdminAnnouncement;
+      action: 'publish' | 'unschedule' | 'archive' | 'restore' | 'delete' | 'purge';
+    }) => {
       const body = { expectedVersion: a.version };
       if (action === 'delete') return api.delete(`/admin/announcements/${a.id}`, body);
-      if (action === 'purge') return api.post(`/admin/announcements/${a.id}/purge`, { ...body, confirm: 'PERMANENTLY_DELETE' });
+      if (action === 'purge')
+        return api.post(`/admin/announcements/${a.id}/purge`, { ...body, confirm: 'PERMANENTLY_DELETE' });
       return api.post(`/admin/announcements/${a.id}/${action}`, body);
     },
     onSuccess: (_d, { action }) => {
@@ -154,10 +168,18 @@ export default function Announcements() {
   const confirmBulk = (action: Bulk) => {
     const n = selectedRows.length;
     const words = { ARCHIVE: 'Archive', RESTORE: 'Restore', DELETE: 'Move to the bin' }[action];
-    Alert.alert(`${words}: ${n} announcement${n === 1 ? '' : 's'}?`, action === 'DELETE' ? 'They can be restored from the bin.' : undefined, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: words, style: action === 'DELETE' ? 'destructive' : 'default', onPress: () => bulk.mutate({ action, ids: selectedRows.map((r) => r.id) }) },
-    ]);
+    Alert.alert(
+      `${words}: ${n} announcement${n === 1 ? '' : 's'}?`,
+      action === 'DELETE' ? 'They can be restored from the bin.' : undefined,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: words,
+          style: action === 'DELETE' ? 'destructive' : 'default',
+          onPress: () => bulk.mutate({ action, ids: selectedRows.map((r) => r.id) }),
+        },
+      ],
+    );
   };
 
   const confirmPublish = (a: AdminAnnouncement) =>
@@ -260,10 +282,18 @@ export default function Announcements() {
                 else setMenuFor(item);
               }}
               onLongPress={() => setMenuFor(item)}
-              style={({ pressed }) => [styles.row, { backgroundColor: c.surface, borderColor: on ? c.primary : c.line, opacity: pressed ? 0.8 : 1 }]}
+              style={({ pressed }) => [
+                styles.row,
+                { backgroundColor: c.surface, borderColor: on ? c.primary : c.line, opacity: pressed ? 0.8 : 1 },
+              ]}
             >
               {selecting && (
-                <View style={[styles.check, { borderColor: on ? c.primary : c.lineStrong, backgroundColor: on ? c.primary : 'transparent' }]}>
+                <View
+                  style={[
+                    styles.check,
+                    { borderColor: on ? c.primary : c.lineStrong, backgroundColor: on ? c.primary : 'transparent' },
+                  ]}
+                >
                   {on && <Ionicons name="checkmark" size={16} color={c.primaryText} />}
                 </View>
               )}
@@ -284,7 +314,13 @@ export default function Announcements() {
                 </T>
               </View>
               {!selecting && (
-                <Pressable accessibilityRole="button" accessibilityLabel={`Actions for ${item.title}`} onPress={() => setMenuFor(item)} style={styles.menu} testID={`admin-announcement-menu-${item.id}`}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Actions for ${item.title}`}
+                  onPress={() => setMenuFor(item)}
+                  style={styles.menu}
+                  testID={`admin-announcement-menu-${item.id}`}
+                >
                   <Ionicons name="ellipsis-horizontal" size={20} color={c.muted} />
                 </Pressable>
               )}
@@ -322,22 +358,89 @@ export default function Announcements() {
         actions={
           menuFor
             ? [
-                ...(menuFor.allowedActions.includes('EDIT') ? [{ label: 'Edit', icon: 'create-outline' as const, onPress: () => router.push(`/admin/announcement?id=${menuFor.id}`) }] : []),
-                ...(menuFor.allowedActions.includes('PUBLISH') ? [{ label: 'Send now', icon: 'send-outline' as const, testID: 'announcement-publish', onPress: () => confirmPublish(menuFor) }] : []),
-                ...(menuFor.allowedActions.includes('UNSCHEDULE') ? [{ label: 'Cancel the schedule', icon: 'calendar-clear-outline' as const, hint: 'Keeps it as a draft.', onPress: () => single.mutate({ a: menuFor, action: 'unschedule' }) }] : []),
-                ...(menuFor.allowedActions.includes('ARCHIVE') ? [{ label: 'Archive', icon: 'archive-outline' as const, hint: 'Off the News tab. Stays in the record.', onPress: () => single.mutate({ a: menuFor, action: 'archive' }) }] : []),
-                ...(menuFor.allowedActions.includes('RESTORE') ? [{ label: 'Restore', icon: 'arrow-undo-outline' as const, testID: 'announcement-restore', onPress: () => single.mutate({ a: menuFor, action: 'restore' }) }] : []),
+                ...(menuFor.allowedActions.includes('EDIT')
+                  ? [
+                      {
+                        label: 'Edit',
+                        icon: 'create-outline' as const,
+                        onPress: () => router.push(`/admin/announcement?id=${menuFor.id}`),
+                      },
+                    ]
+                  : []),
+                ...(menuFor.allowedActions.includes('PUBLISH')
+                  ? [
+                      {
+                        label: 'Send now',
+                        icon: 'send-outline' as const,
+                        testID: 'announcement-publish',
+                        onPress: () => confirmPublish(menuFor),
+                      },
+                    ]
+                  : []),
+                ...(menuFor.allowedActions.includes('UNSCHEDULE')
+                  ? [
+                      {
+                        label: 'Cancel the schedule',
+                        icon: 'calendar-clear-outline' as const,
+                        hint: 'Keeps it as a draft.',
+                        onPress: () => single.mutate({ a: menuFor, action: 'unschedule' }),
+                      },
+                    ]
+                  : []),
+                ...(menuFor.allowedActions.includes('ARCHIVE')
+                  ? [
+                      {
+                        label: 'Archive',
+                        icon: 'archive-outline' as const,
+                        hint: 'Off the News tab. Stays in the record.',
+                        onPress: () => single.mutate({ a: menuFor, action: 'archive' }),
+                      },
+                    ]
+                  : []),
+                ...(menuFor.allowedActions.includes('RESTORE')
+                  ? [
+                      {
+                        label: 'Restore',
+                        icon: 'arrow-undo-outline' as const,
+                        testID: 'announcement-restore',
+                        onPress: () => single.mutate({ a: menuFor, action: 'restore' }),
+                      },
+                    ]
+                  : []),
                 ...(menuFor.allowedActions.includes('DELETE')
-                  ? [{ label: 'Move to the bin', icon: 'trash-outline' as const, danger: true, hint: 'Restorable from the bin.', onPress: () => single.mutate({ a: menuFor, action: 'delete' }) }]
+                  ? [
+                      {
+                        label: 'Move to the bin',
+                        icon: 'trash-outline' as const,
+                        danger: true,
+                        hint: 'Restorable from the bin.',
+                        onPress: () => single.mutate({ a: menuFor, action: 'delete' }),
+                      },
+                    ]
                   : []),
                 ...(menuFor.allowedActions.includes('PURGE')
-                  ? [{ label: 'Delete permanently', icon: 'close-circle-outline' as const, danger: true, hint: 'Only possible because it was never sent.', testID: 'announcement-purge', onPress: () => setPurging(menuFor) }]
+                  ? [
+                      {
+                        label: 'Delete permanently',
+                        icon: 'close-circle-outline' as const,
+                        danger: true,
+                        hint: 'Only possible because it was never sent.',
+                        testID: 'announcement-purge',
+                        onPress: () => setPurging(menuFor),
+                      },
+                    ]
                   : []),
               ]
             : []
         }
       />
-      {purging && <TypedConfirm title={purging.title} onClose={() => setPurging(null)} onConfirm={() => single.mutate({ a: purging, action: 'purge' })} />}
+      {purging && (
+        <TypedConfirm
+          title={purging.title}
+          onClose={() => setPurging(null)}
+          onConfirm={() => single.mutate({ a: purging, action: 'purge' })}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -346,11 +449,30 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { padding: space.lg, paddingBottom: space.xxl, flexGrow: 1 },
   header: { gap: space.md, marginBottom: space.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   flex: { flex: 1, minWidth: 0, gap: 3 },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' },
   check: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   menu: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  headerButton: { minWidth: 44, height: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: space.sm },
-  bulkBar: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth },
+  headerButton: {
+    minWidth: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: space.sm,
+  },
+  bulkBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    padding: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
 });

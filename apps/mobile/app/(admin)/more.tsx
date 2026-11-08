@@ -73,8 +73,8 @@ export default function More() {
       <SectionTitle>On the web</SectionTitle>
       <Card>
         <T v="small" c="muted">
-          Message templates, service settings, compliance approvals and the audit log are managed in the web admin.
-          They are set rarely and are easier to check on a large screen.
+          Message templates, service settings, compliance approvals and the audit log are managed in the web admin. They
+          are set rarely and are easier to check on a large screen.
         </T>
       </Card>
     </Screen>

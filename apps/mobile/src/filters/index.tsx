@@ -257,7 +257,13 @@ export function FilterSheet({
             onPress={() => setDraft(EMPTY_SIGNAL_FILTER)}
             disabled={countActiveFilters(draft) === 0}
           />
-          <Button label="Apply" variant="primary" testID="filter-apply" style={styles.flex} onPress={() => onApply(draft)} />
+          <Button
+            label="Apply"
+            variant="primary"
+            testID="filter-apply"
+            style={styles.flex}
+            onPress={() => onApply(draft)}
+          />
         </View>
       }
     >
@@ -339,7 +345,11 @@ export function FilterBar({
           accessibilityLabel={`Instruments: ${instrumentLabel}`}
           accessibilityHint="Choose which instruments to show"
           onPress={() => setPicker(true)}
-          style={({ pressed }) => [styles.pill, styles.flex, { backgroundColor: c.raised, borderColor: c.line, opacity: pressed ? 0.7 : 1 }]}
+          style={({ pressed }) => [
+            styles.pill,
+            styles.flex,
+            { backgroundColor: c.raised, borderColor: c.line, opacity: pressed ? 0.7 : 1 },
+          ]}
         >
           <Ionicons name="layers-outline" size={16} color={c.muted} />
           <T v="strong" numberOfLines={1} style={styles.flex}>
@@ -352,7 +362,10 @@ export function FilterBar({
           accessibilityRole="button"
           accessibilityLabel={active > 0 ? `Filters, ${active} on` : 'Filters'}
           onPress={() => setSheet(true)}
-          style={({ pressed }) => [styles.pill, { backgroundColor: c.raised, borderColor: active ? c.primary : c.line, opacity: pressed ? 0.7 : 1 }]}
+          style={({ pressed }) => [
+            styles.pill,
+            { backgroundColor: c.raised, borderColor: active ? c.primary : c.line, opacity: pressed ? 0.7 : 1 },
+          ]}
         >
           <Ionicons name="options-outline" size={16} color={c.text} />
           <T v="strong">Filters</T>
@@ -433,7 +446,14 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
   },
-  count: { minWidth: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+  count: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 5,
+  },
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   caps: { textTransform: 'uppercase' },
   row: {

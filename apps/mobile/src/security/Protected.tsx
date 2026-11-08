@@ -7,6 +7,15 @@ import { useColors } from '@/theme';
 import { T, useToast } from '@/ui';
 
 /**
+ * Development bundles only: lets automated visual checks take screenshots. `__DEV__` is false in every
+ * preview and production build, so there this is always false and protection always applies.
+ */
+const ALLOW_CAPTURE_FOR_QA = __DEV__ && process.env.EXPO_PUBLIC_E2E_ALLOW_CAPTURE === '1';
+const usePrevent: (key: string) => void = ALLOW_CAPTURE_FOR_QA
+  ? () => undefined
+  : ScreenCapture.usePreventScreenCapture;
+
+/**
  * Protection for screens that show paid signal content.
  *
  * Android: the window is marked secure (FLAG_SECURE), so screenshots, screen recordings and the recent-apps
@@ -20,7 +29,7 @@ import { T, useToast } from '@/ui';
  * that does get out can be traced. None of this is described to subscribers as complete protection.
  */
 export function useScreenProtection(key: string, screen: string): void {
-  ScreenCapture.usePreventScreenCapture(key);
+  usePrevent(key);
   const toast = useToast();
   const lastReport = useRef(0);
 

@@ -25,7 +25,8 @@ function look(item: NotificationItem, c: Palette): { icon: IconName; color: stri
       return { icon: 'megaphone', color: c.update, label: 'Announcement' };
     default:
       return {
-        icon: item.type === 'STOP_MOVED' ? 'shield-checkmark' : item.type === 'TARGET_HIT' ? 'checkmark-circle' : 'sync',
+        icon:
+          item.type === 'STOP_MOVED' ? 'shield-checkmark' : item.type === 'TARGET_HIT' ? 'checkmark-circle' : 'sync',
         color: item.type === 'STOP_MOVED' ? c.stop : item.type === 'TARGET_HIT' ? c.success : c.update,
         label: 'Trade update',
       };
@@ -103,7 +104,8 @@ export default function Alerts() {
   const list = useInfiniteQuery({
     queryKey: ['notifications'],
     initialPageParam: undefined as number | undefined,
-    queryFn: ({ pageParam }) => api.get<NotificationsPage>(`/notifications${queryString({ before: pageParam, limit: 30 })}`),
+    queryFn: ({ pageParam }) =>
+      api.get<NotificationsPage>(`/notifications${queryString({ before: pageParam, limit: 30 })}`),
     getNextPageParam: (last) => last.nextBefore ?? undefined,
     staleTime: 15_000,
   });
@@ -123,7 +125,11 @@ export default function Alerts() {
       data
         ? {
             ...data,
-            pages: data.pages.map((p) => ({ ...p, unread: result.unread, items: p.items.map((i) => ({ ...i, unread: false })) })),
+            pages: data.pages.map((p) => ({
+              ...p,
+              unread: result.unread,
+              items: p.items.map((i) => ({ ...i, unread: false })),
+            })),
           }
         : data,
     );
@@ -175,7 +181,13 @@ export default function Alerts() {
               subtitle={unread > 0 ? `${unread} new` : 'Everything sent to you, newest first.'}
               right={
                 unread > 0 ? (
-                  <Button label="Mark all read" small variant="ghost" testID="mark-all-read" onPress={() => void markAll()} />
+                  <Button
+                    label="Mark all read"
+                    small
+                    variant="ghost"
+                    testID="mark-all-read"
+                    onPress={() => void markAll()}
+                  />
                 ) : undefined
               }
             />
@@ -193,7 +205,9 @@ export default function Alerts() {
           )
         }
         ListFooterComponent={
-          list.isFetchingNextPage ? <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} /> : undefined
+          list.isFetchingNextPage ? (
+            <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
+          ) : undefined
         }
         renderItem={({ item, index }) => {
           const previous = items[index - 1];

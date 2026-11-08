@@ -135,7 +135,9 @@ describe('one subscriber per app installation', () => {
     expect(binding).toMatchObject({ activeSessions: 1, releasedAt: null });
 
     expect((await admin().post(`/admin/devices/${binding.id}/release`, { reason: 'x' })).status).toBe(422);
-    const released = await admin().post(`/admin/devices/${binding.id}/release`, { reason: 'Phone handed to a family member' });
+    const released = await admin().post(`/admin/devices/${binding.id}/release`, {
+      reason: 'Phone handed to a family member',
+    });
     expect(released.status).toBe(200);
     expect(released.body.sessionsRevoked).toBe(1);
     expect((await first.app.get('/signals')).status).toBe(401);
@@ -201,7 +203,12 @@ describe('grouped signals', () => {
     });
     const page = (await app.get('/signals?direction=SELL&status=AWAITING&symbols=XAU/USD&limit=50')).body;
     expect(page.cards.length).toBeGreaterThan(0);
-    expect(page.cards.every((c: { direction: string; status: string; symbol: string }) => c.direction === 'SELL' && c.status === 'PUBLISHED' && c.symbol === 'XAU/USD')).toBe(true);
+    expect(
+      page.cards.every(
+        (c: { direction: string; status: string; symbol: string }) =>
+          c.direction === 'SELL' && c.status === 'PUBLISHED' && c.symbol === 'XAU/USD',
+      ),
+    ).toBe(true);
     expect(page.cards.map((c: { id: string }) => c.id)).toContain(sell.id);
     const none = await app.get('/signals?symbols=NOT/REAL');
     expect(none.body.cards).toEqual([]);
@@ -223,14 +230,18 @@ describe('hiding from your own list', () => {
     const history = (await a.app.get(`/trades/history?q=${trade.ref}`)).body.trades[0];
     expect(history).toMatchObject({ id: trade.id, hidden: true });
     expect((await b.app.get(`/trades/history?q=${trade.ref}`)).body.trades[0].hidden).toBe(false);
-    expect((await a.app.get('/trades/history?visibility=HIDDEN')).body.trades.map((t: { id: string }) => t.id)).toEqual([trade.id]);
+    expect((await a.app.get('/trades/history?visibility=HIDDEN')).body.trades.map((t: { id: string }) => t.id)).toEqual(
+      [trade.id],
+    );
     expect((await a.app.get(`/trades/${trade.id}`)).body).toMatchObject({ id: trade.id, hidden: true });
 
     // A later update stays attached to the trade and stays out of the list until it is shown again.
     await act(trade, 'CANCEL', { comment: 'Pulled' });
     expect(await listed(a.app)).not.toContain(trade.id);
     const alerts = (await a.app.get('/notifications?limit=10')).body.items;
-    expect(alerts.some((i: { tradeId: string; type: string }) => i.tradeId === trade.id && i.type === 'TRADE_CANCELLED')).toBe(true);
+    expect(
+      alerts.some((i: { tradeId: string; type: string }) => i.tradeId === trade.id && i.type === 'TRADE_CANCELLED'),
+    ).toBe(true);
 
     expect((await a.app.req('DELETE', `/me/hidden/TRADE/${trade.id}`)).status).toBe(200);
     expect(await listed(a.app)).toContain(trade.id);
@@ -262,7 +273,12 @@ describe('notification list', () => {
     expect((await app.get('/signals?limit=1')).body.unread).toBe(3);
 
     const firstEvent = list.items.find((i: { tradeId: string }) => i.tradeId === first.id);
-    expect(firstEvent).toMatchObject({ unread: true, path: `/trades/${first.id}`, symbol: 'XAU/USD', direction: 'BUY' });
+    expect(firstEvent).toMatchObject({
+      unread: true,
+      path: `/trades/${first.id}`,
+      symbol: 'XAU/USD',
+      direction: 'BUY',
+    });
     expect((await app.post('/notifications/read', { eventIds: [firstEvent.eventId] })).body.unread).toBe(2);
     expect((await app.post('/notifications/read', { tradeId: second.id })).body.unread).toBe(0);
 
@@ -286,17 +302,28 @@ describe('announcements', () => {
     const { app } = await appSubscriber();
     const draft = await admin().post('/admin/announcements', { ...base(), mode: 'DRAFT' });
     expect(draft.status).toBe(201);
-    expect(draft.body).toMatchObject({ status: 'DRAFT', eventId: null, allowedActions: expect.arrayContaining(['PUBLISH']) });
+    expect(draft.body).toMatchObject({
+      status: 'DRAFT',
+      eventId: null,
+      allowedActions: expect.arrayContaining(['PUBLISH']),
+    });
     expect(await board(app)).not.toContain(draft.body.id);
 
-    const published = await admin().post(`/admin/announcements/${draft.body.id}/publish`, { expectedVersion: draft.body.version });
+    const published = await admin().post(`/admin/announcements/${draft.body.id}/publish`, {
+      expectedVersion: draft.body.version,
+    });
     expect(published.status).toBe(200);
     expect(published.body.status).toBe('PUBLISHED');
     expect(await board(app)).toContain(draft.body.id);
-    const again = await admin().post(`/admin/announcements/${draft.body.id}/publish`, { expectedVersion: published.body.version });
+    const again = await admin().post(`/admin/announcements/${draft.body.id}/publish`, {
+      expectedVersion: published.body.version,
+    });
     expect(again.status).toBe(409);
     const events = await withDb((db) =>
-      db.query("SELECT count(*)::int AS n FROM signal_events WHERE type = 'ANNOUNCEMENT' AND payload->>'announcementId' = $1", [draft.body.id]),
+      db.query(
+        "SELECT count(*)::int AS n FROM signal_events WHERE type = 'ANNOUNCEMENT' AND payload->>'announcementId' = $1",
+        [draft.body.id],
+      ),
     );
     expect(events.rows[0].n).toBe(1);
   });
@@ -326,7 +353,11 @@ describe('announcements', () => {
     });
     expect(soon.body.status).toBe('SCHEDULED');
     expect(await board(app)).not.toContain(soon.body.id);
-    await waitUntil(async () => (await admin().get(`/admin/announcements/${soon.body.id}`)).body.status === 'PUBLISHED', 15_000, 'scheduled publish');
+    await waitUntil(
+      async () => (await admin().get(`/admin/announcements/${soon.body.id}`)).body.status === 'PUBLISHED',
+      15_000,
+      'scheduled publish',
+    );
     expect(await board(app)).toContain(soon.body.id);
   });
 
@@ -341,16 +372,25 @@ describe('announcements', () => {
     });
     expect(edited.status).toBe(200);
     expect(edited.body.editedAt).not.toBeNull();
-    const stale = await admin().req('PUT', `/admin/announcements/${sent.id}`, { ...content, expectedVersion: sent.version });
+    const stale = await admin().req('PUT', `/admin/announcements/${sent.id}`, {
+      ...content,
+      expectedVersion: sent.version,
+    });
     expect(stale.status).toBe(409);
     const event = await withDb((db) => db.query('SELECT title FROM signal_events WHERE id = $1', [sent.eventId]));
     expect(event.rows[0].title).toBe('Holiday hours');
 
-    const archived = await admin().post(`/admin/announcements/${sent.id}/archive`, { expectedVersion: edited.body.version });
+    const archived = await admin().post(`/admin/announcements/${sent.id}/archive`, {
+      expectedVersion: edited.body.version,
+    });
     expect(await board(app)).not.toContain(sent.id);
-    const restored = await admin().post(`/admin/announcements/${sent.id}/restore`, { expectedVersion: archived.body.version });
+    const restored = await admin().post(`/admin/announcements/${sent.id}/restore`, {
+      expectedVersion: archived.body.version,
+    });
     expect(await board(app)).toContain(sent.id);
-    const binned = await admin().req('DELETE', `/admin/announcements/${sent.id}`, { expectedVersion: restored.body.version });
+    const binned = await admin().req('DELETE', `/admin/announcements/${sent.id}`, {
+      expectedVersion: restored.body.version,
+    });
     expect(binned.body.deleted).toBe(true);
     expect(await board(app)).not.toContain(sent.id);
     const purgeSent = await admin().post(`/admin/announcements/${sent.id}/purge`, {
@@ -360,8 +400,13 @@ describe('announcements', () => {
     expect(purgeSent.status).toBe(409);
 
     const draft = (await admin().post('/admin/announcements', { ...base(), mode: 'DRAFT' })).body;
-    expect((await admin().post(`/admin/announcements/${draft.id}/purge`, { expectedVersion: draft.version })).status).toBe(422);
-    const purged = await admin().post(`/admin/announcements/${draft.id}/purge`, { expectedVersion: draft.version, confirm: 'PERMANENTLY_DELETE' });
+    expect(
+      (await admin().post(`/admin/announcements/${draft.id}/purge`, { expectedVersion: draft.version })).status,
+    ).toBe(422);
+    const purged = await admin().post(`/admin/announcements/${draft.id}/purge`, {
+      expectedVersion: draft.version,
+      confirm: 'PERMANENTLY_DELETE',
+    });
     expect(purged.status).toBe(200);
     expect((await admin().get(`/admin/announcements/${draft.id}`)).status).toBe(404);
   });
@@ -369,7 +414,11 @@ describe('announcements', () => {
   it('changes nothing in a bulk action when the confirmed count is out of date', async () => {
     const a = (await admin().post('/admin/announcements', base())).body;
     const b = (await admin().post('/admin/announcements', { ...base(), mode: 'DRAFT' })).body;
-    const refused = await admin().post('/admin/announcements/bulk', { ids: [a.id, b.id], action: 'ARCHIVE', expectedCount: 2 });
+    const refused = await admin().post('/admin/announcements/bulk', {
+      ids: [a.id, b.id],
+      action: 'ARCHIVE',
+      expectedCount: 2,
+    });
     expect(refused.status).toBe(409);
     expect((await admin().get(`/admin/announcements/${a.id}`)).body.status).toBe('PUBLISHED');
     const ok = await admin().post('/admin/announcements/bulk', { ids: [a.id], action: 'ARCHIVE', expectedCount: 1 });
@@ -429,17 +478,25 @@ describe('administrative archive', () => {
     expect(refused.status).toBe(409);
 
     const done = await cancelled();
-    const res = await admin().post('/admin/trade-archive', { tradeIds: [done.id], expectedCount: 1, reason: 'Tidy up' });
+    const res = await admin().post('/admin/trade-archive', {
+      tradeIds: [done.id],
+      expectedCount: 1,
+      reason: 'Tidy up',
+    });
     expect(res.body.archived).toBe(1);
     const ids = (await app.get('/signals?limit=50')).body.cards.map((c: { id: string }) => c.id);
     expect(ids).not.toContain(done.id);
     expect(ids).toContain(live.id);
     expect((await app.get(`/trades/${done.id}`)).body.archived).toBe(true);
-    expect((await admin().get('/admin/trades?archived=ARCHIVED&pageSize=100')).body.trades.map((t: { id: string }) => t.id)).toContain(done.id);
+    expect(
+      (await admin().get('/admin/trades?archived=ARCHIVED&pageSize=100')).body.trades.map((t: { id: string }) => t.id),
+    ).toContain(done.id);
 
     expect((await admin().post('/admin/trade-archive/restore', { tradeIds: [done.id] })).body.restored).toBe(1);
     expect((await app.get('/signals?limit=50')).body.cards.map((c: { id: string }) => c.id)).toContain(done.id);
-    const events = await withDb((db) => db.query('SELECT count(*)::int AS n FROM signal_events WHERE trade_id = $1', [done.id]));
+    const events = await withDb((db) =>
+      db.query('SELECT count(*)::int AS n FROM signal_events WHERE trade_id = $1', [done.id]),
+    );
     expect(events.rows[0].n).toBe(2);
   });
 
@@ -483,7 +540,8 @@ describe('instruments', () => {
     const created = await admin().post('/admin/instruments', spec(symbol));
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ exchange: 'COMEX', archivedAt: null, tradeCount: 0 });
-    const symbols = async () => (await admin().get('/instruments/symbols')).body.symbols.map((s: { symbol: string }) => s.symbol);
+    const symbols = async () =>
+      (await admin().get('/instruments/symbols')).body.symbols.map((s: { symbol: string }) => s.symbol);
     expect(await symbols()).toContain(symbol);
 
     const archived = await admin().post(`/admin/instruments/${created.body.id}/archive`);
@@ -500,7 +558,10 @@ describe('instruments', () => {
       idempotencyKey: randomUUID(),
     });
     expect(blocked.body.error.code).toBe('INSTRUMENT_INACTIVE');
-    const switchOn = await admin().req('PUT', `/admin/instruments/${created.body.id}`, { ...spec(symbol), active: true });
+    const switchOn = await admin().req('PUT', `/admin/instruments/${created.body.id}`, {
+      ...spec(symbol),
+      active: true,
+    });
     expect(switchOn.status).toBe(409);
     const restored = await admin().post(`/admin/instruments/${created.body.id}/restore`);
     expect(restored.body).toMatchObject({ archivedAt: null, active: false });
@@ -520,8 +581,18 @@ describe('notification metadata and timing', () => {
     expect((await app.post('/push/devices', { token, platform: 'ios' })).status).toBe(201);
     const trade = await publish();
     await act(trade, 'MODIFY_TARGETS', { targets: [String(Number(trade.entryLow) + 160)] });
-    await admin().post('/admin/announcements', { title: 'Note', body: 'Read this.', category: 'GENERAL', idempotencyKey: randomUUID() });
-    await admin().post('/admin/announcements', { title: 'Lesson', body: 'How stops work.', category: 'EDUCATIONAL', idempotencyKey: randomUUID() });
+    await admin().post('/admin/announcements', {
+      title: 'Note',
+      body: 'Read this.',
+      category: 'GENERAL',
+      idempotencyKey: randomUUID(),
+    });
+    await admin().post('/admin/announcements', {
+      title: 'Lesson',
+      body: 'How stops work.',
+      category: 'EDUCATIONAL',
+      idempotencyKey: randomUUID(),
+    });
     const [signal, update, note, lesson] = await expoFor(token, 4);
     expect(signal?.message).toMatchObject({
       interruptionLevel: 'time-sensitive',
@@ -537,7 +608,11 @@ describe('notification metadata and timing', () => {
     });
     expect(update?.message).toMatchObject({ interruptionLevel: 'active', channelId: 'updates' });
     expect(update?.message.data.seq).toBeGreaterThan(signal?.message.data.seq);
-    expect(note?.message).toMatchObject({ interruptionLevel: 'active', channelId: 'announcements', data: { path: '/news' } });
+    expect(note?.message).toMatchObject({
+      interruptionLevel: 'active',
+      channelId: 'announcements',
+      data: { path: '/news' },
+    });
     expect(lesson?.message.interruptionLevel).toBe('passive');
   });
 
@@ -549,14 +624,18 @@ describe('notification metadata and timing', () => {
     await expoFor(token);
     await waitUntil(async () => {
       const rows = await withDb((db) =>
-        db.query("SELECT count(*)::int AS n FROM push_deliveries WHERE event_id = $1 AND status = 'ACCEPTED'", [trade.events[0].id]),
+        db.query("SELECT count(*)::int AS n FROM push_deliveries WHERE event_id = $1 AND status = 'ACCEPTED'", [
+          trade.events[0].id,
+        ]),
       );
       return rows.rows[0].n > 0;
     });
     const opened = await app.post('/push/opened', { eventId: trade.events[0].id });
     expect(opened.body.recorded).toBe(true);
     expect((await app.post('/push/opened', { eventId: trade.events[0].id })).body.recorded).toBe(false);
-    const item = (await app.get('/notifications?limit=20')).body.items.find((i: { eventId: string }) => i.eventId === trade.events[0].id);
+    const item = (await app.get('/notifications?limit=20')).body.items.find(
+      (i: { eventId: string }) => i.eventId === trade.events[0].id,
+    );
     expect(item.unread).toBe(false);
 
     const health = (await admin().get('/admin/notifications/health')).body;

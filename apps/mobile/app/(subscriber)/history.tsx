@@ -120,7 +120,11 @@ export default function History() {
               onChange={setFilter}
               instruments={instruments.data ?? []}
               extraCount={hiddenOnly ? 1 : 0}
-              extraChips={hiddenOnly ? <Chip icon="close" label="Hidden by me" on onPress={() => setHiddenOnly(false)} /> : undefined}
+              extraChips={
+                hiddenOnly ? (
+                  <Chip icon="close" label="Hidden by me" on onPress={() => setHiddenOnly(false)} />
+                ) : undefined
+              }
               sheetExtra={
                 <ToggleRow
                   testID="hidden-only"
@@ -140,11 +144,19 @@ export default function History() {
             <ErrorState error={history.error} onRetry={() => void history.refetch()} />
           ) : (
             <EmptyState icon="time-outline" title={filtered ? 'Nothing matches that' : 'No trades yet'}>
-              {hiddenOnly ? 'You have not hidden any trades.' : filtered ? 'Try fewer filters.' : 'Every signal stays here with its full record of changes.'}
+              {hiddenOnly
+                ? 'You have not hidden any trades.'
+                : filtered
+                  ? 'Try fewer filters.'
+                  : 'Every signal stays here with its full record of changes.'}
             </EmptyState>
           )
         }
-        ListFooterComponent={history.isFetchingNextPage ? <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} /> : undefined}
+        ListFooterComponent={
+          history.isFetchingNextPage ? (
+            <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
+          ) : undefined
+        }
         ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
         renderItem={({ item }) => (
           <Pressable
@@ -153,7 +165,11 @@ export default function History() {
             accessibilityLabel={`${item.direction} ${item.symbol}, ${STATUS_LABELS[item.status]}, reference ${item.ref}${item.hidden ? ', hidden by you' : ''}${item.archived ? ', archived' : ''}`}
             onPress={() => router.push(`/trades/${item.id}`)}
             onLongPress={() => item.hidden && setMenuFor(item)}
-            style={({ pressed }) => [styles.row, { backgroundColor: c.surface, borderColor: c.line }, pressed && { opacity: 0.75 }]}
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: c.surface, borderColor: c.line },
+              pressed && { opacity: 0.75 },
+            ]}
           >
             <View style={styles.identity}>
               <DirectionBadge direction={item.direction} />
@@ -205,7 +221,18 @@ export default function History() {
         visible={menuFor !== null}
         title={menuFor ? `${menuFor.symbol} · ${menuFor.ref}` : ''}
         onClose={() => setMenuFor(null)}
-        actions={menuFor ? [{ label: 'Show in Signals again', icon: 'eye-outline', testID: 'action-show', onPress: () => show(menuFor) }] : []}
+        actions={
+          menuFor
+            ? [
+                {
+                  label: 'Show in Signals again',
+                  icon: 'eye-outline',
+                  testID: 'action-show',
+                  onPress: () => show(menuFor),
+                },
+              ]
+            : []
+        }
       />
     </SafeAreaView>
   );

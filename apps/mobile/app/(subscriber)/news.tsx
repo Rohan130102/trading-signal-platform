@@ -65,7 +65,9 @@ export default function News() {
           )
         }
         ListFooterComponent={
-          board.isFetchingNextPage ? <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} /> : undefined
+          board.isFetchingNextPage ? (
+            <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
+          ) : undefined
         }
         ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
         renderItem={({ item }) => <AnnouncementCard item={item} onMenu={setMenuFor} />}
@@ -94,7 +96,9 @@ export default function News() {
                           action: { label: 'Undo', onPress: () => void setHidden(item, false).catch(() => undefined) },
                         });
                       })
-                      .catch((error: Error) => toast({ tone: 'error', title: 'Could not hide it', body: error.message }));
+                      .catch((error: Error) =>
+                        toast({ tone: 'error', title: 'Could not hide it', body: error.message }),
+                      );
                   },
                 },
               ]

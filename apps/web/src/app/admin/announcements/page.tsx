@@ -93,11 +93,21 @@ function Composer({ editing, onClose }: { editing: AdminAnnouncement | null; onC
 
   const save = useMutation({
     mutationFn: (payload: unknown) =>
-      editing ? api.put(`/admin/announcements/${editing.id}`, payload) : api.post<AdminAnnouncement>('/admin/announcements', payload),
+      editing
+        ? api.put(`/admin/announcements/${editing.id}`, payload)
+        : api.post<AdminAnnouncement>('/admin/announcements', payload),
     onSuccess: (result) => {
       void client.invalidateQueries({ queryKey: ['admin', 'announcements'] });
       const status = (result as AdminAnnouncement | undefined)?.status;
-      toast.success(editing ? 'Changes saved' : status === 'PUBLISHED' ? 'Sent to subscribers' : status === 'SCHEDULED' ? 'Scheduled' : 'Draft saved');
+      toast.success(
+        editing
+          ? 'Changes saved'
+          : status === 'PUBLISHED'
+            ? 'Sent to subscribers'
+            : status === 'SCHEDULED'
+              ? 'Scheduled'
+              : 'Draft saved',
+      );
       onClose();
     },
   });
@@ -201,13 +211,17 @@ function Composer({ editing, onClose }: { editing: AdminAnnouncement | null; onC
             )}
           </Field>
           <Field label="Remove from the News tab after" hint="Optional.">
-            {(c) => <Input {...c} type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />}
+            {(c) => (
+              <Input {...c} type="datetime-local" value={expiresAt} onChange={(e) => setExpiresAt(e.target.value)} />
+            )}
           </Field>
         </div>
         <div className="rounded-lg border border-line px-3">
           <Switch
             label="Priority alert"
-            description={urgent ? 'Urgent announcements are always priority alerts.' : 'Louder alert, highlighted on the News tab.'}
+            description={
+              urgent ? 'Urgent announcements are always priority alerts.' : 'Louder alert, highlighted on the News tab.'
+            }
             checked={priority || urgent}
             onChange={setPriority}
           />
@@ -234,7 +248,9 @@ function Composer({ editing, onClose }: { editing: AdminAnnouncement | null; onC
         )}
         {(mode === 'SCHEDULE' || editing?.status === 'SCHEDULED') && (
           <Field label="Publish at (your local time)" error={errors.publishAt}>
-            {(c) => <Input {...c} type="datetime-local" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} />}
+            {(c) => (
+              <Input {...c} type="datetime-local" value={publishAt} onChange={(e) => setPublishAt(e.target.value)} />
+            )}
           </Field>
         )}
         <section aria-label="Preview" className="rounded-xl border border-line bg-bg p-4">
@@ -254,7 +270,13 @@ function Composer({ editing, onClose }: { editing: AdminAnnouncement | null; onC
         </section>
         <FormError error={save.error} />
         <Button type="submit" variant="primary" size="lg" loading={save.isPending}>
-          {editing ? 'Save changes' : mode === 'PUBLISH' ? 'Send to subscribers' : mode === 'SCHEDULE' ? 'Schedule' : 'Save draft'}
+          {editing
+            ? 'Save changes'
+            : mode === 'PUBLISH'
+              ? 'Send to subscribers'
+              : mode === 'SCHEDULE'
+                ? 'Schedule'
+                : 'Save draft'}
         </Button>
       </form>
     </Dialog>
@@ -270,7 +292,9 @@ export default function AnnouncementsPage() {
   const list = useQuery({
     queryKey: ['admin', 'announcements', view, query.trim()],
     queryFn: () =>
-      api.get<AdminAnnouncementsPage>(`/admin/announcements?view=${view}${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''}`),
+      api.get<AdminAnnouncementsPage>(
+        `/admin/announcements?view=${view}${query.trim() ? `&q=${encodeURIComponent(query.trim())}` : ''}`,
+      ),
   });
   const rows = useMemo(() => list.data?.announcements ?? [], [list.data]);
   const chosen = rows.filter((r) => selected.has(r.id));
@@ -285,7 +309,8 @@ export default function AnnouncementsPage() {
     mutationFn: ({ a, action }: { a: AdminAnnouncement; action: string }) => {
       const body = { expectedVersion: a.version };
       if (action === 'delete') return api.delete(`/admin/announcements/${a.id}`, body);
-      if (action === 'purge') return api.post(`/admin/announcements/${a.id}/purge`, { ...body, confirm: 'PERMANENTLY_DELETE' });
+      if (action === 'purge')
+        return api.post(`/admin/announcements/${a.id}/purge`, { ...body, confirm: 'PERMANENTLY_DELETE' });
       return api.post(`/admin/announcements/${a.id}/${action}`, body);
     },
     onSuccess: () => {
@@ -296,7 +321,11 @@ export default function AnnouncementsPage() {
   });
   const bulk = useMutation({
     mutationFn: (action: 'ARCHIVE' | 'RESTORE' | 'DELETE') =>
-      api.post<{ changed: number }>('/admin/announcements/bulk', { ids: chosen.map((r) => r.id), action, expectedCount: chosen.length }),
+      api.post<{ changed: number }>('/admin/announcements/bulk', {
+        ids: chosen.map((r) => r.id),
+        action,
+        expectedCount: chosen.length,
+      }),
     onSuccess: (r) => {
       toast.success(`${r.changed} updated`);
       refresh();
@@ -305,7 +334,9 @@ export default function AnnouncementsPage() {
   });
 
   const purge = (a: AdminAnnouncement) => {
-    const typed = window.prompt(`This announcement was never sent, so it can be removed completely. Type DELETE to confirm.`);
+    const typed = window.prompt(
+      `This announcement was never sent, so it can be removed completely. Type DELETE to confirm.`,
+    );
     if (typed?.trim().toUpperCase() === 'DELETE') act.mutate({ a, action: 'purge' });
   };
 
@@ -336,10 +367,20 @@ export default function AnnouncementsPage() {
             {v.label} <span className="num opacity-70">{list.data?.counts[v.count] ?? ''}</span>
           </Button>
         ))}
-        <Input aria-label="Search announcements" placeholder="Search" className="ml-auto max-w-xs" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Input
+          aria-label="Search announcements"
+          placeholder="Search"
+          className="ml-auto max-w-xs"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
       </div>
       {chosen.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2" role="region" aria-label="Bulk actions">
+        <div
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2"
+          role="region"
+          aria-label="Bulk actions"
+        >
           <span className="text-sm font-semibold">{chosen.length} selected</span>
           {bulkOptions.length === 0 && <span className="text-sm text-muted">No action applies to all of them.</span>}
           {bulkOptions.map((a) => (
@@ -350,7 +391,8 @@ export default function AnnouncementsPage() {
               loading={bulk.isPending}
               onClick={() => {
                 const words = { ARCHIVE: 'Archive', RESTORE: 'Restore', DELETE: 'Move to the bin' }[a];
-                if (window.confirm(`${words}: ${chosen.length} announcement${chosen.length === 1 ? '' : 's'}?`)) bulk.mutate(a);
+                if (window.confirm(`${words}: ${chosen.length} announcement${chosen.length === 1 ? '' : 's'}?`))
+                  bulk.mutate(a);
               }}
             >
               {{ ARCHIVE: 'Archive', RESTORE: 'Restore', DELETE: 'Move to bin' }[a]}
@@ -363,7 +405,9 @@ export default function AnnouncementsPage() {
       )}
       {list.isPending && <Loading rows={3} label="Loading announcements" />}
       {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
-      {list.data && rows.length === 0 && <EmptyState title="Nothing here">Create one with New announcement.</EmptyState>}
+      {list.data && rows.length === 0 && (
+        <EmptyState title="Nothing here">Create one with New announcement.</EmptyState>
+      )}
       {rows.length > 0 && (
         <Card className="divide-y divide-line">
           {rows.map((a) => (
@@ -404,7 +448,10 @@ export default function AnnouncementsPage() {
                   <Button
                     size="sm"
                     variant="primary"
-                    onClick={() => window.confirm('Send now to every subscriber with access?') && act.mutate({ a, action: 'publish' })}
+                    onClick={() =>
+                      window.confirm('Send now to every subscriber with access?') &&
+                      act.mutate({ a, action: 'publish' })
+                    }
                   >
                     Send now
                   </Button>

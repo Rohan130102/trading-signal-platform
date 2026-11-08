@@ -58,7 +58,10 @@ export class DevicesService {
       const fresh = Date.now() - current.boundAt.getTime() < 5000;
       await this.prisma.deviceBinding.update({
         where: { id: current.id },
-        data: { lastSeenAt: new Date(), ...(claim.deviceLabel ? { deviceLabel: claim.deviceLabel.slice(0, 120) } : {}) },
+        data: {
+          lastSeenAt: new Date(),
+          ...(claim.deviceLabel ? { deviceLabel: claim.deviceLabel.slice(0, 120) } : {}),
+        },
       });
       if (fresh) {
         await this.audit.record({

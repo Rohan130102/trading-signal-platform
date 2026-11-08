@@ -61,7 +61,11 @@ export class AnnouncementsController {
   @Post('admin/announcements')
   @AdminOnly()
   @Summary('Save a draft, publish now or schedule. Repeating a request with the same key changes nothing.')
-  async create(@Auth() auth: AuthContext, @RequestId() requestId: string, @ZBody(createBody) body: z.infer<typeof createBody>) {
+  async create(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(createBody) body: z.infer<typeof createBody>,
+  ) {
     const actor = { id: auth.user.id, requestId };
     if ('message' in body) {
       // The original one-field form: rendered through the market update template, published at once.
@@ -100,7 +104,12 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Publish a draft or scheduled announcement now')
-  publish(@Auth() a: AuthContext, @RequestId() r: string, @Param('id', ParseUUIDPipe) id: string, @ZBody(announcementActionSchema) b: Action) {
+  publish(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(announcementActionSchema) b: Action,
+  ) {
     return this.announcements.publish(id, b.expectedVersion, { id: a.user.id, requestId: r });
   }
 
@@ -121,7 +130,12 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Cancel a schedule and keep it as a draft')
-  unschedule(@Auth() a: AuthContext, @RequestId() r: string, @Param('id', ParseUUIDPipe) id: string, @ZBody(announcementActionSchema) b: Action) {
+  unschedule(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(announcementActionSchema) b: Action,
+  ) {
     return this.announcements.unschedule(id, b.expectedVersion, { id: a.user.id, requestId: r });
   }
 
@@ -129,7 +143,12 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Take a published announcement off the board. It stays in the record.')
-  archive(@Auth() a: AuthContext, @RequestId() r: string, @Param('id', ParseUUIDPipe) id: string, @ZBody(announcementActionSchema) b: Action) {
+  archive(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(announcementActionSchema) b: Action,
+  ) {
     return this.announcements.archive(id, b.expectedVersion, { id: a.user.id, requestId: r });
   }
 
@@ -137,7 +156,12 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Bring back from the archive or the bin')
-  restore(@Auth() a: AuthContext, @RequestId() r: string, @Param('id', ParseUUIDPipe) id: string, @ZBody(announcementActionSchema) b: Action) {
+  restore(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(announcementActionSchema) b: Action,
+  ) {
     return this.announcements.restore(id, b.expectedVersion, { id: a.user.id, requestId: r });
   }
 
@@ -145,7 +169,12 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Move to the bin. Restorable.')
-  remove(@Auth() a: AuthContext, @RequestId() r: string, @Param('id', ParseUUIDPipe) id: string, @ZBody(announcementActionSchema) b: Action) {
+  remove(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(announcementActionSchema) b: Action,
+  ) {
     return this.announcements.remove(id, b.expectedVersion, { id: a.user.id, requestId: r });
   }
 
@@ -166,7 +195,11 @@ export class AnnouncementsController {
   @AdminOnly()
   @HttpCode(200)
   @Summary('Archive, restore or bin several at once. All or nothing.')
-  bulk(@Auth() a: AuthContext, @RequestId() r: string, @ZBody(announcementBulkSchema) b: z.infer<typeof announcementBulkSchema>) {
+  bulk(
+    @Auth() a: AuthContext,
+    @RequestId() r: string,
+    @ZBody(announcementBulkSchema) b: z.infer<typeof announcementBulkSchema>,
+  ) {
     return this.announcements.bulk(b.ids, b.action, b.expectedCount, { id: a.user.id, requestId: r });
   }
 

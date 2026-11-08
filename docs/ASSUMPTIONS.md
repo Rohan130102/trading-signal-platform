@@ -56,6 +56,19 @@ Decisions made so the build could proceed. **The first group changes real number
 | Administrator session | 12 hours, or 2 hours idle.                                                                                                                                                                                      |
 | Failed sign-ins       | 8 per login ID or 40 per IP in 15 minutes, then blocked for that window. No account state changes, so an attacker cannot lock someone out for longer than the window, or use lockouts to learn which IDs exist. |
 
+## Mobile experience
+
+| Decision                   | Detail                                                                                                                                                                                                                                    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Deleting history           | Published trades are never deleted. Administrators archive finished ones, which leave the Signals list and stay in History with every event. Deleting losing trades would make the record misleading, and the event store is append-only. |
+| Deleting announcements     | Sent ones can be archived or binned and restored; the event that was sent stays. Only never-sent drafts can be deleted permanently, with a typed confirmation.                                                                            |
+| Hidden trades              | Hiding is a view choice for one subscriber. Alerts about a hidden trade still arrive, because a stop-loss change can matter whatever the list shows, and the trade stays in History.                                                      |
+| Devices per account        | Not limited. Only one account per phone is enforced. A per-account limit was not in the requirements.                                                                                                                                     |
+| Audience targeting         | Everyone with access. There is one subscription tier, so tier or group targeting has nothing to act on yet.                                                                                                                               |
+| Announcement images        | Not supported. There is no file storage, and text with an optional link covers the use.                                                                                                                                                   |
+| Direction colours          | Blue for buy and pink for sell, from the existing design system, always with the word. Green and red stay reserved for targets reached and stop-losses, so direction never reads as profit or loss.                                       |
+| iPhone interruption levels | Time-sensitive only for a new signal, a stop-loss move, a close, a cancellation, an urgent instruction or a priority message. Routine updates and announcements are active; learning notes are passive. Critical alerts are never used.   |
+
 ## Scope
 
 Deliberately not built, as the brief excludes or defers them: payment collection, order placement, broker connection,

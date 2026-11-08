@@ -45,7 +45,12 @@ export function InstrumentPicker({
 
   useEffect(() => {
     if (!open) return;
-    setActive(Math.max(0, options.findIndex((o) => o.symbol === value)));
+    setActive(
+      Math.max(
+        0,
+        options.findIndex((o) => o.symbol === value),
+      ),
+    );
     input.current?.focus();
     const away = (event: MouseEvent) => {
       if (root.current && !root.current.contains(event.target as Node)) setOpen(false);
@@ -123,7 +128,9 @@ export function InstrumentPicker({
             />
           </div>
           <ul id={listId} role="listbox" aria-label="Instruments" className="overflow-y-auto py-1">
-            {options.length === 0 && <li className="px-4 py-6 text-center text-sm text-muted">No instrument matches “{query.trim()}”.</li>}
+            {options.length === 0 && (
+              <li className="px-4 py-6 text-center text-sm text-muted">No instrument matches “{query.trim()}”.</li>
+            )}
             {options.map((option, index) => {
               const selected = option.symbol === value;
               return (
@@ -143,7 +150,11 @@ export function InstrumentPicker({
                     <span className="num block font-semibold">{option.symbol || option.displayName}</span>
                     {option.symbol && (
                       <span className="block truncate text-xs text-muted">
-                        {[option.displayName, 'exchange' in option ? option.exchange : null, 'archived' in option && option.archived ? 'Archived' : null]
+                        {[
+                          option.displayName,
+                          'exchange' in option ? option.exchange : null,
+                          'archived' in option && option.archived ? 'Archived' : null,
+                        ]
                           .filter(Boolean)
                           .join(' · ')}
                       </span>

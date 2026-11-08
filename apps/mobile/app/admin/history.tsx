@@ -86,7 +86,8 @@ export default function ManageHistory() {
   };
 
   const archive = useMutation({
-    mutationFn: (ids: string[]) => api.post<{ archived: number }>('/admin/trade-archive', { tradeIds: ids, expectedCount: ids.length }),
+    mutationFn: (ids: string[]) =>
+      api.post<{ archived: number }>('/admin/trade-archive', { tradeIds: ids, expectedCount: ids.length }),
     onSuccess: (r) => done(`${r.archived} archived`),
     onError: fail,
   });
@@ -132,10 +133,14 @@ export default function ManageHistory() {
       restore.mutate(ids);
       return;
     }
-    Alert.alert(`Archive ${n} trade${n === 1 ? '' : 's'}?`, 'They leave the Signals list and stay in History. You can restore them.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: `Archive ${n}`, onPress: () => archive.mutate(ids) },
-    ]);
+    Alert.alert(
+      `Archive ${n} trade${n === 1 ? '' : 's'}?`,
+      'They leave the Signals list and stay in History. You can restore them.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: `Archive ${n}`, onPress: () => archive.mutate(ids) },
+      ],
+    );
   };
 
   return (
@@ -180,7 +185,12 @@ export default function ManageHistory() {
                 </T>
                 <ChipRow>
                   {AGES.map((a) => (
-                    <Chip key={a.days} testID={`archive-older-${a.days}`} label={`${a.label} ago`} onPress={() => archiveBefore.mutate(a.days)} />
+                    <Chip
+                      key={a.days}
+                      testID={`archive-older-${a.days}`}
+                      label={`${a.label} ago`}
+                      onPress={() => archiveBefore.mutate(a.days)}
+                    />
                   ))}
                 </ChipRow>
               </View>
@@ -196,10 +206,17 @@ export default function ManageHistory() {
           ) : list.isError ? (
             <ErrorState error={list.error} onRetry={() => void list.refetch()} />
           ) : (
-            <EmptyState icon="archive-outline" title={tab === 'ARCHIVED' ? 'Nothing archived' : 'No finished trades to archive'} />
+            <EmptyState
+              icon="archive-outline"
+              title={tab === 'ARCHIVED' ? 'Nothing archived' : 'No finished trades to archive'}
+            />
           )
         }
-        ListFooterComponent={list.isFetchingNextPage ? <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} /> : undefined}
+        ListFooterComponent={
+          list.isFetchingNextPage ? (
+            <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
+          ) : undefined
+        }
         ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
         renderItem={({ item }) => {
           const on = selected.has(item.id);
@@ -219,9 +236,17 @@ export default function ManageHistory() {
                 });
               }}
               onLongPress={() => router.push(`/admin/trades/${item.id}`)}
-              style={({ pressed }) => [styles.row, { backgroundColor: c.surface, borderColor: on ? c.primary : c.line, opacity: pressed ? 0.8 : 1 }]}
+              style={({ pressed }) => [
+                styles.row,
+                { backgroundColor: c.surface, borderColor: on ? c.primary : c.line, opacity: pressed ? 0.8 : 1 },
+              ]}
             >
-              <View style={[styles.check, { borderColor: on ? c.primary : c.lineStrong, backgroundColor: on ? c.primary : 'transparent' }]}>
+              <View
+                style={[
+                  styles.check,
+                  { borderColor: on ? c.primary : c.lineStrong, backgroundColor: on ? c.primary : 'transparent' },
+                ]}
+              >
                 {on && <Ionicons name="checkmark" size={16} color={c.primaryText} />}
               </View>
               <View style={styles.flex}>
@@ -233,7 +258,10 @@ export default function ManageHistory() {
                   </T>
                 </View>
                 <T v="caption" c="subtle" num>
-                  {item.ref} · {item.closedAt ? `finished ${formatDateTime(item.closedAt)}` : `published ${formatDateTime(item.publishedAt)}`}
+                  {item.ref} ·{' '}
+                  {item.closedAt
+                    ? `finished ${formatDateTime(item.closedAt)}`
+                    : `published ${formatDateTime(item.publishedAt)}`}
                   {item.archivedAt ? ` · archived ${formatDateTime(item.archivedAt)}` : ''}
                 </T>
               </View>
@@ -265,9 +293,23 @@ const styles = StyleSheet.create({
   fill: { flex: 1 },
   list: { padding: space.lg, paddingBottom: space.xxl, flexGrow: 1 },
   header: { gap: space.md, marginBottom: space.md },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth, minHeight: 56 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    padding: space.md,
+    borderRadius: radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    minHeight: 56,
+  },
   check: { width: 24, height: 24, borderRadius: 6, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1, minWidth: 0, gap: 2 },
   line: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  bulkBar: { flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md, borderTopWidth: StyleSheet.hairlineWidth },
+  bulkBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    padding: space.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
 });

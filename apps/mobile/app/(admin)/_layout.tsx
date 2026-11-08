@@ -83,5 +83,5 @@ export default function AdminTabs() {
 
 const styles = StyleSheet.create({
   newWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  newButton: { width: 48, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  newButton: { width: 52, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
 });

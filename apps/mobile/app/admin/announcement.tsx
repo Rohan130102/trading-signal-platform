@@ -40,7 +40,8 @@ import {
 type When = 'NOW' | 'SCHEDULE' | 'DRAFT';
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const localLabel = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const localLabel = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 
 /** Reads "YYYY-MM-DD HH:MM" as this phone's local time. */
 function parseLocal(value: string): Date | null {
@@ -115,7 +116,8 @@ function Composer() {
   const urgent = category === 'URGENT';
   const placeholders = useMemo(() => unfilledPlaceholders(`${title}\n${body}`), [body, title]);
   const scheduleAt = parseLocal(scheduleText);
-  const expiresAt = expiryHours > 0 ? new Date(Date.now() + expiryHours * 3_600_000).toISOString() : current?.expiresAt ?? null;
+  const expiresAt =
+    expiryHours > 0 ? new Date(Date.now() + expiryHours * 3_600_000).toISOString() : (current?.expiresAt ?? null);
 
   const content = () => ({
     title,
@@ -180,7 +182,12 @@ function Composer() {
       idempotencyKey: key,
     });
     if (when === 'SCHEDULE' && (!scheduleAt || scheduleAt.getTime() < Date.now())) {
-      return fail([{ path: ['publishAt'], message: scheduleAt ? 'Choose a time in the future' : 'Use the format 2026-11-20 09:30' }]);
+      return fail([
+        {
+          path: ['publishAt'],
+          message: scheduleAt ? 'Choose a time in the future' : 'Use the format 2026-11-20 09:30',
+        },
+      ]);
     }
     if (!parsed.success) return fail(parsed.error.issues);
     setErrors({});
@@ -208,7 +215,15 @@ function Composer() {
       footer={
         <Button
           testID="announcement-send"
-          label={id ? 'Save changes' : when === 'NOW' ? 'Send to subscribers' : when === 'SCHEDULE' ? 'Schedule' : 'Save draft'}
+          label={
+            id
+              ? 'Save changes'
+              : when === 'NOW'
+                ? 'Send to subscribers'
+                : when === 'SCHEDULE'
+                  ? 'Schedule'
+                  : 'Save draft'
+          }
           variant="primary"
           large
           heavy={when === 'NOW' && !id}
@@ -245,8 +260,24 @@ function Composer() {
           </ChipRow>
         </View>
       )}
-      <Field testID="announcement-title" label="Title" value={title} onChangeText={setTitle} maxLength={120} error={errors.title} />
-      <Field testID="announcement-message" label="Message" value={body} onChangeText={setBody} multiline maxLength={2000} error={errors.body} hint="Plain text. Line breaks are kept." />
+      <Field
+        testID="announcement-title"
+        label="Title"
+        value={title}
+        onChangeText={setTitle}
+        maxLength={120}
+        error={errors.title}
+      />
+      <Field
+        testID="announcement-message"
+        label="Message"
+        value={body}
+        onChangeText={setBody}
+        multiline
+        maxLength={2000}
+        error={errors.body}
+        hint="Plain text. Line breaks are kept."
+      />
       {placeholders.length > 0 && (
         <Notice tone="update" icon="create-outline" title="Fill in the template">
           Replace {placeholders.join(', ')} before sending.
@@ -258,23 +289,53 @@ function Composer() {
         </T>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
           {ANNOUNCEMENT_CATEGORIES.map((value) => (
-            <Chip key={value} testID={`category-${value}`} label={ANNOUNCEMENT_CATEGORY_LABELS[value]} on={category === value} onPress={() => setCategory(value)} />
+            <Chip
+              key={value}
+              testID={`category-${value}`}
+              label={ANNOUNCEMENT_CATEGORY_LABELS[value]}
+              on={category === value}
+              onPress={() => setCategory(value)}
+            />
           ))}
         </View>
       </View>
       <ToggleRow
         label="Priority alert"
-        hint={urgent ? 'Urgent announcements are always sent as priority alerts.' : 'A louder alert, highlighted on the News tab.'}
+        hint={
+          urgent
+            ? 'Urgent announcements are always sent as priority alerts.'
+            : 'A louder alert, highlighted on the News tab.'
+        }
         value={priority || urgent}
         disabled={urgent}
         onChange={setPriority}
       />
-      <ToggleRow label="Pin to the top" hint="Stays above other announcements until unpinned or archived." value={pinned} onChange={setPinned} />
+      <ToggleRow
+        label="Pin to the top"
+        hint="Stays above other announcements until unpinned or archived."
+        value={pinned}
+        onChange={setPinned}
+      />
       <ToggleRow label="Add a button with a link" value={withLink} onChange={setWithLink} />
       {withLink && (
         <>
-          <Field label="Link" value={linkUrl} onChangeText={setLinkUrl} autoCapitalize="none" autoCorrect={false} keyboardType="url" hint="Must start with https://" error={errors.linkUrl} />
-          <Field label="Button text" value={linkLabel} onChangeText={setLinkLabel} maxLength={40} hint="Optional, such as Read more." />
+          <Field
+            label="Link"
+            value={linkUrl}
+            onChangeText={setLinkUrl}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            hint="Must start with https://"
+            error={errors.linkUrl}
+          />
+          <Field
+            label="Button text"
+            value={linkLabel}
+            onChangeText={setLinkLabel}
+            maxLength={40}
+            hint="Optional, such as Read more."
+          />
         </>
       )}
 
@@ -297,10 +358,22 @@ function Composer() {
         <View style={{ gap: space.sm }}>
           <ChipRow>
             {schedulePresets().map((p) => (
-              <Chip key={p.label} label={p.label} on={scheduleText === localLabel(p.at)} onPress={() => setScheduleText(localLabel(p.at))} />
+              <Chip
+                key={p.label}
+                label={p.label}
+                on={scheduleText === localLabel(p.at)}
+                onPress={() => setScheduleText(localLabel(p.at))}
+              />
             ))}
           </ChipRow>
-          <Field label="Publish at (your local time)" value={scheduleText} onChangeText={setScheduleText} hint="Format: 2026-11-20 09:30" error={errors.publishAt} autoCorrect={false} />
+          <Field
+            label="Publish at (your local time)"
+            value={scheduleText}
+            onChangeText={setScheduleText}
+            hint="Format: 2026-11-20 09:30"
+            error={errors.publishAt}
+            autoCorrect={false}
+          />
         </View>
       )}
       <View style={{ gap: space.sm }}>

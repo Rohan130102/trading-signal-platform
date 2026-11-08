@@ -54,7 +54,9 @@ const SYMBOL = /^[A-Z0-9/._-]{1,24}$/;
 
 /** A filter saved on a phone may name instruments that no longer exist. Those are dropped, not errors. */
 export function normaliseFilter(value: unknown, knownSymbols?: readonly string[]): SignalFilter {
-  const input = (typeof value === 'object' && value !== null ? value : {}) as Partial<Record<keyof SignalFilter, unknown>>;
+  const input = (typeof value === 'object' && value !== null ? value : {}) as Partial<
+    Record<keyof SignalFilter, unknown>
+  >;
   const symbols = Array.isArray(input.symbols)
     ? [...new Set(input.symbols.filter((s): s is string => typeof s === 'string' && SYMBOL.test(s)))]
     : [];

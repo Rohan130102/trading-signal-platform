@@ -234,7 +234,13 @@ describe('tapping a notification', () => {
   it('never shows the system banner while the app is open: the app shows its own, once', async () => {
     listenForNotifications(jest.fn(), jest.fn())();
     const [options] = mockN.setNotificationHandler.mock.calls[0] as unknown as [
-      { handleNotification: () => Promise<{ shouldShowBanner: boolean; shouldShowList: boolean; shouldPlaySound: boolean }> },
+      {
+        handleNotification: () => Promise<{
+          shouldShowBanner: boolean;
+          shouldShowList: boolean;
+          shouldPlaySound: boolean;
+        }>;
+      },
     ];
     const decision = await options.handleNotification();
     expect(decision.shouldShowBanner).toBe(false);
@@ -273,7 +279,9 @@ describe('tapping a notification', () => {
   it('reports an opened notification once, so the desk can see real opens', async () => {
     mockApi.post.mockResolvedValue({});
     const stop = listenForNotifications(jest.fn(), jest.fn());
-    const handler = (mockN.addNotificationResponseReceivedListener.mock.calls as unknown as [[(r: unknown) => void]])[0][0];
+    const handler = (
+      mockN.addNotificationResponseReceivedListener.mock.calls as unknown as [[(r: unknown) => void]]
+    )[0][0];
     const response = { notification: { request: { content: { data: { eventId: id, path: `/trades/${id}` } } } } };
     handler(response);
     handler(response);

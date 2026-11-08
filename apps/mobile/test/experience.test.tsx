@@ -93,7 +93,11 @@ const card: Card = {
   lastEventAt: null,
   lastEventTitle: null,
   updatesCount: 6,
-  recentUpdates: [update(9), update(8, { type: 'TARGETS_MODIFIED', title: 'Targets changed' }), update(7, { title: 'Activated', type: 'ENTRY_ACTIVATED' })],
+  recentUpdates: [
+    update(9),
+    update(8, { type: 'TARGETS_MODIFIED', title: 'Targets changed' }),
+    update(7, { title: 'Activated', type: 'ENTRY_ACTIVATED' }),
+  ],
   unread: true,
   activitySeq: 9,
   outcome: null,
@@ -140,7 +144,11 @@ describe('the filter bar', () => {
   it('says what is on, and each chip removes its own filter', async () => {
     const onChange = jest.fn();
     await wrap(
-      <FilterBar value={{ symbols: ['XAU/USD', 'BTC/USD'], direction: 'SELL', status: 'OPEN' }} onChange={onChange} instruments={instruments} />,
+      <FilterBar
+        value={{ symbols: ['XAU/USD', 'BTC/USD'], direction: 'SELL', status: 'OPEN' }}
+        onChange={onChange}
+        instruments={instruments}
+      />,
     );
     expect(screen.getByText('2 instruments')).toBeTruthy();
     expect(screen.getByLabelText('Filters, 3 on')).toBeTruthy();
@@ -150,7 +158,13 @@ describe('the filter bar', () => {
 
   it('opens a searchable instrument list with a clear selected state', async () => {
     const onChange = jest.fn();
-    await wrap(<FilterBar value={{ symbols: [], direction: null, status: 'ALL' }} onChange={onChange} instruments={instruments} />);
+    await wrap(
+      <FilterBar
+        value={{ symbols: [], direction: null, status: 'ALL' }}
+        onChange={onChange}
+        instruments={instruments}
+      />,
+    );
     expect(screen.getByText('All instruments')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('instrument-button'));
     await fireEvent.changeText(screen.getByTestId('instrument-search'), 'bit');
@@ -256,10 +270,15 @@ describe('small pieces', () => {
 
   it('identifies an Android installation by a hash, never the raw identifier', async () => {
     jest.resetModules();
-    jest.doMock('expo-application', () => ({ getAndroidId: () => 'raw-android-id', applicationId: 'com.signaldesk.app' }));
+    jest.doMock('expo-application', () => ({
+      getAndroidId: () => 'raw-android-id',
+      applicationId: 'com.signaldesk.app',
+    }));
     jest.doMock('expo-crypto', () => ({
       CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
-      digestStringAsync: jest.fn(async (_a: string, value: string) => `digest-of-${value.length}-chars-`.padEnd(64, 'f')),
+      digestStringAsync: jest.fn(async (_a: string, value: string) =>
+        `digest-of-${value.length}-chars-`.padEnd(64, 'f'),
+      ),
       randomUUID: () => '11111111-2222-4333-8444-555555555555',
     }));
     jest.replaceProperty(Platform, 'OS', 'android');

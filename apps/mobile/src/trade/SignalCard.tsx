@@ -1,5 +1,11 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { CLOSE_REASON_LABELS, formatDateTime, type SignalCard as Card, STATUS_LABELS } from '@signaldesk/domain';
+import {
+  CLOSE_REASON_LABELS,
+  formatDateTime,
+  formatPrice,
+  type SignalCard as Card,
+  STATUS_LABELS,
+} from '@signaldesk/domain';
 import { useRouter } from 'expo-router';
 import { memo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -17,7 +23,14 @@ const OUTCOME = {
 } as const;
 
 function summary(card: Card): string {
-  const parts = [`${card.direction === 'BUY' ? 'Buy' : 'Sell'} ${card.symbol}`, STATUS_LABELS[card.status]];
+  const fmt = (v: string) => formatPrice({ pricePrecision: card.pricePrecision }, v);
+  const entry = card.entryType === 'RANGE' ? `${fmt(card.entryLow)} to ${fmt(card.entryHigh)}` : fmt(card.entryLow);
+  const parts = [
+    `${card.direction === 'BUY' ? 'Buy' : 'Sell'} ${card.symbol}`,
+    STATUS_LABELS[card.status],
+    `Entry ${entry}, stop-loss ${fmt(card.stopLoss)}`,
+    ...card.targets.map((t) => `Target ${t.index} ${fmt(t.price)}${t.status === 'HIT' ? ', reached' : ''}`),
+  ];
   if (card.unread) parts.unshift('New');
   const latest = card.recentUpdates[0];
   if (latest) parts.push(`Latest: ${latest.title}`);
@@ -28,13 +41,7 @@ function summary(card: Card): string {
  * One trade and everything that happened to it. The levels shown are the trade's current ones; the latest
  * update says what changed most recently; earlier updates fold away so the list stays calm.
  */
-export const SignalCard = memo(function SignalCard({
-  card,
-  onMenu,
-}: {
-  card: Card;
-  onMenu: (card: Card) => void;
-}) {
+export const SignalCard = memo(function SignalCard({ card, onMenu }: { card: Card; onMenu: (card: Card) => void }) {
   const c = useColors();
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
@@ -155,7 +162,9 @@ export const SignalCard = memo(function SignalCard({
             >
               <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={c.muted} />
               <T v="small" c="muted" style={{ fontWeight: '600' }}>
-                {expanded ? 'Hide earlier updates' : `${earlier.length} earlier update${earlier.length === 1 ? '' : 's'}`}
+                {expanded
+                  ? 'Hide earlier updates'
+                  : `${earlier.length} earlier update${earlier.length === 1 ? '' : 's'}`}
               </T>
             </Pressable>
           )}

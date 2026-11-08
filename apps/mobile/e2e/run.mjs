@@ -51,9 +51,48 @@ const escapeRe = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const expectText = async (pattern, timeout = 15_000) =>
   d.waitFor({ any: pattern instanceof RegExp ? pattern : new RegExp(escapeRe(pattern), 'i') }, timeout);
 const network = async (what) => fetch(`http://localhost:${state.controlPort}/network/${what}`);
-/** How many feed cards mention this, whatever else on screen repeats the figure. */
+/** A trade card in the Signals list (not its menu or expand buttons, which share the prefix). */
+const SIGNAL_CARD = /^signal-T-/;
+/** How many trade cards mention this, whatever else on screen repeats the figure. */
 const cardCount = async (text) =>
-  (await d.nodes()).filter((n) => n.id.startsWith('feed-card-') && n.desc.includes(text)).length;
+  (await d.nodes()).filter((n) => SIGNAL_CARD.test(n.id) && n.desc.includes(text)).length;
+
+/**
+ * One emulator plays several subscribers, but the app allows one account per phone. Before a subscriber
+ * signs in, every current binding is released, as an administrator would for a phone handed on.
+ */
+async function freePhone() {
+  const { subscribers } = await server('GET', '/admin/subscribers?pageSize=100');
+  for (const sub of subscribers) {
+    const { devices } = await server('GET', `/admin/subscribers/${sub.id}/devices`);
+    for (const device of devices.filter((x) => !x.releasedAt)) {
+      await server('POST', `/admin/devices/${device.id}/release`, { reason: 'End-to-end run: next account' });
+    }
+  }
+}
+
+/** After a subscriber signs in: the first-use tour may show once. Skips it and lands on Signals. */
+async function landSubscriber() {
+  const deadline = Date.now() + 25_000;
+  while (Date.now() < deadline) {
+    if (await d.has({ id: 'tour-skip' })) {
+      await d.tap({ id: 'tour-skip' });
+      break;
+    }
+    if (await d.has({ id: 'feed-list' })) break;
+    await delay(400);
+  }
+  await d.waitFor({ id: 'feed-list' }, 20_000);
+}
+
+/** Filters are saved on the phone, so a journey that sets them puts them back. */
+async function resetFilters() {
+  await d.tap({ id: 'filter-button' });
+  await d.waitFor({ id: 'filter-sheet' });
+  await d.tap({ id: 'filter-reset' }).catch(() => undefined);
+  await d.tap({ id: 'filter-apply' });
+  await d.waitGone({ id: 'filter-sheet' });
+}
 
 let instrumentIds = null;
 async function instrument(symbol = 'XAU/USD') {
@@ -107,6 +146,11 @@ async function signOutIfNeeded() {
     const nodes = await d.nodes();
     const has = (id) => nodes.some((n) => n.id.endsWith(id) || n.id === id);
     if (has('login-id')) return;
+    if (has('tour-skip')) {
+      await d.tap({ id: 'tour-skip' });
+      await delay(800);
+      continue;
+    }
     if (has('tab-account')) {
       await d.tap({ id: 'tab-account' });
       await d.scrollTo({ id: 'sign-out' }, { maxSwipes: 15 });
@@ -154,8 +198,9 @@ async function totp() {
 
 async function signInSubscriber() {
   await signOutIfNeeded();
+  await freePhone();
   await login(state.subscriber.loginId, state.password);
-  await d.waitFor({ id: 'feed-list' }, 20_000);
+  await landSubscriber();
 }
 
 async function signInAdmin() {
@@ -204,6 +249,7 @@ J['first-sign-in-subscriber'] = async () => {
     idempotencyKey: randomUUID(),
   });
   await signOutIfNeeded();
+  await freePhone();
   await login(loginId, temporaryPassword);
   await d.waitFor({ id: 'new-password' }, 20_000);
   await d.screenshot('set-password');
@@ -218,9 +264,30 @@ J['first-sign-in-subscriber'] = async () => {
   await d.type({ id: 'new-password-again' }, state.password);
   await d.hideKeyboard();
   await d.tap({ id: 'set-password-submit' });
+  // The first-use tour, once. Every step can be read and passed, and finishing it is remembered.
+  await d.waitFor({ id: 'onboarding' }, 20_000);
+  await expectText('Welcome to SignalDesk');
+  await d.screenshot('tour-1-welcome');
+  for (const [step, title] of [
+    [2, 'Reading a signal'],
+    [3, 'Updates stay with their trade'],
+    [4, 'Alerts'],
+    [5, 'Your list, your way'],
+  ]) {
+    await d.tap({ id: 'tour-next' });
+    await expectText(title);
+    // Expo Go cannot receive alerts, and the step says so instead of asking for a permission it cannot use.
+    if (step === 4) await expectText(/cannot receive alerts|Turn on alerts|Alerts are on/);
+    await d.screenshot(`tour-${step}`);
+  }
+  await d.tap({ id: 'tour-done' });
   await d.waitFor({ id: 'feed-list' }, 20_000);
   await d.waitFor({ id: 'live-live' }, 20_000);
   await d.screenshot('first-feed');
+  await delay(1500);
+  await launch();
+  await d.waitFor({ id: 'feed-list' }, 40_000);
+  assert(!(await d.has({ id: 'onboarding' })), 'The tour is not shown a second time');
 };
 
 J['first-sign-in-admin'] = async () => {
@@ -254,7 +321,7 @@ J['subscriber-live-signal'] = async () => {
   const trade = await publish({ direction: 'BUY', entry: 3300 });
   // No refresh, no tap: it must simply appear.
   await d.waitFor({ any: /Stop-loss/ }, 10_000);
-  await expectText('New signal', 5000);
+  await expectText('Awaiting entry', 5000);
   const elapsed = Date.now() - before;
   console.warn(`  live card visible ${elapsed} ms after the publish request began (screen polling included)`);
   const text = await d.text();
@@ -262,7 +329,7 @@ J['subscriber-live-signal'] = async () => {
     assert(text.includes(expected), `The new card shows ${expected}`);
   }
   await d.screenshot('feed-new-signal');
-  await d.tap({ any: /^feed-card-/ });
+  await d.tap({ any: SIGNAL_CARD });
   await d.waitFor({ id: 'trade-detail' });
   await expectText(/Awaiting entry|Published and awaiting/);
   await d.screenshot('trade-awaiting');
@@ -275,15 +342,23 @@ J['subscriber-live-signal'] = async () => {
   await d.screenshot('trade-stop-moved');
   await d.back();
   await d.waitFor({ id: 'feed-list' });
-  await expectText(/Update to T-/);
+  // The update is attached to its trade: the same card, its current stop, and the change shown on it.
+  await expectText('Latest update');
   await expectText('3,200.00');
+  assert((await cardCount('3,300.00')) === 1, 'The update did not become a second card');
   await d.screenshot('feed-update');
 
-  await d.tap({ id: 'tab-active' });
-  await d.waitFor({ id: 'active-list' });
+  // Only open trades, through the filter sheet.
+  await d.tap({ id: 'filter-button' });
+  await d.waitFor({ id: 'filter-sheet' });
+  await d.tap({ id: 'status-OPEN' });
+  await d.screenshot('filter-sheet');
+  await d.tap({ id: 'filter-apply' });
+  await d.waitGone({ id: 'filter-sheet' });
+  await expectText('Filters, 1 on');
   await expectText('3,200.00');
-  await d.screenshot('active');
-  await d.tap({ any: /BUY XAU\/USD/ });
+  await d.screenshot('feed-open-only');
+  await d.tap({ any: /Buy XAU\/USD/i });
   await d.waitFor({ id: 'trade-detail' });
   await act(trade, 'TARGET_HIT', { targetIndex: 1 });
   await expectText('Target 1, reached');
@@ -311,6 +386,8 @@ J['subscriber-live-signal'] = async () => {
   await d.hideKeyboard();
   await expectText(`history-${trade.ref}`);
   await d.tap({ id: 'tab-feed' });
+  await d.waitFor({ id: 'feed-list' });
+  await resetFilters();
 };
 
 J['subscriber-network-loss-recovery'] = async () => {
@@ -325,14 +402,14 @@ J['subscriber-network-loss-recovery'] = async () => {
   await delay(2500);
   assert((await cardCount('3,501.00')) === 0, 'Nothing new can appear with the connection down');
   await network('restore');
-  await d.waitFor({ any: /^feed-card-/, desc: /3,502\.00/ }, 60_000);
+  await d.waitFor({ any: SIGNAL_CARD, desc: /3,502\.00/ }, 60_000);
   await d.waitFor({ id: 'live-live' }, 30_000);
   await d.waitGone({ id: 'connection-banner' }, 15_000);
   assert((await cardCount('3,501.00')) === 1, 'A missed signal appears exactly once');
   assert((await cardCount('3,502.00')) === 1, 'A missed signal appears exactly once');
   const nodes = await d.nodes();
-  const sell = nodes.find((n) => n.id.startsWith('feed-card-') && n.desc.includes('3,502.00'));
-  const buy = nodes.find((n) => n.id.startsWith('feed-card-') && n.desc.includes('3,501.00'));
+  const sell = nodes.find((n) => SIGNAL_CARD.test(n.id) && n.desc.includes('3,502.00'));
+  const buy = nodes.find((n) => SIGNAL_CARD.test(n.id) && n.desc.includes('3,501.00'));
   assert(sell.y < buy.y, 'Missed signals arrive in order, newest first');
   await d.screenshot('feed-caught-up');
   for (const trade of missed) await act(trade, 'CANCEL', {});
@@ -347,8 +424,8 @@ J['subscriber-phone-offline'] = async () => {
   await expectText('You are offline', 40_000);
   await d.screenshot('feed-offline');
   // Cached content stays readable, clearly marked as possibly out of date.
-  await d.tap({ id: 'tab-active' });
-  await d.waitFor({ id: 'active-list' });
+  await d.tap({ id: 'tab-alerts' });
+  await d.waitFor({ id: 'alerts-list' });
   await d.tap({ id: 'tab-feed' });
   await d.shell('svc', 'wifi', 'enable');
   await d.shell('svc', 'data', 'enable');
@@ -364,7 +441,7 @@ J['subscriber-background-catch-up'] = async () => {
   const trade = await publish({ entry: 3601 });
   await delay(1000);
   await d.shell('am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${APP_URL}'`, PACKAGE);
-  await d.waitFor({ any: /^feed-card-/, desc: /3,601\.00/ }, 20_000);
+  await d.waitFor({ any: SIGNAL_CARD, desc: /3,601\.00/ }, 20_000);
   assert((await cardCount('3,601.00')) === 1, 'It appears exactly once after returning');
   await act(trade, 'CANCEL', {});
 };
@@ -424,7 +501,13 @@ async function subscriberToken() {
   const res = await fetch(`${API}/auth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ identifier: state.subscriber.loginId, password: state.password }),
+    // A separate installation, as a second phone would be: subscribers may use more than one.
+    body: JSON.stringify({
+      identifier: state.subscriber.loginId,
+      password: state.password,
+      installationId: 'e2e-api-client-installation-0001',
+      platform: 'android',
+    }),
   });
   return (await res.json()).token;
 }
@@ -671,7 +754,12 @@ J['admin-subscribers'] = async () => {
   const res = await fetch(`${API}/auth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ identifier: login, password }),
+    body: JSON.stringify({
+      identifier: login,
+      password,
+      installationId: 'e2e-password-check-installation',
+      platform: 'android',
+    }),
   });
   assert(res.ok, 'The password shown really works');
 
@@ -733,10 +821,15 @@ J['admin-other-screens'] = async () => {
 
   await d.tap({ id: 'more-announcement' });
   await d.waitFor({ id: 'announcement' });
+  await d.type({ id: 'announcement-title' }, 'Holiday hours');
   await d.type({ id: 'announcement-message' }, 'Markets closed Friday.');
   await d.hideKeyboard();
   await d.screenshot('announcement');
+  await d.scrollTo({ id: 'announcement-send' }).catch(() => undefined);
   await d.tap({ id: 'announcement-send' });
+  // Sending to everyone asks once.
+  await expectText('Send this announcement now?');
+  await d.tap({ any: /^send now$/i });
   await d.waitFor({ id: 'more' }, 15_000);
   const feed = await server('GET', '/feed?limit=5');
   assert(
@@ -812,7 +905,7 @@ const problems = [];
 async function capture(name) {
   await delay(600);
   await d.screenshot(name);
-  for (const issue of await d.audit(40)) problems.push(`${d.prefix}/${name}: ${issue}`);
+  for (const issue of await d.audit(44)) problems.push(`${d.prefix}/${name}: ${issue}`);
 }
 
 async function sweep(screens) {
@@ -834,13 +927,16 @@ J['screens-subscriber-all-sizes'] = async () => {
     await d.tap({ id: 'tab-feed' });
     await d.waitFor({ id: 'feed-list' });
     await capture('feed');
-    await d.tap({ any: /^feed-card-/ });
+    await d.tap({ any: SIGNAL_CARD });
     await d.waitFor({ id: 'trade-detail' });
     await capture('trade');
     await d.back();
-    await d.tap({ id: 'tab-active' });
-    await d.waitFor({ id: 'active-list' });
-    await capture('active');
+    await d.tap({ id: 'tab-alerts' });
+    await d.waitFor({ id: 'alerts-list' });
+    await capture('alerts');
+    await d.tap({ id: 'tab-news' });
+    await d.waitFor({ id: 'news-list' });
+    await capture('news');
     await d.tap({ id: 'tab-history' });
     await d.waitFor({ id: 'history-list' });
     await capture('history');
@@ -904,7 +1000,7 @@ J['screens-large-text'] = async () => {
   d.prefix = 'large-text';
   await d.waitFor({ id: 'feed-list' }, 40_000);
   await capture('feed');
-  await d.tap({ any: /^feed-card-/ });
+  await d.tap({ any: SIGNAL_CARD });
   await d.waitFor({ id: 'trade-detail' });
   await capture('trade');
   await d.back();
@@ -914,6 +1010,207 @@ J['screens-large-text'] = async () => {
   await d.shell('settings', 'put', 'system', 'font_scale', '1.0');
   d.prefix = '';
   if (problems.length) throw new Error(problems.join('\n'));
+};
+
+J['subscriber-hide-and-restore'] = async () => {
+  await signInSubscriber();
+  const trade = await publish({ entry: 4011 });
+  await d.waitFor({ any: SIGNAL_CARD, desc: /4,011\.00/ }, 20_000);
+  await d.tap({ id: `signal-menu-${trade.ref}` });
+  await d.waitFor({ id: 'action-sheet' });
+  await d.screenshot('signal-menu');
+  await d.tap({ id: 'action-hide' });
+  await d.waitFor({ id: 'toast-action' }, 15_000);
+  await d.tap({ id: 'toast-action' });
+  await d.waitFor({ id: `signal-${trade.ref}` }, 10_000);
+  await d.screenshot('undo-restored');
+  // Hidden for real this time, then found and shown again from History.
+  await d.tap({ id: `signal-menu-${trade.ref}` });
+  await d.tap({ id: 'action-hide' });
+  await d.waitGone({ id: `signal-${trade.ref}` }, 10_000);
+  // Still a live trade for everyone else, and its updates still reach this person as alerts.
+  await act(trade, 'MOVE_STOP', { price: String(4011 - 100) });
+  await d.tap({ id: 'tab-alerts' });
+  await d.waitFor({ id: 'alerts-list' });
+  await expectText(/Stop-loss/, 20_000);
+  await d.tap({ id: 'tab-history' });
+  await d.waitFor({ id: 'history-list' });
+  await d.type({ id: 'history-search' }, trade.ref);
+  await d.hideKeyboard();
+  await d.waitFor({ id: `history-${trade.ref}` });
+  await expectText(/hidden by you/i);
+  await d.screenshot('history-hidden');
+  await d.tap({ id: `history-menu-${trade.ref}` });
+  await d.tap({ id: 'action-show' });
+  await expectText(/back in your Signals/);
+  await d.type({ id: 'history-search' }, '');
+  await d.hideKeyboard();
+  await d.tap({ id: 'tab-feed' });
+  await d.waitFor({ id: `signal-${trade.ref}` }, 15_000);
+  await act(trade, 'CANCEL', {});
+};
+
+J['subscriber-filters'] = async () => {
+  await signInSubscriber();
+  const btc = await publish({ symbol: 'BTC/USD', entry: 64010 });
+  await d.waitFor({ any: SIGNAL_CARD, desc: /BTC\/USD/ }, 20_000);
+  await d.tap({ id: 'instrument-button' });
+  await d.waitFor({ id: 'instrument-picker' });
+  await d.type({ id: 'instrument-search' }, 'BTC');
+  await d.hideKeyboard();
+  await d.tap({ id: 'instrument-BTC/USD' });
+  await d.screenshot('instrument-picker');
+  await d.tap({ id: 'instrument-apply' });
+  await d.waitGone({ id: 'instrument-picker' });
+  await expectText('Instruments: BTC/USD');
+  await delay(1500);
+  const cards = (await d.nodes()).filter((n) => SIGNAL_CARD.test(n.id));
+  assert(cards.length > 0, 'BTC/USD signals are listed');
+  assert(
+    cards.every((n) => n.desc.includes('BTC/USD')),
+    'Only BTC/USD signals are listed',
+  );
+  await d.screenshot('feed-btc-only');
+  await resetFilters();
+  await expectText('Instruments: All instruments');
+  await act(btc, 'CANCEL', {});
+};
+
+J['subscriber-alerts-and-news'] = async () => {
+  await signInSubscriber();
+  const title = `Desk note ${Date.now().toString(36)}`;
+  const note = await server('POST', '/admin/announcements', {
+    title,
+    body: 'Markets open late tomorrow.',
+    category: 'MAINTENANCE',
+    pinned: true,
+    idempotencyKey: randomUUID(),
+  });
+  await d.tap({ id: 'tab-news' });
+  await d.waitFor({ id: 'news-list' });
+  await expectText(title, 20_000);
+  await expectText('Maintenance');
+  await d.screenshot('news');
+  await d.tap({ id: 'tab-alerts' });
+  await d.waitFor({ id: 'alerts-list' });
+  await expectText(title);
+  await d.screenshot('alerts');
+  // Opening the list clears the count after a moment.
+  await delay(3000);
+  const page = await server('GET', '/notifications?limit=1', undefined, await subscriberToken());
+  assert(page.unread === 0, `Opening Alerts marks them read (unread ${page.unread})`);
+  await d.tap({ id: 'tab-news' });
+  await d.tap({ id: `announcement-menu-${note.id}` });
+  await d.tap({ id: 'action-hide-announcement' });
+  await d.waitGone({ id: `announcement-${note.id}` }, 10_000);
+  await server('POST', `/admin/announcements/${note.id}/archive`, { expectedVersion: note.version });
+  await d.tap({ id: 'tab-feed' });
+};
+
+J['device-one-account-per-phone'] = async () => {
+  await signInSubscriber();
+  await signOutIfNeeded();
+  const loginId = `other${Date.now().toString(36)}`;
+  const { temporaryPassword } = await server('POST', '/admin/subscribers', {
+    name: 'Ravi Kumar',
+    loginId,
+    durationDays: 30,
+    idempotencyKey: randomUUID(),
+  });
+  // Signing out did not free the phone: a second account is refused, with a reason a person can act on.
+  await login(loginId, temporaryPassword);
+  await d.waitFor({ id: 'form-error' }, 20_000);
+  await expectText(/already registered to another account/);
+  await expectText(/administrator/);
+  await d.screenshot('device-bound');
+  // The administrator releases it, and the same person can now sign in. The password field was cleared
+  // after the refusal, as it is after any failed sign-in, so it is typed again.
+  await freePhone();
+  await login(loginId, temporaryPassword);
+  await d.waitFor({ id: 'new-password' }, 20_000);
+  await d.screenshot('device-released');
+  await freePhone();
+};
+
+J['admin-instruments-announcements-history'] = async () => {
+  await signInAdmin();
+  await d.tap({ id: 'tab-more' });
+  await d.waitFor({ id: 'more' });
+  await d.tap({ id: 'more-instruments' });
+  await d.waitFor({ id: 'instrument-list' });
+  await d.screenshot('admin-instruments');
+  await d.type({ id: 'instrument-filter' }, 'XAU');
+  await d.hideKeyboard();
+  await d.tap({ id: 'instrument-row-XAU/USD' });
+  await d.waitFor({ id: 'instrument-editor' });
+  await expectText(/keeps the configuration it was published with/);
+  await d.screenshot('admin-instrument-edit');
+  await d.back();
+  await d.waitFor({ id: 'instrument-list' });
+  await d.back();
+  await d.tap({ id: 'more-announcements' });
+  await d.waitFor({ id: 'admin-announcements' });
+  await d.screenshot('admin-announcements');
+  await d.tap({ id: 'announcements-new' });
+  await d.waitFor({ id: 'announcement' });
+  await d.tap({ id: 'template-Markets closed' });
+  await expectText('Markets are closed today');
+  await d.scrollTo({ id: 'when-draft' });
+  await d.tap({ id: 'when-draft' });
+  await d.scrollTo({ id: 'announcement-preview' });
+  await d.screenshot('admin-announcement-preview');
+  await d.tap({ id: 'announcement-send' });
+  await d.waitFor({ id: 'admin-announcements' }, 15_000);
+  await d.tap({ id: 'view-DRAFT' });
+  await expectText('Markets are closed today');
+  await d.screenshot('admin-announcement-drafts');
+  await d.back();
+  await d.tap({ id: 'more-history' });
+  await d.waitFor({ id: 'admin-history' });
+  await expectText('Nothing published is deleted');
+  await d.screenshot('admin-history');
+  await d.back();
+};
+
+/**
+ * Run with Metro started WITHOUT the QA capture switch (EXPO_PUBLIC_E2E_ALLOW_CAPTURE), and E2E_SECURE=1.
+ * A screenshot of a subscriber screen must come back blank, and one of an admin screen must not, so the
+ * check can tell the two apart.
+ */
+async function nonBlackShare() {
+  const raw = await d.adb('exec-out', 'screencap');
+  // Android refuses to capture a secure window at all: nothing comes back, which is as blank as it gets.
+  if (raw.length < 16) return 0;
+  const width = raw.readUInt32LE(0);
+  const height = raw.readUInt32LE(4);
+  const start = raw.length - width * height * 4;
+  let lit = 0;
+  let sampled = 0;
+  for (let i = start; i + 3 < raw.length; i += 4 * 97) {
+    sampled += 1;
+    if (raw[i] + raw[i + 1] + raw[i + 2] > 30) lit += 1;
+  }
+  return lit / sampled;
+}
+
+J['screen-protection'] = async () => {
+  if (process.env.E2E_SECURE !== '1') {
+    console.warn('  skipped: needs Metro without EXPO_PUBLIC_E2E_ALLOW_CAPTURE, and E2E_SECURE=1');
+    return;
+  }
+  await signInSubscriber();
+  await delay(1500);
+  const subscriberShare = await nonBlackShare();
+  const windows = (await d.shell('dumpsys', 'window', 'windows')).toString();
+  assert(/fl=[^\n]*\bSECURE\b/.test(windows), 'The app window carries FLAG_SECURE');
+  await signInAdmin();
+  await delay(1500);
+  const adminShare = await nonBlackShare();
+  console.warn(
+    `  lit pixels: subscriber screen ${(subscriberShare * 100).toFixed(2)}%, admin screen ${(adminShare * 100).toFixed(2)}%`,
+  );
+  assert(subscriberShare < 0.01, 'A screenshot of a subscriber screen is blank');
+  assert(adminShare > 0.05, 'An admin screen is captured normally, so the check is meaningful');
 };
 
 const names = process.argv.slice(2);

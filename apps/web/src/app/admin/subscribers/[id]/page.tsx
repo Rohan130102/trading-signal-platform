@@ -220,11 +220,17 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
       )}
       <ul>
         {current.map((d) => (
-          <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[13px] sm:px-5">
+          <li
+            key={d.id}
+            className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[13px] sm:px-5"
+          >
             <span className="min-w-0">
-              <span className="block font-medium">{d.deviceLabel ?? (d.platform === 'ios' ? 'iPhone' : 'Android phone')}</span>
+              <span className="block font-medium">
+                {d.deviceLabel ?? (d.platform === 'ios' ? 'iPhone' : 'Android phone')}
+              </span>
               <span className="text-muted">
-                Registered {formatDateTime(d.boundAt)} · seen {formatDateTime(d.lastSeenAt)} · {d.activeSessions} signed in
+                Registered {formatDateTime(d.boundAt)} · seen {formatDateTime(d.lastSeenAt)} · {d.activeSessions} signed
+                in
               </span>
             </span>
             <Button size="sm" onClick={() => setReleasing(d)}>
@@ -254,7 +260,9 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
             }}
           >
             <Field label="Reason, for the audit log" required>
-              {(c) => <Input {...c} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />}
+              {(c) => (
+                <Input {...c} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
+              )}
             </Field>
             <FormError error={release.error} />
             <Button type="submit" variant="danger" loading={release.isPending} disabled={reason.trim().length < 3}>

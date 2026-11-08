@@ -67,7 +67,17 @@ function mergeIntoFeed(data: InfiniteData<FeedPage> | undefined, event: FeedEven
   };
 }
 
-const PRIVATE_KEYS = ['feed', 'signals', 'notifications', 'announcements', 'active', 'history', 'trade', 'symbols', 'device'];
+const PRIVATE_KEYS = [
+  'feed',
+  'signals',
+  'notifications',
+  'announcements',
+  'active',
+  'history',
+  'trade',
+  'symbols',
+  'device',
+];
 
 function afterAccessChanged(client: QueryClient): void {
   // Whatever private data is held in memory goes now, not whenever the next screen loads.

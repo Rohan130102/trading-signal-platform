@@ -66,7 +66,8 @@ export default function AdminTradesPage() {
     void client.invalidateQueries({ queryKey: ['admin', 'trades'] });
   };
   const archive = useMutation({
-    mutationFn: (ids: string[]) => api.post<{ archived: number }>('/admin/trade-archive', { tradeIds: ids, expectedCount: ids.length }),
+    mutationFn: (ids: string[]) =>
+      api.post<{ archived: number }>('/admin/trade-archive', { tradeIds: ids, expectedCount: ids.length }),
     onSuccess: (r) => done(`${r.archived} archived. They stay in History.`),
     onError: (error: Error) => toast.error(error.message),
   });
@@ -81,7 +82,12 @@ export default function AdminTradesPage() {
     try {
       const { count } = await api.get<{ count: number }>(`/admin/trade-archive/preview?before=${before}`);
       if (count === 0) return toast.info(`Nothing finished before ${before} to archive`);
-      if (!window.confirm(`Archive ${count} finished trades that closed before ${before}? They leave the Signals list and stay in History. You can restore them.`)) return;
+      if (
+        !window.confirm(
+          `Archive ${count} finished trades that closed before ${before}? They leave the Signals list and stay in History. You can restore them.`,
+        )
+      )
+        return;
       const r = await api.post<{ archived: number }>('/admin/trade-archive/before', { before, expectedCount: count });
       done(`${r.archived} archived`);
     } catch (error) {
@@ -190,14 +196,21 @@ export default function AdminTradesPage() {
         <span className="text-xs text-subtle">Published trades are never deleted; archived ones stay in History.</span>
       </div>
       {chosen.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2" role="region" aria-label="Selected trades">
+        <div
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2"
+          role="region"
+          aria-label="Selected trades"
+        >
           <span className="text-sm font-semibold">{chosen.length} selected</span>
           {allArchivable && (
             <Button
               size="sm"
               variant="primary"
               loading={archive.isPending}
-              onClick={() => window.confirm(`Archive ${chosen.length} finished trade${chosen.length === 1 ? '' : 's'}?`) && archive.mutate(chosen.map((t) => t.id))}
+              onClick={() =>
+                window.confirm(`Archive ${chosen.length} finished trade${chosen.length === 1 ? '' : 's'}?`) &&
+                archive.mutate(chosen.map((t) => t.id))
+              }
             >
               Archive
             </Button>
@@ -207,7 +220,9 @@ export default function AdminTradesPage() {
               Restore
             </Button>
           )}
-          {!allArchivable && !allArchived && <span className="text-sm text-muted">Only finished trades can be archived.</span>}
+          {!allArchivable && !allArchived && (
+            <span className="text-sm text-muted">Only finished trades can be archived.</span>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
           </Button>

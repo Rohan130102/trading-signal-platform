@@ -217,7 +217,11 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
       <Card padded={false} style={{ paddingHorizontal: space.lg }} testID="bound-phones">
         {devices.isPending && <Loading rows={1} label="Loading phones" />}
         {devices.data && current.length === 0 && (
-          <ListRow title="No phone registered" subtitle="The next phone they sign in on registers to them." chevron={false} />
+          <ListRow
+            title="No phone registered"
+            subtitle="The next phone they sign in on registers to them."
+            chevron={false}
+          />
         )}
         {current.map((d, i) => (
           <View key={d.id}>
@@ -227,7 +231,15 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
               icon="phone-portrait-outline"
               title={d.deviceLabel ?? (d.platform === 'ios' ? 'iPhone' : 'Android phone')}
               subtitle={`Registered ${formatDateTime(d.boundAt)} · seen ${formatDateTime(d.lastSeenAt)} · ${d.activeSessions} signed in`}
-              right={<Button label="Release" small variant="secondary" testID={`release-${d.id}`} onPress={() => setReleasing(d)} />}
+              right={
+                <Button
+                  label="Release"
+                  small
+                  variant="secondary"
+                  testID={`release-${d.id}`}
+                  onPress={() => setReleasing(d)}
+                />
+              }
               chevron={false}
             />
           </View>
@@ -239,7 +251,10 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
               title={`${past.length} released earlier`}
               subtitle={past
                 .slice(0, 3)
-                .map((d) => `${formatDateTime(d.releasedAt as string)}${d.releasedByName ? ` by ${d.releasedByName}` : ''}: ${d.releaseReason ?? ''}`)
+                .map(
+                  (d) =>
+                    `${formatDateTime(d.releasedAt as string)}${d.releasedByName ? ` by ${d.releasedByName}` : ''}: ${d.releaseReason ?? ''}`,
+                )
                 .join('\n')}
               chevron={false}
             />
@@ -270,7 +285,13 @@ function BoundPhones({ subscriberId }: { subscriberId: string }) {
             This subscriber is signed out of that phone, and another account will be able to sign in on it. Their
             subscription is not affected.
           </T>
-          <Field label="Reason, for the audit log" value={reason} onChangeText={setReason} testID="release-reason" maxLength={300} />
+          <Field
+            label="Reason, for the audit log"
+            value={reason}
+            onChangeText={setReason}
+            testID="release-reason"
+            maxLength={300}
+          />
           <FormError error={release.error} />
         </Sheet>
       )}

@@ -31,9 +31,16 @@ describe('notification presentation', () => {
       urgent: true,
       interruptionLevel: 'time-sensitive',
     });
-    expect(pushPresentation('STOP_MOVED', 'UPDATE', 'NORMAL')).toMatchObject({ urgent: true, interruptionLevel: 'time-sensitive', androidChannel: 'updates' });
+    expect(pushPresentation('STOP_MOVED', 'UPDATE', 'NORMAL')).toMatchObject({
+      urgent: true,
+      interruptionLevel: 'time-sensitive',
+      androidChannel: 'updates',
+    });
     expect(pushPresentation('TRADE_CLOSED', 'CLOSURE', 'NORMAL').interruptionLevel).toBe('time-sensitive');
-    expect(pushPresentation('TARGETS_MODIFIED', 'UPDATE', 'NORMAL')).toMatchObject({ urgent: false, interruptionLevel: 'active' });
+    expect(pushPresentation('TARGETS_MODIFIED', 'UPDATE', 'NORMAL')).toMatchObject({
+      urgent: false,
+      interruptionLevel: 'active',
+    });
     expect(pushPresentation('ANNOUNCEMENT', 'ANNOUNCEMENT', 'NORMAL', 'GENERAL')).toMatchObject({
       urgent: false,
       interruptionLevel: 'active',
@@ -94,7 +101,14 @@ describe('announcements', () => {
 
   it('accepts only secure web links', () => {
     expect(isSafeAnnouncementLink('https://example.com/notice')).toBe(true);
-    for (const bad of ['http://example.com', 'javascript:alert(1)', 'data:text/html,x', 'https://user:pw@example.com', 'https://localhost', 'intent://x']) {
+    for (const bad of [
+      'http://example.com',
+      'javascript:alert(1)',
+      'data:text/html,x',
+      'https://user:pw@example.com',
+      'https://localhost',
+      'intent://x',
+    ]) {
       expect(isSafeAnnouncementLink(bad)).toBe(false);
     }
   });
@@ -133,7 +147,9 @@ describe('signal filters', () => {
   });
 
   it('drops anything unknown from a saved filter instead of failing', () => {
-    expect(normaliseFilter({ symbols: ['XAU/USD', 'xau', 42, 'GONE/USD'], direction: 'UP', status: 'NOPE' }, ['XAU/USD'])).toEqual({
+    expect(
+      normaliseFilter({ symbols: ['XAU/USD', 'xau', 42, 'GONE/USD'], direction: 'UP', status: 'NOPE' }, ['XAU/USD']),
+    ).toEqual({
       symbols: ['XAU/USD'],
       direction: null,
       status: 'ALL',
@@ -144,9 +160,17 @@ describe('signal filters', () => {
   it('writes and reads the same query string', () => {
     const query = filterToQuery({ symbols: ['XAU/USD', 'BTC/USD'], direction: 'BUY', status: 'LIVE' });
     expect(query).toEqual({ symbols: 'XAU/USD,BTC/USD', direction: 'BUY', status: 'LIVE' });
-    expect(signalsQuerySchema.parse(query)).toMatchObject({ symbols: ['XAU/USD', 'BTC/USD'], direction: 'BUY', status: 'LIVE', limit: 20 });
+    expect(signalsQuerySchema.parse(query)).toMatchObject({
+      symbols: ['XAU/USD', 'BTC/USD'],
+      direction: 'BUY',
+      status: 'LIVE',
+      limit: 20,
+    });
     expect(filterToQuery(EMPTY_SIGNAL_FILTER)).toEqual({ symbols: undefined, direction: undefined, status: undefined });
-    expect(historyQuery.parse({ symbols: 'XAU/USD', visibility: 'HIDDEN' })).toMatchObject({ symbols: ['XAU/USD'], visibility: 'HIDDEN' });
+    expect(historyQuery.parse({ symbols: 'XAU/USD', visibility: 'HIDDEN' })).toMatchObject({
+      symbols: ['XAU/USD'],
+      visibility: 'HIDDEN',
+    });
     expect(signalsQuerySchema.safeParse({ symbols: 'bad symbol' }).success).toBe(false);
   });
 });

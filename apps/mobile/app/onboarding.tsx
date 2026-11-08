@@ -98,12 +98,19 @@ function Onboarding() {
           </T>
           <Badge tone="update">Awaiting entry</Badge>
         </View>
-        <Levels precision={2} entryLow="100.00" entryHigh="100.00" entryType="SINGLE" stopLoss="96.00" targets={[{ index: 1, price: '108.00', status: 'OPEN' }]} />
+        <Levels
+          precision={2}
+          entryLow="100.00"
+          entryHigh="100.00"
+          entryType="SINGLE"
+          stopLoss="96.00"
+          targets={[{ index: 1, price: '108.00', status: 'OPEN' }]}
+        />
       </Example>
       <T c="muted">
         Each card shows the instrument, BUY or SELL, its status, and the entry, stop-loss and targets. Blue is buy and
-        pink is sell, written out every time. Red is kept for stop-losses and green for targets reached, so direction
-        is never confused with a result.
+        pink is sell, written out every time. Red is kept for stop-losses and green for targets reached, so direction is
+        never confused with a result.
       </T>
     </Step>,
     <Step key="updates" icon="git-branch-outline" title="Updates stay with their trade">
@@ -151,7 +158,11 @@ function Onboarding() {
           }}
         />
       )}
-      {push === 'on' && <Badge tone="success" icon="checkmark-circle">Alerts are on for this phone</Badge>}
+      {push === 'on' && (
+        <Badge tone="success" icon="checkmark-circle">
+          Alerts are on for this phone
+        </Badge>
+      )}
       {push === 'denied' && (
         <T v="small" c="muted">
           Alerts are switched off in your phone’s settings. You can turn them on there, or from Account.
@@ -182,7 +193,10 @@ function Onboarding() {
           {steps.map((_, index) => (
             <View
               key={index}
-              style={[styles.dot, { backgroundColor: index === step ? c.text : c.lineStrong, width: index === step ? 18 : 6 }]}
+              style={[
+                styles.dot,
+                { backgroundColor: index === step ? c.text : c.lineStrong, width: index === step ? 18 : 6 },
+              ]}
             />
           ))}
         </View>

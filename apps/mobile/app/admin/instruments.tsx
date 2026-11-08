@@ -132,7 +132,14 @@ export default function Instruments() {
         ListHeaderComponent={
           <View style={styles.header}>
             <Segmented label="Show" options={VIEWS} value={view} onChange={setView} />
-            <Field label="Search" testID="instrument-filter" value={query} onChangeText={setQuery} autoCorrect={false} autoCapitalize="characters" />
+            <Field
+              label="Search"
+              testID="instrument-filter"
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+              autoCapitalize="characters"
+            />
             <Segmented
               label="Sort by"
               options={[
@@ -164,7 +171,10 @@ export default function Instruments() {
             accessibilityLabel={`${item.symbol}, ${item.displayName}. ${item.archivedAt ? 'Archived' : item.active ? 'On' : 'Off'}. ${item.tradeCount} trades.`}
             onPress={() => router.push(`/admin/instrument?id=${item.id}`)}
             onLongPress={() => setMenuFor(item)}
-            style={({ pressed }) => [styles.row, { backgroundColor: c.surface, borderColor: c.line, opacity: pressed ? 0.8 : 1 }]}
+            style={({ pressed }) => [
+              styles.row,
+              { backgroundColor: c.surface, borderColor: c.line, opacity: pressed ? 0.8 : 1 },
+            ]}
           >
             <View style={styles.flex}>
               <View style={styles.line}>
@@ -205,7 +215,11 @@ export default function Instruments() {
         actions={
           menuFor
             ? [
-                { label: 'Edit', icon: 'create-outline', onPress: () => router.push(`/admin/instrument?id=${menuFor.id}`) },
+                {
+                  label: 'Edit',
+                  icon: 'create-outline',
+                  onPress: () => router.push(`/admin/instrument?id=${menuFor.id}`),
+                },
                 ...(!menuFor.archivedAt
                   ? [
                       {
@@ -214,9 +228,22 @@ export default function Instruments() {
                         hint: menuFor.active ? 'No new signals until switched on again.' : undefined,
                         onPress: () => act.mutate({ row: menuFor, action: menuFor.active ? 'off' : 'on' }),
                       },
-                      { label: 'Archive', icon: 'archive-outline' as never, danger: true, testID: 'instrument-archive', onPress: () => archive(menuFor) },
+                      {
+                        label: 'Archive',
+                        icon: 'archive-outline' as never,
+                        danger: true,
+                        testID: 'instrument-archive',
+                        onPress: () => archive(menuFor),
+                      },
                     ]
-                  : [{ label: 'Restore', icon: 'arrow-undo-outline' as never, testID: 'instrument-restore', onPress: () => act.mutate({ row: menuFor, action: 'restore' }) }]),
+                  : [
+                      {
+                        label: 'Restore',
+                        icon: 'arrow-undo-outline' as never,
+                        testID: 'instrument-restore',
+                        onPress: () => act.mutate({ row: menuFor, action: 'restore' }),
+                      },
+                    ]),
                 {
                   label: 'View its trades',
                   icon: 'time-outline',

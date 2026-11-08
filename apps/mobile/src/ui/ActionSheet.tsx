@@ -45,7 +45,10 @@ export function ActionSheet({
         testID="action-sheet-backdrop"
       />
       <View
-        style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.line, paddingBottom: insets.bottom + space.sm }]}
+        style={[
+          styles.sheet,
+          { backgroundColor: c.surface, borderColor: c.line, paddingBottom: insets.bottom + space.sm },
+        ]}
         accessibilityViewIsModal
         testID="action-sheet"
       >
@@ -120,5 +123,11 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   flex: { flex: 1, minWidth: 0 },
-  cancel: { minHeight: 48, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', marginTop: space.sm },
+  cancel: {
+    minHeight: 48,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: space.sm,
+  },
 });

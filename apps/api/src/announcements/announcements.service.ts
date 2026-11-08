@@ -43,7 +43,11 @@ const TONE: Record<AnnouncementCategory, string> = {
 const SCHEDULE_GRACE_MS = 60_000;
 
 function stateOf(row: Pick<Row, 'status' | 'deletedAt' | 'eventId'>): AnnouncementState {
-  return { status: row.status as AnnouncementStatus, deleted: row.deletedAt !== null, everPublished: row.eventId !== null };
+  return {
+    status: row.status as AnnouncementStatus,
+    deleted: row.deletedAt !== null,
+    everPublished: row.eventId !== null,
+  };
 }
 
 function toView(row: Row): AnnouncementView {
@@ -358,11 +362,17 @@ export class AnnouncementsService {
   async bulk(ids: string[], action: 'ARCHIVE' | 'RESTORE' | 'DELETE', expectedCount: number, actor: Actor) {
     const unique = [...new Set(ids)];
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string; status: string; deleted_at: Date | null; event_id: string | null }[]>`
+      const rows = await tx.$queryRaw<
+        { id: string; status: string; deleted_at: Date | null; event_id: string | null }[]
+      >`
         SELECT id, status, deleted_at, event_id FROM announcements WHERE id = ANY(${unique}::uuid[]) FOR UPDATE`;
       const eligible = rows.filter((r) =>
         canTakeAnnouncementAction(
-          { status: r.status as AnnouncementStatus, deleted: r.deleted_at !== null, everPublished: r.event_id !== null },
+          {
+            status: r.status as AnnouncementStatus,
+            deleted: r.deleted_at !== null,
+            everPublished: r.event_id !== null,
+          },
           action,
         ),
       );
@@ -459,8 +469,10 @@ export class AnnouncementsService {
       });
       return { id: row.id };
     } catch (error) {
-      if (isUniqueViolation(error)) throw new AppError(409, 'TEMPLATE_EXISTS', 'A template with that name already exists.');
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') throw notFound('Template not found');
+      if (isUniqueViolation(error))
+        throw new AppError(409, 'TEMPLATE_EXISTS', 'A template with that name already exists.');
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025')
+        throw notFound('Template not found');
       throw error;
     }
   }
@@ -502,7 +514,13 @@ export class AnnouncementsService {
         data: { ...data, version: { increment: 1 }, updatedBy: { connect: { id: actor.id } }, updatedAt: new Date() },
       });
       await this.audit.record(
-        { actorId: actor.id, action: auditAction, targetType: 'announcement', targetId: id, requestId: actor.requestId },
+        {
+          actorId: actor.id,
+          action: auditAction,
+          targetType: 'announcement',
+          targetId: id,
+          requestId: actor.requestId,
+        },
         tx,
       );
     }, TX_OPTIONS);

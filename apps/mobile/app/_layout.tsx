@@ -50,7 +50,6 @@ function App() {
     if (state.phase !== 'starting') void SplashScreen.hideAsync().catch(() => undefined);
   }, [state.phase]);
 
-
   useEffect(() => {
     if (!redirect) return;
     // Opening a link while signed out still leads there after signing in.
@@ -72,14 +71,22 @@ function App() {
     if (canSeeSignals) void syncPushToken().catch(() => undefined);
   }, [canSeeSignals]);
 
-  // The first-use tour, once, after the first full sign-in. A notification being opened goes first.
-  const toured = useRef(false);
+  // The first-use tour, once, after the first full sign-in. A notification being opened goes first, and it
+  // waits until the subscriber's tabs are on screen: pushed during a redirect it would be replaced at once.
+  // Remembered per person, so someone signing in after another on the same phone still gets their tour.
+  const touredFor = useRef<string | null>(null);
+  const onTabs = segments[0] === '(subscriber)';
   useEffect(() => {
-    if (!settled || toured.current || pending || !me || me.role !== 'SUBSCRIBER' || !me.access.allowed) return;
-    if (me.onboardedAt) return;
-    toured.current = true;
-    router.push('/onboarding' as never);
-  }, [me, pending, router, settled]);
+    if (!settled || !onTabs || pending || !me || me.role !== 'SUBSCRIBER' || !me.access.allowed) return;
+    if (me.onboardedAt || touredFor.current === me.id) return;
+    // A moment's wait lets a screen that navigates on success (setting a password) finish first; if the
+    // route changes again meanwhile, this is cancelled and scheduled afresh.
+    const timer = setTimeout(() => {
+      touredFor.current = me.id;
+      router.push('/onboarding' as never);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [me, onTabs, pending, router, settled]);
 
   return (
     <NavigationThemeProvider value={navigation}>
@@ -159,7 +166,9 @@ function LiveAlerts({ adminLink }: { adminLink: boolean }) {
       latest.tradeId !== null &&
       (here.current === `/trades/${latest.tradeId}` || here.current === `/admin/trades/${latest.tradeId}`);
     if (here.current === '/compose' || here.current === '/onboarding') return;
-    if ((here.current === '/alerts' || onThisTrade) && latest.priority !== 'PRIORITY') return;
+    // On Signals the new card is the alert, and on Alerts the new row is. Priority still interrupts.
+    if ((here.current === '/feed' || here.current === '/alerts' || onThisTrade) && latest.priority !== 'PRIORITY')
+      return;
     const isNew = latest.category === 'NEW_SIGNAL';
     const tradeId = latest.tradeId;
     toast({
