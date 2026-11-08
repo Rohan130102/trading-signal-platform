@@ -730,9 +730,10 @@ describe('publishing activates at once', () => {
     const [a, b] = await Promise.all([admin().post('/admin/signals', body), admin().post('/admin/signals', body)]);
     expect(a.body.trade.id).toBe(b.body.trade.id);
     const rows = await withDb((db) =>
-      db.query('SELECT type, count(*)::int AS n FROM signal_events WHERE trade_id = $1 GROUP BY type ORDER BY type::text', [
-        a.body.trade.id,
-      ]),
+      db.query(
+        'SELECT type, count(*)::int AS n FROM signal_events WHERE trade_id = $1 GROUP BY type ORDER BY type::text',
+        [a.body.trade.id],
+      ),
     );
     expect(rows.rows).toEqual([
       { type: 'ENTRY_ACTIVATED', n: 1 },
