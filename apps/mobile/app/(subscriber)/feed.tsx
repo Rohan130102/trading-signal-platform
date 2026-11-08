@@ -1,21 +1,21 @@
-import { type FeedEvent, type FeedPage } from '@signaldesk/domain';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, StyleSheet, View } from 'react-native';
+import { countActiveFilters, filterToQuery, type SignalCard as Card, type SignalsPage } from '@signaldesk/domain';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FilterBar, useInstruments, useSavedFilter } from '@/filters';
 import { api, queryString } from '@/lib/api';
+import { haptics } from '@/lib/haptics';
 import { enablePush, readPushStatus } from '@/lib/push';
 import { useRealtime } from '@/lib/realtime';
 import { prefs } from '@/lib/storage';
-import { FeedCard } from '@/trade';
+import { SignalCard } from '@/trade/SignalCard';
 import { useColors } from '@/theme';
 import { space } from '@/theme/tokens';
 import {
+  ActionSheet,
   Button,
-  Card,
-  Chip,
-  ChipRow,
+  Card as Panel,
   ConnectionBanner,
   EmptyState,
   ErrorState,
@@ -25,6 +25,7 @@ import {
   Refresh,
   T,
   useRefresh,
+  useToast,
 } from '@/ui';
 
 /** Asks once, at a moment when the benefit is obvious. Never on first launch before anything is seen. */
@@ -49,7 +50,7 @@ function PushPrompt() {
     void prefs.set('push-prompt-dismissed', true);
   };
   return (
-    <Card testID="push-prompt" style={{ gap: space.sm }}>
+    <Panel testID="push-prompt" style={{ gap: space.sm }}>
       <T v="strong">Get alerts on this phone</T>
       <T v="small" c="muted">
         Know about new signals and stop-loss changes without keeping the app open. Alerts can be delayed or missed by
@@ -73,115 +74,148 @@ function PushPrompt() {
         />
         <Button label="Not now" variant="ghost" small onPress={dismiss} />
       </View>
-    </Card>
+    </Panel>
   );
 }
 
-export default function Feed() {
+export default function Signals() {
   const c = useColors();
+  const client = useQueryClient();
+  const toast = useToast();
   const { start, setUnread } = useRealtime();
-  const [symbol, setSymbol] = useState('');
-  const symbols = useQuery({
-    queryKey: ['symbols'],
-    queryFn: () => api.get<{ symbols: { symbol: string }[] }>('/instruments/symbols'),
-    staleTime: 300_000,
-  });
-  const feed = useInfiniteQuery({
-    queryKey: ['feed', symbol],
+  const instruments = useInstruments();
+  const known = useMemo(() => instruments.data?.map((i) => i.symbol), [instruments.data]);
+  const { filter, setFilter, loaded } = useSavedFilter('signals-filter', known);
+  const [menuFor, setMenuFor] = useState<Card | null>(null);
+
+  const signals = useInfiniteQuery({
+    queryKey: ['signals', filter],
+    enabled: loaded,
     initialPageParam: undefined as number | undefined,
-    queryFn: ({ pageParam }) => api.get<FeedPage>(`/feed${queryString({ limit: 30, before: pageParam, symbol })}`),
-    getNextPageParam: (last) => (last.hasMore ? last.events[last.events.length - 1]?.seq : undefined),
-    staleTime: 60_000,
+    queryFn: ({ pageParam }) =>
+      api.get<SignalsPage>(`/signals${queryString({ ...filterToQuery(filter), limit: 20, before: pageParam })}`),
+    getNextPageParam: (last) => last.nextBefore ?? undefined,
+    staleTime: 30_000,
   });
 
-  const head = feed.data?.pages[0]?.headSeq;
+  const first = signals.data?.pages[0];
   useEffect(() => {
-    if (head !== undefined) start(head);
-  }, [head, start]);
+    if (!first) return;
+    if (start(first.headSeq)) setUnread(first.unread);
+  }, [first, setUnread, start]);
 
-  const events = useMemo(() => {
-    const seen = new Set<number>();
-    const out: FeedEvent[] = [];
-    for (const page of feed.data?.pages ?? []) {
-      for (const event of page.events) {
-        if (seen.has(event.seq)) continue;
-        seen.add(event.seq);
-        if (!symbol || event.payload.symbol === symbol) out.push(event);
+  const cards = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Card[] = [];
+    for (const page of signals.data?.pages ?? []) {
+      for (const card of page.cards) {
+        if (seen.has(card.id)) continue;
+        seen.add(card.id);
+        out.push(card);
       }
     }
-    return out.sort((a, b) => b.seq - a.seq);
-  }, [feed.data, symbol]);
+    return out;
+  }, [signals.data]);
 
-  // Reading the feed clears the unread count, here and on the server.
-  const latest = events[0]?.seq;
-  const lastMarked = useRef(0);
-  const markRead = useCallback(() => {
-    setUnread(0);
-    if (latest === undefined || latest <= lastMarked.current || AppState.currentState !== 'active') return;
-    lastMarked.current = latest;
-    void api.post('/feed/read', { seq: latest }).catch(() => undefined);
-  }, [latest, setUnread]);
-  useFocusEffect(markRead);
+  const pull = useRefresh(useCallback(() => signals.refetch(), [signals]));
+  const filtered = countActiveFilters(filter) > 0;
 
-  const initialSeq = useRef<number | null>(null);
-  if (initialSeq.current === null && latest !== undefined) initialSeq.current = latest;
+  const setHidden = useCallback(
+    async (card: Card, hidden: boolean) => {
+      if (hidden) await api.post('/me/hidden', { type: 'TRADE', id: card.id });
+      else await api.delete(`/me/hidden/TRADE/${card.id}`);
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ['signals'] }),
+        client.invalidateQueries({ queryKey: ['history'] }),
+        client.invalidateQueries({ queryKey: ['trade', card.id] }),
+      ]);
+    },
+    [client],
+  );
 
-  const pull = useRefresh(useCallback(() => feed.refetch(), [feed]));
-  const symbolList = symbols.data?.symbols ?? [];
+  const hide = useCallback(
+    (card: Card) => {
+      void setHidden(card, true)
+        .then(() => {
+          haptics.notify('success');
+          toast({
+            tone: 'info',
+            title: `${card.symbol} hidden from Signals`,
+            body: 'Only for you. Alerts still arrive, and it stays in History.',
+            duration: 6000,
+            action: { label: 'Undo', onPress: () => void setHidden(card, false).catch(() => undefined) },
+          });
+        })
+        .catch((error: Error) => toast({ tone: 'error', title: 'Could not hide it', body: error.message }));
+    },
+    [setHidden, toast],
+  );
 
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.bg }]} edges={['top']}>
       <FlatList
         testID="feed-list"
-        data={events}
-        keyExtractor={(event) => String(event.seq)}
+        data={cards}
+        keyExtractor={(card) => card.id}
         style={styles.fill}
         contentContainerStyle={styles.list}
         refreshControl={<Refresh {...pull} />}
-        onEndReachedThreshold={0.4}
+        onEndReachedThreshold={0.5}
         onEndReached={() => {
-          if (feed.hasNextPage && !feed.isFetchingNextPage) void feed.fetchNextPage();
+          if (signals.hasNextPage && !signals.isFetchingNextPage) void signals.fetchNextPage();
         }}
+        initialNumToRender={6}
+        windowSize={7}
+        removeClippedSubviews
         ListHeaderComponent={
           <View style={styles.header}>
-            <PageTitle title="Feed" right={<LivePill />} />
+            <PageTitle title="Signals" right={<LivePill />} />
             <ConnectionBanner />
             <PushPrompt />
-            {symbolList.length > 1 && (
-              <ChipRow>
-                <Chip testID="filter-all" label="All" on={!symbol} onPress={() => setSymbol('')} />
-                {symbolList.map((s) => (
-                  <Chip key={s.symbol} label={s.symbol} on={symbol === s.symbol} onPress={() => setSymbol(s.symbol)} />
-                ))}
-              </ChipRow>
-            )}
+            <FilterBar value={filter} onChange={setFilter} instruments={instruments.data ?? []} />
           </View>
         }
         ListEmptyComponent={
-          feed.isPending ? (
-            <Loading rows={3} label="Loading the feed" />
-          ) : feed.isError ? (
-            <ErrorState error={feed.error} onRetry={() => void feed.refetch()} />
+          signals.isPending ? (
+            <Loading rows={3} label="Loading signals" />
+          ) : signals.isError ? (
+            <ErrorState error={signals.error} onRetry={() => void signals.refetch()} />
           ) : (
-            <EmptyState icon="pulse" title={symbol ? `Nothing for ${symbol} yet` : 'No signals yet'}>
-              When a signal is published it appears here straight away. There is no need to refresh.
+            <EmptyState icon="pulse" title={filtered ? 'Nothing matches these filters' : 'No signals yet'}>
+              {filtered
+                ? 'Try fewer filters, or reset them.'
+                : 'When a signal is published it appears here straight away. Every later change stays attached to it.'}
             </EmptyState>
           )
         }
         ListFooterComponent={
-          feed.isFetchingNextPage ? (
+          signals.isFetchingNextPage ? (
             <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
+          ) : filtered && cards.length > 0 ? (
+            <Button label="Reset filters" variant="ghost" small onPress={() => setFilter({ symbols: [], direction: null, status: 'ALL' })} />
           ) : undefined
         }
-        renderItem={({ item, index }) => {
-          const previous = events[index - 1];
-          const sameTrade = previous && item.tradeId && previous.tradeId === item.tradeId;
-          return (
-            <View style={{ marginTop: index === 0 ? 0 : sameTrade ? 6 : space.md }}>
-              <FeedCard event={item} fresh={initialSeq.current !== null && item.seq > initialSeq.current} />
-            </View>
-          );
-        }}
+        ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
+        renderItem={({ item }) => <SignalCard card={item} onMenu={setMenuFor} />}
+      />
+      <ActionSheet
+        visible={menuFor !== null}
+        title={menuFor ? `${menuFor.direction === 'BUY' ? 'Buy' : 'Sell'} ${menuFor.symbol}` : ''}
+        subtitle={menuFor?.ref}
+        onClose={() => setMenuFor(null)}
+        actions={
+          menuFor
+            ? [
+                {
+                  label: 'Hide from Signals',
+                  icon: 'eye-off-outline',
+                  hint: 'Only for you. It stays in History, and alerts still arrive.',
+                  testID: 'action-hide',
+                  onPress: () => hide(menuFor),
+                },
+              ]
+            : []
+        }
       />
     </SafeAreaView>
   );

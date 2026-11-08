@@ -24,7 +24,7 @@ export interface PushMessage {
   /** iPhone groups notifications with the same thread, here one per trade. Nothing is replaced. */
   threadId?: string;
   /** What the app needs to order and de-duplicate alerts, and to open the right place. */
-  data?: { tradeId: string | null; seq: number; tradeVersion: number | null; category: string };
+  data?: { tradeId: string | null; seq: number; tradeVersion: number | null; category: string; priority: string };
 }
 
 export type PushResult =

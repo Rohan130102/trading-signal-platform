@@ -39,13 +39,26 @@ export interface PushPresentation {
   interruptionLevel: IosInterruptionLevel;
 }
 
-/** How a notification should present, from what happened. One table for the worker, tested on its own. */
-export function pushPresentation(type: EventType, category: EventCategory, priority: Priority): PushPresentation {
+/** Announcement categories that are informational only, delivered quietly on iPhone. */
+const QUIET_ANNOUNCEMENTS: readonly string[] = ['EDUCATIONAL'];
+
+/**
+ * How a notification should present, from what happened. One table for the worker, tested on its own.
+ * Actionable events and priority messages are time-sensitive; routine updates and ordinary announcements
+ * alert normally; learning notes arrive quietly (no sound, no screen wake).
+ */
+export function pushPresentation(
+  type: EventType,
+  category: EventCategory,
+  priority: Priority,
+  announcementCategory?: string | null,
+): PushPresentation {
   const actionable = ACTIONABLE.includes(type) || priority === 'PRIORITY';
+  const quiet = category === 'ANNOUNCEMENT' && QUIET_ANNOUNCEMENTS.includes(announcementCategory ?? '');
   return {
     androidChannel: androidChannelFor(category, priority),
     urgent: actionable,
-    interruptionLevel: actionable ? 'time-sensitive' : category === 'ANNOUNCEMENT' ? 'passive' : 'active',
+    interruptionLevel: actionable ? 'time-sensitive' : quiet ? 'passive' : 'active',
   };
 }
 

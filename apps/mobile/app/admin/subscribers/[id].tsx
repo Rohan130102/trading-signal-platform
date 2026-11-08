@@ -1,4 +1,4 @@
-import { formatDateTime, formatLocalDate, type SubscriberDetail } from '@signaldesk/domain';
+import { type DeviceBindingView, formatDateTime, formatLocalDate, type SubscriberDetail } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -169,6 +169,7 @@ export default function SubscriberScreen() {
               ))}
             </Card>
           )}
+          <BoundPhones subscriberId={s.id} />
           {dialog === 'renew' && <RenewSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'adjust' && <AdjustSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'contact' && <ContactSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
@@ -177,6 +178,103 @@ export default function SubscriberScreen() {
         </>
       )}
     </Screen>
+  );
+}
+
+/**
+ * The app installations bound to this subscriber. Releasing one lets another account sign in on that phone
+ * and signs this subscriber out of it. Every release is in the audit log with its reason.
+ */
+function BoundPhones({ subscriberId }: { subscriberId: string }) {
+  const client = useQueryClient();
+  const toast = useToast();
+  const [releasing, setReleasing] = useState<DeviceBindingView | null>(null);
+  const [reason, setReason] = useState('');
+  const devices = useQuery({
+    queryKey: ['admin', 'subscriber', subscriberId, 'devices'],
+    queryFn: () => api.get<{ devices: DeviceBindingView[] }>(`/admin/subscribers/${subscriberId}/devices`),
+    select: (data) => data.devices,
+  });
+  const release = useMutation({
+    mutationFn: ({ device, why }: { device: DeviceBindingView; why: string }) =>
+      api.post<{ sessionsRevoked: number }>(`/admin/devices/${device.id}/release`, { reason: why }),
+    onSuccess: (result) => {
+      toast({
+        tone: 'success',
+        title: 'Phone released',
+        body: result.sessionsRevoked > 0 ? 'They were signed out of it.' : 'Another account can now sign in on it.',
+      });
+      setReleasing(null);
+      setReason('');
+      void client.invalidateQueries({ queryKey: ['admin', 'subscriber', subscriberId] });
+    },
+  });
+  const current = devices.data?.filter((d) => !d.releasedAt) ?? [];
+  const past = devices.data?.filter((d) => d.releasedAt) ?? [];
+  return (
+    <>
+      <SectionTitle>Registered phones</SectionTitle>
+      <Card padded={false} style={{ paddingHorizontal: space.lg }} testID="bound-phones">
+        {devices.isPending && <Loading rows={1} label="Loading phones" />}
+        {devices.data && current.length === 0 && (
+          <ListRow title="No phone registered" subtitle="The next phone they sign in on registers to them." chevron={false} />
+        )}
+        {current.map((d, i) => (
+          <View key={d.id}>
+            {i > 0 && <Divider />}
+            <ListRow
+              testID={`bound-${d.id}`}
+              icon="phone-portrait-outline"
+              title={d.deviceLabel ?? (d.platform === 'ios' ? 'iPhone' : 'Android phone')}
+              subtitle={`Registered ${formatDateTime(d.boundAt)} · seen ${formatDateTime(d.lastSeenAt)} · ${d.activeSessions} signed in`}
+              right={<Button label="Release" small variant="secondary" testID={`release-${d.id}`} onPress={() => setReleasing(d)} />}
+              chevron={false}
+            />
+          </View>
+        ))}
+        {past.length > 0 && (
+          <>
+            <Divider />
+            <ListRow
+              title={`${past.length} released earlier`}
+              subtitle={past
+                .slice(0, 3)
+                .map((d) => `${formatDateTime(d.releasedAt as string)}${d.releasedByName ? ` by ${d.releasedByName}` : ''}: ${d.releaseReason ?? ''}`)
+                .join('\n')}
+              chevron={false}
+            />
+          </>
+        )}
+      </Card>
+      <T v="caption" c="subtle">
+        One account per phone. A new phone registers when they sign in on it; release an old one when it is handed to
+        someone else, lost, or registered by mistake.
+      </T>
+      {releasing && (
+        <Sheet
+          title="Release this phone?"
+          subtitle={releasing.deviceLabel ?? undefined}
+          onClose={() => setReleasing(null)}
+          footer={
+            <Button
+              label="Release phone"
+              variant="danger"
+              testID="release-confirm"
+              loading={release.isPending}
+              disabled={reason.trim().length < 3}
+              onPress={() => release.mutate({ device: releasing, why: reason.trim() })}
+            />
+          }
+        >
+          <T c="muted">
+            This subscriber is signed out of that phone, and another account will be able to sign in on it. Their
+            subscription is not affected.
+          </T>
+          <Field label="Reason, for the audit log" value={reason} onChangeText={setReason} testID="release-reason" maxLength={300} />
+          <FormError error={release.error} />
+        </Sheet>
+      )}
+    </>
   );
 }
 

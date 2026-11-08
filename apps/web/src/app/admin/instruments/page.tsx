@@ -1,10 +1,10 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatPoints, type InstrumentSpec, instrumentSchema } from '@signaldesk/domain';
+import { formatPoints, type InstrumentRow, instrumentSchema } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import type { z } from 'zod';
@@ -24,7 +24,7 @@ import {
 } from '@/components/ui';
 import { api } from '@/lib/api';
 
-type Row = InstrumentSpec & { id: string; active: boolean; sortOrder: number };
+type Row = InstrumentRow;
 type Values = z.input<typeof instrumentSchema>;
 
 const BLANK: Values = {
@@ -43,6 +43,7 @@ const BLANK: Values = {
   unitLabel: '',
   active: true,
   sortOrder: 100,
+  exchange: null,
 };
 
 const nullable = (v: string) => (v === '' || v === null ? null : v);
@@ -68,6 +69,7 @@ function Editor({ row, onClose }: { row: Row | null; onClose: () => void }) {
           unitLabel: row.unitLabel,
           active: row.active,
           sortOrder: row.sortOrder,
+          exchange: row.exchange,
         }
       : BLANK,
   });
@@ -115,6 +117,9 @@ function Editor({ row, onClose }: { row: Row | null; onClose: () => void }) {
           </Field>
           <Field label="Quote currency" required error={errors.quoteCurrency?.message}>
             {(c) => <Input {...c} {...form.register('quoteCurrency')} />}
+          </Field>
+          <Field label="Exchange" error={errors.exchange?.message} hint="Optional, for display.">
+            {(c) => <Input {...c} {...form.register('exchange', { setValueAs: nullable })} />}
           </Field>
         </div>
         <fieldset className="grid gap-3 rounded-lg border border-line p-3 sm:grid-cols-3">
@@ -192,7 +197,12 @@ function Editor({ row, onClose }: { row: Row | null; onClose: () => void }) {
           </Field>
         </div>
         <div className="rounded-lg border border-line px-3">
-          <Switch label="Available for new signals" checked={active} onChange={(v) => form.setValue('active', v)} />
+          <Switch
+            label="Available for new signals"
+            description={row?.archivedAt ? 'Archived. Restore it from the list before switching it on.' : undefined}
+            checked={active && !row?.archivedAt}
+            onChange={(v) => form.setValue('active', v)}
+          />
         </div>
         <FormError error={save.error} />
         <Button type="submit" variant="primary" size="lg" loading={save.isPending}>
@@ -204,11 +214,39 @@ function Editor({ row, onClose }: { row: Row | null; onClose: () => void }) {
 }
 
 export default function InstrumentsPage() {
+  const client = useQueryClient();
   const list = useQuery({
     queryKey: ['admin', 'instruments'],
     queryFn: () => api.get<{ instruments: Row[] }>('/admin/instruments'),
   });
   const [editing, setEditing] = useState<Row | 'new' | null>(null);
+  const [query, setQuery] = useState('');
+  const [show, setShow] = useState<'current' | 'archived' | 'all'>('current');
+  const archive = useMutation({
+    mutationFn: ({ row, restore }: { row: Row; restore: boolean }) =>
+      api.post(`/admin/instruments/${row.id}/${restore ? 'restore' : 'archive'}`),
+    onSuccess: (_d, { row, restore }) => {
+      void client.invalidateQueries({ queryKey: ['admin', 'instruments'] });
+      toast.success(restore ? `${row.symbol} restored. It stays off until you switch it on.` : `${row.symbol} archived`);
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (list.data?.instruments ?? []).filter(
+      (i) =>
+        (show === 'all' || (show === 'archived' ? i.archivedAt : !i.archivedAt)) &&
+        (!q || [i.symbol, i.displayName, i.exchange ?? ''].some((v) => v.toLowerCase().includes(q))),
+    );
+  }, [list.data, query, show]);
+  const confirmArchive = (row: Row) => {
+    if (
+      window.confirm(
+        `Archive ${row.symbol}? It can no longer be used for new signals and leaves the filters once it has no trades. Its ${row.tradeCount} published trades keep their history. You can restore it.`,
+      )
+    )
+      archive.mutate({ row, restore: false });
+  };
   return (
     <>
       <PageHeader
@@ -220,29 +258,50 @@ export default function InstrumentsPage() {
           </Button>
         }
       />
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Input
+          aria-label="Search instruments"
+          placeholder="Search symbol, name or exchange"
+          className="max-w-xs"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <Select aria-label="Show" value={show} onChange={(e) => setShow(e.target.value as typeof show)} className="max-w-[12rem]">
+          <option value="current">Current</option>
+          <option value="archived">Archived</option>
+          <option value="all">All</option>
+        </Select>
+      </div>
       {list.isPending && <Loading rows={2} label="Loading instruments" />}
       {list.isError && <ErrorState error={list.error} onRetry={() => void list.refetch()} />}
       {list.data && (
         <Card className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left text-sm">
+          <table className="w-full min-w-[820px] text-left text-sm">
             <caption className="sr-only">Instruments</caption>
             <thead className="text-xs text-muted">
               <tr>
-                {['Symbol', 'Tick', '1 point', 'Default target', 'Default stop', 'Multiplier', 'Status', ''].map(
-                  (h) => (
-                    <th key={h} scope="col" className="px-4 py-2.5 font-medium">
-                      {h}
-                    </th>
-                  ),
-                )}
+                {['Symbol', 'Tick', '1 point', 'Default target', 'Default stop', 'Trades', 'Status', ''].map((h) => (
+                  <th key={h} scope="col" className="px-4 py-2.5 font-medium">
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {list.data.instruments.map((i) => (
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-4 py-6 text-center text-muted">
+                    Nothing matches.
+                  </td>
+                </tr>
+              )}
+              {rows.map((i) => (
                 <tr key={i.id} className="border-t border-line">
                   <td className="px-4 py-2.5">
                     <span className="font-semibold">{i.symbol}</span>
-                    <span className="block text-xs text-muted">{i.displayName}</span>
+                    <span className="block text-xs text-muted">
+                      {[i.displayName, i.exchange].filter(Boolean).join(' · ')}
+                    </span>
                   </td>
                   <td className="num px-4 py-2.5">{i.tickSize}</td>
                   <td className="num px-4 py-2.5">
@@ -250,14 +309,23 @@ export default function InstrumentsPage() {
                   </td>
                   <td className="num px-4 py-2.5">{formatPoints(i.defaultTargetPoints)} pts</td>
                   <td className="num px-4 py-2.5">{formatPoints(i.defaultStopPoints)} pts</td>
-                  <td className="num px-4 py-2.5">
-                    {i.contractMultiplier ?? 'None'} {i.contractMultiplier ? `/ ${i.unitLabel}` : ''}
+                  <td className="num px-4 py-2.5">{i.tradeCount}</td>
+                  <td className="px-4 py-2.5">
+                    {i.archivedAt ? <Badge>Archived</Badge> : i.active ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}
                   </td>
-                  <td className="px-4 py-2.5">{i.active ? <Badge tone="success">On</Badge> : <Badge>Off</Badge>}</td>
-                  <td className="px-4 py-2.5 text-right">
+                  <td className="whitespace-nowrap px-4 py-2.5 text-right">
                     <Button size="sm" onClick={() => setEditing(i)} aria-label={`Edit ${i.symbol}`}>
                       Edit
-                    </Button>
+                    </Button>{' '}
+                    {i.archivedAt ? (
+                      <Button size="sm" onClick={() => archive.mutate({ row: i, restore: true })} aria-label={`Restore ${i.symbol}`}>
+                        Restore
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" onClick={() => confirmArchive(i)} aria-label={`Archive ${i.symbol}`}>
+                        Archive
+                      </Button>
+                    )}
                   </td>
                 </tr>
               ))}

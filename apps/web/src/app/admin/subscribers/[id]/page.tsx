@@ -1,6 +1,6 @@
 'use client';
 
-import type { SubscriberDetail } from '@signaldesk/domain';
+import type { DeviceBindingView, SubscriberDetail } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, KeyRound, LogOut, PauseCircle, PlayCircle, RefreshCw, CalendarClock } from 'lucide-react';
 import Link from 'next/link';
@@ -137,6 +137,7 @@ export default function SubscriberPage() {
               </ul>
             )}
           </Card>
+          <BoundPhones subscriberId={s.id} />
         </div>
         <aside aria-label="Actions" className="lg:sticky lg:top-7 lg:self-start">
           <Card>
@@ -180,6 +181,89 @@ export default function SubscriberPage() {
       {dialog === 'reset' && <ResetDialog detail={s} onClose={() => setDialog(null)} />}
       {dialog === 'suspend' && <SuspendDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
     </>
+  );
+}
+
+/**
+ * App installations bound to this subscriber: one account per phone. Releasing one frees the phone for
+ * another account and signs this subscriber out of it. The reason goes into the audit log.
+ */
+function BoundPhones({ subscriberId }: { subscriberId: string }) {
+  const client = useQueryClient();
+  const [releasing, setReleasing] = useState<DeviceBindingView | null>(null);
+  const [reason, setReason] = useState('');
+  const phones = useQuery({
+    queryKey: ['admin', 'subscriber', subscriberId, 'devices'],
+    queryFn: () => api.get<{ devices: DeviceBindingView[] }>(`/admin/subscribers/${subscriberId}/devices`),
+  });
+  const release = useMutation({
+    mutationFn: () => api.post(`/admin/devices/${releasing?.id}/release`, { reason: reason.trim() }),
+    onSuccess: () => {
+      toast.success('Phone released. Another account can now sign in on it.');
+      setReleasing(null);
+      setReason('');
+      void client.invalidateQueries({ queryKey: ['admin', 'subscriber', subscriberId] });
+    },
+  });
+  const devices = phones.data?.devices ?? [];
+  const current = devices.filter((d) => !d.releasedAt);
+  const past = devices.filter((d) => d.releasedAt);
+  return (
+    <Card>
+      <CardHeader
+        title="Registered phones"
+        description="One account per phone. A new phone registers when they sign in on it."
+      />
+      {phones.isPending && <Loading rows={1} label="Loading phones" />}
+      {phones.data && current.length === 0 && (
+        <p className="border-t border-line px-4 py-3 text-[13px] text-muted sm:px-5">No phone registered yet.</p>
+      )}
+      <ul>
+        {current.map((d) => (
+          <li key={d.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-2.5 text-[13px] sm:px-5">
+            <span className="min-w-0">
+              <span className="block font-medium">{d.deviceLabel ?? (d.platform === 'ios' ? 'iPhone' : 'Android phone')}</span>
+              <span className="text-muted">
+                Registered {formatDateTime(d.boundAt)} · seen {formatDateTime(d.lastSeenAt)} · {d.activeSessions} signed in
+              </span>
+            </span>
+            <Button size="sm" onClick={() => setReleasing(d)}>
+              Release
+            </Button>
+          </li>
+        ))}
+        {past.slice(0, 5).map((d) => (
+          <li key={d.id} className="border-t border-line px-4 py-2 text-[12px] text-subtle sm:px-5">
+            Released {formatDateTime(d.releasedAt as string)}
+            {d.releasedByName ? ` by ${d.releasedByName}` : ''}: {d.releaseReason}
+          </li>
+        ))}
+      </ul>
+      {releasing && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setReleasing(null)}
+          title="Release this phone?"
+          description="They are signed out of it, and another account will be able to sign in on it. Their subscription is not affected."
+        >
+          <form
+            className="flex flex-col gap-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              release.mutate();
+            }}
+          >
+            <Field label="Reason, for the audit log" required>
+              {(c) => <Input {...c} maxLength={300} value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />}
+            </Field>
+            <FormError error={release.error} />
+            <Button type="submit" variant="danger" loading={release.isPending} disabled={reason.trim().length < 3}>
+              Release phone
+            </Button>
+          </form>
+        </Dialog>
+      )}
+    </Card>
   );
 }
 

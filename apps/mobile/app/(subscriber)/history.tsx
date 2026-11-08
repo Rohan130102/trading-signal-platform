@@ -1,23 +1,39 @@
+import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   CLOSE_REASON_LABELS,
+  filterToQuery,
   formatDateTime,
-  type HistoryPage,
+  type HistoryResponse,
+  type HistoryRow,
   signedPoints,
   STATUS_LABELS,
-  type TradeStatus,
 } from '@signaldesk/domain';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { FilterBar, useInstruments, useSavedFilter } from '@/filters';
 import { api, queryString } from '@/lib/api';
+import { haptics } from '@/lib/haptics';
 import { DirectionBadge, StatusBadge } from '@/trade';
 import { useColors } from '@/theme';
 import { radius, space } from '@/theme/tokens';
-import { Chip, ChipRow, EmptyState, ErrorState, Field, Loading, PageTitle, Refresh, T, useRefresh } from '@/ui';
-
-const STATUSES: TradeStatus[] = ['CLOSED', 'CANCELLED', 'EXPIRED', 'ACTIVE', 'PARTIALLY_CLOSED', 'PUBLISHED'];
+import {
+  ActionSheet,
+  Badge,
+  Chip,
+  EmptyState,
+  ErrorState,
+  Field,
+  Loading,
+  PageTitle,
+  Refresh,
+  T,
+  ToggleRow,
+  useRefresh,
+  useToast,
+} from '@/ui';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -28,28 +44,50 @@ function useDebounced<T>(value: T, ms: number): T {
   return settled;
 }
 
+/** Every published trade, searchable. Paged by the server, so a long record never loads all at once. */
 export default function History() {
   const c = useColors();
   const router = useRouter();
+  const client = useQueryClient();
+  const toast = useToast();
   const [search, setSearch] = useState('');
-  const [status, setStatus] = useState<TradeStatus | ''>('');
-  const [symbol, setSymbol] = useState('');
+  const [hiddenOnly, setHiddenOnly] = useState(false);
+  const [menuFor, setMenuFor] = useState<HistoryRow | null>(null);
   const q = useDebounced(search.trim(), 300);
-  const symbols = useQuery({
-    queryKey: ['symbols'],
-    queryFn: () => api.get<{ symbols: { symbol: string }[] }>('/instruments/symbols'),
-    staleTime: 300_000,
-  });
+  const instruments = useInstruments();
+  const known = useMemo(() => instruments.data?.map((i) => i.symbol), [instruments.data]);
+  const { filter, setFilter, loaded } = useSavedFilter('history-filter', known);
+
   const history = useInfiniteQuery({
-    queryKey: ['history', q, status, symbol],
+    queryKey: ['history', q, filter, hiddenOnly],
+    enabled: loaded,
     initialPageParam: 1,
-    queryFn: ({ pageParam }) =>
-      api.get<HistoryPage>(`/trades/history${queryString({ q, status, symbol, page: pageParam, pageSize: 20 })}`),
+    queryFn: ({ pageParam }) => {
+      const { status, ...rest } = filterToQuery(filter);
+      return api.get<HistoryResponse>(
+        `/trades/history${queryString({ q, ...rest, group: status, visibility: hiddenOnly ? 'HIDDEN' : undefined, page: pageParam, pageSize: 20 })}`,
+      );
+    },
     getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
   });
   const trades = useMemo(() => history.data?.pages.flatMap((p) => p.trades) ?? [], [history.data]);
   const pull = useRefresh(useCallback(() => history.refetch(), [history]));
-  const filtered = Boolean(q || status || symbol);
+  const filtered = Boolean(q) || hiddenOnly || trades.length !== history.data?.pages[0]?.total;
+
+  const show = useCallback(
+    (row: HistoryRow) =>
+      void api
+        .delete(`/me/hidden/TRADE/${row.id}`)
+        .then(() => {
+          haptics.notify('success');
+          toast({ tone: 'success', title: `${row.symbol} is back in your Signals` });
+          void client.invalidateQueries({ queryKey: ['history'] });
+          void client.invalidateQueries({ queryKey: ['signals'] });
+        })
+        .catch((error: Error) => toast({ tone: 'error', title: 'That did not work', body: error.message })),
+    [client, toast],
+  );
+
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.bg }]} edges={['top']}>
       <FlatList
@@ -77,20 +115,22 @@ export default function History() {
               autoCorrect={false}
               returnKeyType="search"
             />
-            <ChipRow>
-              <Chip label="Any status" on={!status} onPress={() => setStatus('')} />
-              {STATUSES.map((s) => (
-                <Chip key={s} label={STATUS_LABELS[s]} on={status === s} onPress={() => setStatus(s)} />
-              ))}
-            </ChipRow>
-            {(symbols.data?.symbols.length ?? 0) > 1 && (
-              <ChipRow>
-                <Chip label="Any instrument" on={!symbol} onPress={() => setSymbol('')} />
-                {symbols.data?.symbols.map((s) => (
-                  <Chip key={s.symbol} label={s.symbol} on={symbol === s.symbol} onPress={() => setSymbol(s.symbol)} />
-                ))}
-              </ChipRow>
-            )}
+            <FilterBar
+              value={filter}
+              onChange={setFilter}
+              instruments={instruments.data ?? []}
+              extraCount={hiddenOnly ? 1 : 0}
+              extraChips={hiddenOnly ? <Chip icon="close" label="Hidden by me" on onPress={() => setHiddenOnly(false)} /> : undefined}
+              sheetExtra={
+                <ToggleRow
+                  testID="hidden-only"
+                  label="Only what I hid"
+                  hint="Trades you hid from your Signals list."
+                  value={hiddenOnly}
+                  onChange={setHiddenOnly}
+                />
+              }
+            />
           </View>
         }
         ListEmptyComponent={
@@ -100,36 +140,51 @@ export default function History() {
             <ErrorState error={history.error} onRetry={() => void history.refetch()} />
           ) : (
             <EmptyState icon="time-outline" title={filtered ? 'Nothing matches that' : 'No trades yet'}>
-              {filtered ? 'Try fewer filters.' : 'Every signal stays here with its full record of changes.'}
+              {hiddenOnly ? 'You have not hidden any trades.' : filtered ? 'Try fewer filters.' : 'Every signal stays here with its full record of changes.'}
             </EmptyState>
           )
         }
-        ListFooterComponent={
-          history.isFetchingNextPage ? (
-            <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} />
-          ) : undefined
-        }
+        ListFooterComponent={history.isFetchingNextPage ? <ActivityIndicator color={c.muted} style={{ marginVertical: space.lg }} /> : undefined}
         ItemSeparatorComponent={() => <View style={{ height: space.sm }} />}
         renderItem={({ item }) => (
           <Pressable
             testID={`history-${item.ref}`}
             accessibilityRole="button"
-            accessibilityLabel={`${item.direction} ${item.symbol}, ${STATUS_LABELS[item.status]}, reference ${item.ref}`}
+            accessibilityLabel={`${item.direction} ${item.symbol}, ${STATUS_LABELS[item.status]}, reference ${item.ref}${item.hidden ? ', hidden by you' : ''}${item.archived ? ', archived' : ''}`}
             onPress={() => router.push(`/trades/${item.id}`)}
-            style={({ pressed }) => [
-              styles.row,
-              { backgroundColor: c.surface, borderColor: c.line },
-              pressed && { opacity: 0.75 },
-            ]}
+            onLongPress={() => item.hidden && setMenuFor(item)}
+            style={({ pressed }) => [styles.row, { backgroundColor: c.surface, borderColor: c.line }, pressed && { opacity: 0.75 }]}
           >
             <View style={styles.identity}>
               <DirectionBadge direction={item.direction} />
               <T v="strong">{item.symbol}</T>
               <StatusBadge status={item.status} />
+              {item.hidden && (
+                <Badge tone="neutral" icon="eye-off-outline">
+                  Hidden
+                </Badge>
+              )}
+              {item.archived && (
+                <Badge tone="neutral" icon="archive-outline">
+                  Archived
+                </Badge>
+              )}
               <View style={{ flexGrow: 1 }} />
-              <T v="caption" c="subtle" num>
-                {item.ref}
-              </T>
+              {item.hidden ? (
+                <Pressable
+                  testID={`history-menu-${item.ref}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Actions for ${item.symbol}`}
+                  onPress={() => setMenuFor(item)}
+                  style={styles.menu}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={18} color={c.muted} />
+                </Pressable>
+              ) : (
+                <T v="caption" c="subtle" num>
+                  {item.ref}
+                </T>
+              )}
             </View>
             <View style={styles.identity}>
               <T v="small" c="muted" num style={{ flexShrink: 1 }}>
@@ -146,6 +201,12 @@ export default function History() {
           </Pressable>
         )}
       />
+      <ActionSheet
+        visible={menuFor !== null}
+        title={menuFor ? `${menuFor.symbol} · ${menuFor.ref}` : ''}
+        onClose={() => setMenuFor(null)}
+        actions={menuFor ? [{ label: 'Show in Signals again', icon: 'eye-outline', testID: 'action-show', onPress: () => show(menuFor) }] : []}
+      />
     </SafeAreaView>
   );
 }
@@ -156,4 +217,5 @@ const styles = StyleSheet.create({
   header: { gap: space.md, marginBottom: space.md },
   row: { padding: space.md, gap: space.sm, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
   identity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.sm },
+  menu: { width: 44, height: 36, alignItems: 'center', justifyContent: 'center', marginVertical: -8 },
 });

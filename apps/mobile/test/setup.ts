@@ -4,7 +4,7 @@ jest.mock('expo-haptics', () => ({
   selectionAsync: jest.fn(async () => undefined),
   notificationAsync: jest.fn(async () => undefined),
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
-  NotificationFeedbackType: { Success: 'success', Warning: 'warning' },
+  NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
 jest.mock('expo-system-ui', () => ({ setBackgroundColorAsync: jest.fn(async () => undefined) }));
 jest.mock('@react-native-async-storage/async-storage', () => ({

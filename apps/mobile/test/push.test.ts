@@ -3,7 +3,7 @@ import {
   enablePush,
   listenForNotifications,
   readPushStatus,
-  setLiveConnected,
+  setAppBadge,
   syncPushToken,
   unregisterThisDevice,
 } from '@/lib/push';
@@ -18,7 +18,9 @@ const mockN = {
   setNotificationHandler: jest.fn(),
   getLastNotificationResponseAsync: jest.fn(async () => null),
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   addPushTokenListener: jest.fn(() => ({ remove: jest.fn() })),
+  setBadgeCountAsync: jest.fn(async () => true),
   AndroidImportance: { MAX: 5, HIGH: 4, DEFAULT: 3 },
   AndroidNotificationVisibility: { PRIVATE: 0 },
 };
@@ -186,7 +188,7 @@ describe('staying registered', () => {
 describe('tapping a notification', () => {
   const tap = async (data: unknown) => {
     const open = jest.fn();
-    const stop = listenForNotifications(open);
+    const stop = listenForNotifications(open, jest.fn());
     const handler = (
       mockN.addNotificationResponseReceivedListener.mock.calls as unknown as [[(r: unknown) => void]]
     )[0][0];
@@ -213,6 +215,7 @@ describe('tapping a notification', () => {
       jest.clearAllMocks();
       mockN.getLastNotificationResponseAsync.mockResolvedValue(null);
       mockN.addNotificationResponseReceivedListener.mockReturnValue({ remove: jest.fn() });
+      mockN.addNotificationReceivedListener.mockReturnValue({ remove: jest.fn() });
       mockN.addPushTokenListener.mockReturnValue({ remove: jest.fn() });
     }
   });
@@ -222,23 +225,67 @@ describe('tapping a notification', () => {
       notification: { request: { content: { data: { path: '/feed' } } } },
     } as never);
     const open = jest.fn();
-    const stop = listenForNotifications(open);
+    const stop = listenForNotifications(open, jest.fn());
     await new Promise((resolve) => setTimeout(resolve, 0));
     stop();
     expect(open).toHaveBeenCalledWith('/feed');
   });
 
-  it('keeps the system banner quiet only while the live feed is delivering', async () => {
-    listenForNotifications(jest.fn())();
+  it('never shows the system banner while the app is open: the app shows its own, once', async () => {
+    listenForNotifications(jest.fn(), jest.fn())();
     const [options] = mockN.setNotificationHandler.mock.calls[0] as unknown as [
-      { handleNotification: () => Promise<{ shouldShowBanner: boolean; shouldShowList: boolean }> },
+      { handleNotification: () => Promise<{ shouldShowBanner: boolean; shouldShowList: boolean; shouldPlaySound: boolean }> },
     ];
-    setLiveConnected(false);
-    expect((await options.handleNotification()).shouldShowBanner).toBe(true);
-    setLiveConnected(true);
-    const live = await options.handleNotification();
-    expect(live.shouldShowBanner).toBe(false);
-    expect(live.shouldShowList).toBe(true);
-    setLiveConnected(false);
+    const decision = await options.handleNotification();
+    expect(decision.shouldShowBanner).toBe(false);
+    expect(decision.shouldPlaySound).toBe(false);
+    expect(decision.shouldShowList).toBe(true);
+  });
+
+  it('hands a push that arrives while open to the app, with only checked fields', async () => {
+    const onForeground = jest.fn();
+    const stop = listenForNotifications(jest.fn(), onForeground);
+    const received = (mockN.addNotificationReceivedListener.mock.calls as unknown as [[(n: unknown) => void]])[0][0];
+    received({
+      request: {
+        content: {
+          title: 'Stop-loss moved',
+          body: 'XAU/USD',
+          data: { eventId: id, path: `/trades/${id}`, tradeId: id, seq: 42, category: 'UPDATE', priority: 'PRIORITY' },
+        },
+      },
+    });
+    received({ request: { content: { title: 'x', body: 'y', data: { path: 'https://evil.example' } } } });
+    stop();
+    expect(onForeground).toHaveBeenCalledTimes(1);
+    expect(onForeground).toHaveBeenCalledWith({
+      eventId: id,
+      title: 'Stop-loss moved',
+      body: 'XAU/USD',
+      path: `/trades/${id}`,
+      tradeId: id,
+      seq: 42,
+      category: 'UPDATE',
+      priority: 'PRIORITY',
+    });
+  });
+
+  it('reports an opened notification once, so the desk can see real opens', async () => {
+    mockApi.post.mockResolvedValue({});
+    const stop = listenForNotifications(jest.fn(), jest.fn());
+    const handler = (mockN.addNotificationResponseReceivedListener.mock.calls as unknown as [[(r: unknown) => void]])[0][0];
+    const response = { notification: { request: { content: { data: { eventId: id, path: `/trades/${id}` } } } } };
+    handler(response);
+    handler(response);
+    stop();
+    expect(mockApi.post).toHaveBeenCalledTimes(1);
+    expect(mockApi.post).toHaveBeenCalledWith('/push/opened', { eventId: id });
+  });
+
+  it('keeps the app icon badge within what the platforms show', () => {
+    setAppBadge(250);
+    setAppBadge(-3);
+    expect(mockN.setBadgeCountAsync).toHaveBeenNthCalledWith(1, 99);
+    expect(mockN.setBadgeCountAsync).toHaveBeenNthCalledWith(2, 0);
   });
 });

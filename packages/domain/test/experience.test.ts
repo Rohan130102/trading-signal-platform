@@ -34,11 +34,12 @@ describe('notification presentation', () => {
     expect(pushPresentation('STOP_MOVED', 'UPDATE', 'NORMAL')).toMatchObject({ urgent: true, interruptionLevel: 'time-sensitive', androidChannel: 'updates' });
     expect(pushPresentation('TRADE_CLOSED', 'CLOSURE', 'NORMAL').interruptionLevel).toBe('time-sensitive');
     expect(pushPresentation('TARGETS_MODIFIED', 'UPDATE', 'NORMAL')).toMatchObject({ urgent: false, interruptionLevel: 'active' });
-    expect(pushPresentation('ANNOUNCEMENT', 'ANNOUNCEMENT', 'NORMAL')).toMatchObject({
+    expect(pushPresentation('ANNOUNCEMENT', 'ANNOUNCEMENT', 'NORMAL', 'GENERAL')).toMatchObject({
       urgent: false,
-      interruptionLevel: 'passive',
+      interruptionLevel: 'active',
       androidChannel: 'announcements',
     });
+    expect(pushPresentation('ANNOUNCEMENT', 'ANNOUNCEMENT', 'NORMAL', 'EDUCATIONAL').interruptionLevel).toBe('passive');
     expect(pushPresentation('ANNOUNCEMENT', 'ANNOUNCEMENT', 'PRIORITY')).toMatchObject({
       urgent: true,
       interruptionLevel: 'time-sensitive',

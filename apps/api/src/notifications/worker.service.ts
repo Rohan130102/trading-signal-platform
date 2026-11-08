@@ -41,6 +41,7 @@ const DELIVERY_INCLUDE = {
       type: true,
       priority: true,
       createdAt: true,
+      payload: true,
     },
   },
   pushSubscription: {
@@ -403,7 +404,8 @@ export class WorkerService implements OnModuleDestroy {
 
     const hide = user.preferences?.hidePreview ?? false;
     const category = eventCategory(event.type as EventType);
-    const presentation = pushPresentation(event.type as EventType, category, event.priority);
+    const announcementCategory = (event.payload as { category?: string } | null)?.category ?? null;
+    const presentation = pushPresentation(event.type as EventType, category, event.priority, announcementCategory);
     const message: PushMessage = {
       title: hide ? 'New update' : event.title,
       body: hide ? 'Open the app to read it.' : event.body.split('\n').slice(0, 4).join('\n').slice(0, 1000),
@@ -415,7 +417,13 @@ export class WorkerService implements OnModuleDestroy {
       interruptionLevel: presentation.interruptionLevel,
       badge,
       threadId: event.tradeId ?? 'announcements',
-      data: { tradeId: event.tradeId, seq: Number(event.seq), tradeVersion: event.tradeVersion, category },
+      data: {
+        tradeId: event.tradeId,
+        seq: Number(event.seq),
+        tradeVersion: event.tradeVersion,
+        category,
+        priority: event.priority,
+      },
     };
     const target: PushTarget =
       device.channel === 'EXPO'

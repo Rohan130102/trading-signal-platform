@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import { useRouter } from 'expo-router';
 import { Tabs } from 'expo-router/js-tabs';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -17,7 +17,7 @@ function NewSignalButton() {
         accessibilityRole="button"
         accessibilityLabel="New signal"
         onPress={() => {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => undefined);
+          haptics.impact('medium');
           router.push('/compose');
         }}
         style={({ pressed }) => [styles.newButton, { backgroundColor: c.primary, opacity: pressed ? 0.8 : 1 }]}
@@ -33,7 +33,7 @@ export default function AdminTabs() {
   useStartRealtimeFromHead(true);
   return (
     <Tabs
-      screenListeners={{ tabPress: () => void Haptics.selectionAsync().catch(() => undefined) }}
+      screenListeners={{ tabPress: () => haptics.selection() }}
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: c.text,

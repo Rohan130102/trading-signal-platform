@@ -514,14 +514,15 @@ describe('instruments', () => {
 });
 
 describe('notification metadata and timing', () => {
-  it('marks actionable alerts time-sensitive, routine ones active, and announcements passive, with ordering data', async () => {
+  it('marks actionable alerts time-sensitive, routine ones active, and learning notes quiet, with ordering data', async () => {
     const { app } = await appSubscriber();
     const token = expoToken();
     expect((await app.post('/push/devices', { token, platform: 'ios' })).status).toBe(201);
     const trade = await publish();
     await act(trade, 'MODIFY_TARGETS', { targets: [String(Number(trade.entryLow) + 160)] });
-    await admin().post('/admin/announcements', { ...{ title: 'Note', body: 'Read this.', category: 'GENERAL' }, idempotencyKey: randomUUID() });
-    const [signal, update, note] = await expoFor(token, 3);
+    await admin().post('/admin/announcements', { title: 'Note', body: 'Read this.', category: 'GENERAL', idempotencyKey: randomUUID() });
+    await admin().post('/admin/announcements', { title: 'Lesson', body: 'How stops work.', category: 'EDUCATIONAL', idempotencyKey: randomUUID() });
+    const [signal, update, note, lesson] = await expoFor(token, 4);
     expect(signal?.message).toMatchObject({
       interruptionLevel: 'time-sensitive',
       priority: 'high',
@@ -536,7 +537,8 @@ describe('notification metadata and timing', () => {
     });
     expect(update?.message).toMatchObject({ interruptionLevel: 'active', channelId: 'updates' });
     expect(update?.message.data.seq).toBeGreaterThan(signal?.message.data.seq);
-    expect(note?.message).toMatchObject({ interruptionLevel: 'passive', channelId: 'announcements', data: { path: '/news' } });
+    expect(note?.message).toMatchObject({ interruptionLevel: 'active', channelId: 'announcements', data: { path: '/news' } });
+    expect(lesson?.message.interruptionLevel).toBe('passive');
   });
 
   it('records an open on this device, marks it read, and reports measured timings', async () => {

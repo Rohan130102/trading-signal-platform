@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import type { ReactNode } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, View, type ViewProps, type ViewStyle } from 'react-native';
 import { useColors } from '@/theme';
@@ -92,7 +92,7 @@ export function Segmented<V extends string>({
             accessibilityState={{ checked: on }}
             accessibilityLabel={option.label}
             onPress={() => {
-              void Haptics.selectionAsync().catch(() => undefined);
+              haptics.selection();
               onChange(option.value);
             }}
             style={[styles.segment, on && { backgroundColor: c.surface, borderColor: c.lineStrong }]}
@@ -128,7 +128,7 @@ export function Chip({
       accessibilityState={{ selected: Boolean(on) }}
       accessibilityLabel={label}
       onPress={() => {
-        void Haptics.selectionAsync().catch(() => undefined);
+        haptics.selection();
         onPress();
       }}
       hitSlop={{ top: 6, bottom: 6 }}
@@ -188,7 +188,7 @@ export function ToggleRow({
       accessibilityState={{ checked: value, disabled: Boolean(disabled) }}
       disabled={disabled}
       onPress={() => {
-        void Haptics.selectionAsync().catch(() => undefined);
+        haptics.selection();
         onChange(!value);
       }}
       style={({ pressed }) => [styles.toggle, pressed && { opacity: 0.7 }]}
@@ -345,7 +345,7 @@ const styles = StyleSheet.create({
   segmented: { flexDirection: 'row', borderRadius: radius.md, padding: 3, gap: 3 },
   segment: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 10,
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    minHeight: 40,
+    minHeight: 44,
     paddingHorizontal: 14,
     borderRadius: radius.pill,
     borderWidth: StyleSheet.hairlineWidth,
