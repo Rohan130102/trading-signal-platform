@@ -26,6 +26,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: identifier,
     supportsTablet: false,
+    // Lets actionable trade alerts (a new signal, a stop-loss move, a close) through a Focus the person allows.
+    // Not critical alerts: nothing here overrides silent mode or Do Not Disturb.
+    entitlements: { 'com.apple.developer.usernotifications.time-sensitive': true },
     infoPlist: {
       ITSAppUsesNonExemptEncryption: false,
       // Local network access exists only so a development build can reach a server on this computer.

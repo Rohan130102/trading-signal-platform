@@ -1,6 +1,7 @@
 import { Controller, Delete, Get, HttpCode, Post, Put } from '@nestjs/common';
 import {
   preferencesSchema,
+  pushOpenedSchema,
   pushSubscribeSchema,
   pushUnsubscribeSchema,
   registerDeviceSchema,
@@ -13,6 +14,13 @@ import { NotificationsService } from './notifications.service.js';
 @Controller()
 export class NotificationsController {
   constructor(private readonly notifications: NotificationsService) {}
+
+  @Post('push/opened')
+  @HttpCode(200)
+  @Summary('Record that a notification was opened on this device, and mark it read')
+  opened(@Auth() auth: AuthContext, @ZBody(pushOpenedSchema) body: z.infer<typeof pushOpenedSchema>) {
+    return this.notifications.markOpened(auth.user.id, auth.sessionId, body.eventId);
+  }
 
   @Get('push/config')
   @Summary('Whether push is available on this deployment, and its public key')

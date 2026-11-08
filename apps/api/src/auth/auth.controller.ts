@@ -58,7 +58,10 @@ export class AuthController {
     @ZBody(tokenLoginSchema) body: z.infer<typeof tokenLoginSchema>,
     @ClientIp() ip: string,
   ): Promise<TokenLoginResponse> {
-    const { token, ttlMs } = await this.auth.login(body.identifier, body.password, ip, body.deviceLabel);
+    const { token, ttlMs } = await this.auth.login(body.identifier, body.password, ip, body.deviceLabel, {
+      installationId: body.installationId,
+      platform: body.platform,
+    });
     return { token, expiresAt: new Date(Date.now() + ttlMs).toISOString() };
   }
 
@@ -110,6 +113,7 @@ export class AuthController {
         renewalInstructions: settings.renewalInstructions,
         serviceName: settings.serviceName,
       },
+      onboardedAt: auth.user.onboardedAt?.toISOString() ?? null,
     };
   }
 

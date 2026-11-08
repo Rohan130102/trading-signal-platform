@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { DEFAULT_TEMPLATES } from '@signaldesk/domain';
+import { DEFAULT_ANNOUNCEMENT_TEMPLATES, DEFAULT_TEMPLATES } from '@signaldesk/domain';
 import { createAdapter } from '../db/prisma.service.js';
 import { PrismaClient } from '../generated/prisma/client.js';
 
@@ -60,6 +60,9 @@ async function main(): Promise<void> {
       update: {},
     });
   }
+  for (const template of DEFAULT_ANNOUNCEMENT_TEMPLATES) {
+    await prisma.announcementTemplate.upsert({ where: { name: template.name }, create: template, update: {} });
+  }
   await prisma.appSettings.update({
     where: { id: 1 },
     data: {
@@ -71,7 +74,7 @@ async function main(): Promise<void> {
       renewalInstructions: 'Contact support to renew. Your access returns as soon as the renewal is recorded.',
     },
   });
-  console.warn('Seed complete: instruments, templates and settings are in place.');
+  console.warn('Seed complete: instruments, templates, announcement templates and settings are in place.');
 }
 
 main()

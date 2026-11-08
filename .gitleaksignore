@@ -5,3 +5,5 @@
 529b042b11959114b523d8a0aa93b67f6e1799ef:apps/api/test/authorization.test.ts:generic-api-key:141
 # A throwaway password for a local load test, against a database the script creates and deletes.
 529b042b11959114b523d8a0aa93b67f6e1799ef:scripts/perf.mjs:generic-api-key:156
+# A made-up UUID used as an idempotency key in a unit test of announcement validation.
+8388965786c8347f2168c5af6beb8ea74ada26a2:packages/domain/test/experience.test.ts:generic-api-key:108

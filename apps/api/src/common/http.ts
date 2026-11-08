@@ -152,10 +152,13 @@ export interface AuthUser {
   mustChangePassword: boolean;
   mfaEnabledAt: Date | null;
   lastReadSeq: bigint;
+  onboardedAt: Date | null;
 }
 
 export interface AuthContext {
   sessionId: string;
+  /** The app installation this session signed in from. Null for browsers. */
+  installationId: string | null;
   user: AuthUser;
   subscription: { startsAt: Date; expiresAt: Date } | null;
   access: AccessDecision;

@@ -1,5 +1,7 @@
 import {
   changePasswordSchema,
+  type DeviceBindingView,
+  formatDateTime,
   formatLocalDate,
   type NotificationPreferences,
   type PushDevice,
@@ -10,6 +12,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, View } from 'react-native';
 import { api } from '@/lib/api';
 import { APP_VERSION, IN_EXPO_GO } from '@/lib/config';
+import { hapticsEnabled, onHapticsChange, setHapticsEnabled } from '@/lib/haptics';
 import { disablePush, enablePush, openSystemSettings, type PushStatus, readPushStatus } from '@/lib/push';
 import { useMe, useSession } from '@/lib/session';
 import { type ThemeChoice, useTheme } from '@/theme';
@@ -352,6 +355,54 @@ function ChangePassword({ onClose }: { onClose: () => void }) {
   );
 }
 
+function FeedbackSettings() {
+  const [on, setOn] = useState(hapticsEnabled());
+  useEffect(() => onHapticsChange(setOn), []);
+  return (
+    <>
+      <SectionTitle>Feedback</SectionTitle>
+      <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+        <ToggleRow
+          testID="haptics-toggle"
+          label="Haptic feedback"
+          hint="Gentle taps for new alerts and completed actions. Your phone's own vibration settings still apply."
+          value={on}
+          onChange={(value) => {
+            setOn(value);
+            void setHapticsEnabled(value);
+          }}
+        />
+      </Card>
+    </>
+  );
+}
+
+/** Explains the one-account-per-phone rule in plain words, without any identifiers. */
+function ThisPhone() {
+  const device = useQuery({
+    queryKey: ['device'],
+    queryFn: () => api.get<{ device: DeviceBindingView | null }>('/me/device'),
+    select: (data) => data.device,
+  });
+  return (
+    <>
+      <SectionTitle>This phone</SectionTitle>
+      <Card style={{ gap: space.sm }} testID="this-phone">
+        <T v="strong">{device.data ? 'Registered to your account' : 'Not registered yet'}</T>
+        <T v="small" c="muted">
+          {device.data
+            ? `Since ${formatDateTime(device.data.boundAt)}. Only your account can sign in on this phone, even after signing out.`
+            : 'This phone registers to your account the next time you sign in.'}
+        </T>
+        <T v="small" c="muted">
+          Changing phones? The new one registers when you sign in. To hand this phone to someone else, ask your
+          administrator to release it.
+        </T>
+      </Card>
+    </>
+  );
+}
+
 export function AccountSections() {
   const me = useMe();
   const router = useRouter();
@@ -367,6 +418,8 @@ export function AccountSections() {
     <>
       <NotificationSettings />
       <AppearanceSettings />
+      <FeedbackSettings />
+      {me.role === 'SUBSCRIBER' && <ThisPhone />}
       <SectionTitle>Security</SectionTitle>
       <Card padded={false} style={{ paddingHorizontal: space.lg }}>
         <ListRow
@@ -391,6 +444,18 @@ export function AccountSections() {
       </Card>
       <SectionTitle>About</SectionTitle>
       <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+        {me.role === 'SUBSCRIBER' && (
+          <>
+            <ListRow
+              testID="replay-tour"
+              icon="play-circle-outline"
+              title="Take the tour again"
+              subtitle="How signals, updates, alerts and filters work."
+              onPress={() => router.push('/onboarding?replay=1')}
+            />
+            <Divider />
+          </>
+        )}
         <ListRow
           testID="account-disclosures"
           icon="document-text-outline"

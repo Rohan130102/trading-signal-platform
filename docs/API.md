@@ -55,6 +55,30 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 | `POST /push/devices`   | Register `{ token, platform, deviceLabel }`. A token already known moves to the current user         |
 | `DELETE /push/devices` | Remove `{ token }`, only if it belongs to the caller                                                 |
 
+## Subscriber experience
+
+| Route                                                               | Purpose                                                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /signals`                                                      | Trades with up to four latest updates, newest activity first. `symbols`, `direction`, `status` (`ALL`, `OPEN`, `AWAITING`, `LIVE`, `CLOSED`), cursor `before` |
+| `GET /notifications`, `POST /notifications/read`                    | Every broadcast event with read state; mark all (`{ all, upToSeq }`), some (`{ eventIds }`) or one trade (`{ tradeId }`)                                      |
+| `GET /announcements`                                                | Published, unexpired, not hidden; pinned first                                                                                                                |
+| `POST /me/hidden`, `DELETE /me/hidden/:type/:id`                    | Hide or show a trade or announcement for the caller only                                                                                                      |
+| `GET /me/device`, `POST /me/onboarding`, `POST /me/security-events` | This phone's binding; tour finished; an observed screen capture                                                                                               |
+| `POST /push/opened`                                                 | A notification was opened on this device                                                                                                                      |
+
+`POST /auth/token` now takes `installationId` and `platform`. A subscriber without an installation identifier gets
+`426 APP_UPDATE_REQUIRED`; one bound to another account gets `403 DEVICE_BOUND`.
+
+## Administration added
+
+| Route                                                                                                      | Purpose                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/admin/announcements` (+ `/:id/publish`, `schedule`, `unschedule`, `archive`, `restore`, `purge`, `bulk`) | Announcement lifecycle. Every change carries `expectedVersion`. The original `{ message }` form still publishes at once |
+| `/admin/announcement-templates`                                                                            | Reusable templates                                                                                                      |
+| `/admin/trade-archive` (+ `/preview`, `/before`, `/restore`)                                               | Archive finished trades. Bulk changes need the confirmed count                                                          |
+| `/admin/instruments/:id/archive`, `/restore`                                                               | Retire an instrument without touching its trades                                                                        |
+| `/admin/subscribers/:id/devices`, `/admin/devices/:id/release`                                             | Review and release phone bindings                                                                                       |
+
 ## Trade commands
 
 `POST /admin/trades/:id/events`, discriminated by `action`:

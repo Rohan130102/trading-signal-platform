@@ -11,8 +11,32 @@ export default function More() {
         <ListRow
           testID="more-announcement"
           icon="megaphone-outline"
-          title="Send an announcement"
+          title="New announcement"
           onPress={() => router.push('/admin/announcement')}
+        />
+        <Divider />
+        <ListRow
+          testID="more-announcements"
+          icon="albums-outline"
+          title="Announcements"
+          subtitle="Live, scheduled, drafts, archive and bin"
+          onPress={() => router.push('/admin/announcements')}
+        />
+        <Divider />
+        <ListRow
+          testID="more-instruments"
+          icon="layers-outline"
+          title="Instruments"
+          subtitle="Add, edit, switch off or archive"
+          onPress={() => router.push('/admin/instruments')}
+        />
+        <Divider />
+        <ListRow
+          testID="more-history"
+          icon="archive-outline"
+          title="Manage history"
+          subtitle="Archive finished trades"
+          onPress={() => router.push('/admin/history')}
         />
         <Divider />
         <ListRow
@@ -49,8 +73,8 @@ export default function More() {
       <SectionTitle>On the web</SectionTitle>
       <Card>
         <T v="small" c="muted">
-          Instruments, message templates, service settings, compliance approvals and the audit log are managed in the
-          web admin. They are set rarely and are easier to check on a large screen.
+          Message templates, service settings, compliance approvals and the audit log are managed in the web admin. They
+          are set rarely and are easier to check on a large screen.
         </T>
       </Card>
     </Screen>

@@ -1,16 +1,19 @@
 import { Injectable, type OnModuleDestroy } from '@nestjs/common';
 import {
-  androidChannelFor,
+  BADGE_CAP,
   eventCategory,
   type EventType,
   evaluateSignalAccess,
   mobileDeepLinkPath,
+  pushPresentation,
 } from '@signaldesk/domain';
+import { AnnouncementsService } from '../announcements/announcements.service.js';
 import { log } from '../common/log.js';
 import { env } from '../config/env.js';
 import { CH_EVENTS, CH_PUSH, ListenerService } from '../db/listener.service.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { TradesService } from '../trades/trades.service.js';
+import { NotificationsService } from './notifications.service.js';
 import {
   EXPO_BATCH_LIMIT,
   PUSH_TTL_SECONDS,
@@ -28,7 +31,18 @@ const PUSH_CONCURRENCY = 20;
 
 const DELIVERY_INCLUDE = {
   event: {
-    select: { id: true, tradeId: true, title: true, body: true, type: true, priority: true, createdAt: true },
+    select: {
+      id: true,
+      seq: true,
+      tradeId: true,
+      tradeVersion: true,
+      title: true,
+      body: true,
+      type: true,
+      priority: true,
+      createdAt: true,
+      payload: true,
+    },
   },
   pushSubscription: {
     include: {
@@ -76,7 +90,11 @@ export class WorkerService implements OnModuleDestroy {
     private readonly listener: ListenerService,
     private readonly transport: PushTransport,
     private readonly trades: TradesService,
+    private readonly announcements: AnnouncementsService,
+    private readonly notifications: NotificationsService,
   ) {}
+
+  private lastBacklogAlert = { at: 0, text: '' };
 
   async start(): Promise<void> {
     if (this.running) return;
@@ -108,6 +126,15 @@ export class WorkerService implements OnModuleDestroy {
       setInterval(
         guarded('sweep', () => this.sweep()),
         15_000,
+      ),
+      // Scheduled announcements go out within a few seconds of their time.
+      setInterval(
+        guarded('scheduled_announcements', () => this.announcements.publishDue()),
+        5000,
+      ),
+      setInterval(
+        guarded('backlog_check', () => this.checkBacklog()),
+        30_000,
       ),
     );
     void this.runOutbox();
@@ -254,8 +281,9 @@ export class WorkerService implements OnModuleDestroy {
       const now = new Date();
       const web: PreparedPush[] = [];
       const expo: PreparedPush[] = [];
+      const badges = await this.unreadByUser([...new Set(deliveries.map((d) => d.userId))]);
       for (const delivery of deliveries) {
-        const prepared = await this.prepare(delivery, now);
+        const prepared = await this.prepare(delivery, now, badges.get(delivery.userId));
         if (prepared) (prepared.target.channel === 'EXPO' ? expo : web).push(prepared);
       }
       await Promise.all([this.sendWebPushes(web), this.sendExpoPushes(expo)]);
@@ -332,7 +360,33 @@ export class WorkerService implements OnModuleDestroy {
   }
 
   /** Decides whether this delivery should still be sent. If not, it is finished here and null comes back. */
-  private async prepare(delivery: DeliveryRow, now: Date): Promise<PreparedPush | null> {
+  /** One query for the whole batch: each person's unread count, for the app icon badge. */
+  private async unreadByUser(userIds: string[]): Promise<Map<string, number>> {
+    if (userIds.length === 0) return new Map();
+    const rows = await this.prisma.$queryRaw<{ id: string; unread: bigint }[]>`
+      SELECT u.id, (
+        SELECT count(*) FROM signal_events e
+        WHERE e.broadcast AND e.seq > u.last_read_seq
+          AND NOT EXISTS (SELECT 1 FROM notification_reads r WHERE r.user_id = u.id AND r.event_id = e.id)
+      ) AS unread
+      FROM users u WHERE u.id = ANY(${userIds}::uuid[])`;
+    return new Map(rows.map((r) => [r.id, Math.min(BADGE_CAP, Number(r.unread))]));
+  }
+
+  /** Logs a warning a log alerting rule can page on, at most every five minutes while the problem lasts. */
+  private async checkBacklog(): Promise<void> {
+    const alerts = await this.notifications.alerts();
+    if (alerts.length === 0) {
+      this.lastBacklogAlert = { at: 0, text: '' };
+      return;
+    }
+    const text = alerts.join(' | ');
+    if (text === this.lastBacklogAlert.text && Date.now() - this.lastBacklogAlert.at < 5 * 60_000) return;
+    this.lastBacklogAlert = { at: Date.now(), text };
+    log('warn', 'notification_backlog', { alerts });
+  }
+
+  private async prepare(delivery: DeliveryRow, now: Date, badge?: number): Promise<PreparedPush | null> {
     const { id, event, pushSubscription: device } = delivery;
     const { user, session } = device;
 
@@ -349,14 +403,27 @@ export class WorkerService implements OnModuleDestroy {
     }
 
     const hide = user.preferences?.hidePreview ?? false;
+    const category = eventCategory(event.type as EventType);
+    const announcementCategory = (event.payload as { category?: string } | null)?.category ?? null;
+    const presentation = pushPresentation(event.type as EventType, category, event.priority, announcementCategory);
     const message: PushMessage = {
       title: hide ? 'New update' : event.title,
       body: hide ? 'Open the app to read it.' : event.body.split('\n').slice(0, 4).join('\n').slice(0, 1000),
       url: event.tradeId ? `/app/trades/${event.tradeId}` : '/app',
-      path: mobileDeepLinkPath(event.tradeId),
+      path: mobileDeepLinkPath(event.tradeId, category),
       tag: event.id,
-      urgent: event.priority === 'PRIORITY' || event.type === 'SIGNAL_PUBLISHED',
-      androidChannel: androidChannelFor(eventCategory(event.type as EventType), event.priority),
+      urgent: presentation.urgent,
+      androidChannel: presentation.androidChannel,
+      interruptionLevel: presentation.interruptionLevel,
+      badge,
+      threadId: event.tradeId ?? 'announcements',
+      data: {
+        tradeId: event.tradeId,
+        seq: Number(event.seq),
+        tradeVersion: event.tradeVersion,
+        category,
+        priority: event.priority,
+      },
     };
     const target: PushTarget =
       device.channel === 'EXPO'

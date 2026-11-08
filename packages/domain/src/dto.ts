@@ -78,6 +78,10 @@ export interface PublicOutcome {
 export interface TradeDetail extends TradeSummary {
   events: FeedEvent[];
   outcome: PublicOutcome | null;
+  /** This subscriber hid it from their Signals list. */
+  hidden?: boolean;
+  /** An administrator moved it out of the Signals list. */
+  archived?: boolean;
 }
 
 export interface AdminClosure {
@@ -154,6 +158,8 @@ export interface MeResponse {
   subscription: SubscriptionView;
   access: { allowed: boolean; reason: AccessDenial | null };
   support: { contact: string; renewalInstructions: string; serviceName: string };
+  /** When this person finished or skipped the first-use tour. Null shows it. */
+  onboardedAt: string | null;
 }
 
 /** What anyone may read, signed in or not. */
@@ -208,14 +214,14 @@ export interface NotificationPreferences {
 }
 
 export interface HistoryPage {
-  trades: (TradeSummary & { outcome: PublicOutcome | null })[];
+  trades: (TradeSummary & { outcome: PublicOutcome | null; hidden?: boolean; archived?: boolean })[];
   total: number;
   page: number;
   pageSize: number;
 }
 
 export interface AdminTradesPage {
-  trades: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  trades: (TradeSummary & { aggregate: TradeAggregate | null; archivedAt: string | null })[];
   total: number;
   page: number;
   pageSize: number;
@@ -247,6 +253,13 @@ export interface DashboardResponse {
   alerts: { level: 'WARNING' | 'CRITICAL'; message: string; href: string }[];
 }
 
+export interface LatencyStats {
+  samples: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
 export interface NotificationHealth {
   status: 'HEALTHY' | 'ATTENTION';
   worker: { healthy: boolean; lastSeenSecondsAgo: number | null; instances: number };
@@ -262,6 +275,18 @@ export interface NotificationHealth {
     sloTargetP95Ms: number;
     note: string;
   };
+  /** Measured from records, never estimated. Null where there are no samples. */
+  timings: {
+    /** Commit of the event until the worker created its deliveries. */
+    queue: LatencyStats;
+    /** Commit of the event until the push service accepted the message. */
+    providerAcceptance: LatencyStats;
+    /** Commit of the event until someone opened the notification on a phone. */
+    opened: LatencyStats & { opens: number };
+    note: string;
+  };
+  /** Conditions that need someone to look, in plain words. Empty when all is well. */
+  alerts: string[];
   recentFailures: {
     id: string;
     attempts: number;
@@ -324,6 +349,11 @@ export interface InstrumentRow extends InstrumentSpec {
   id: string;
   active: boolean;
   sortOrder: number;
+  exchange: string | null;
+  /** Archived instruments cannot be used for new signals. Their trades keep their history. */
+  archivedAt: string | null;
+  /** Published trades on this instrument. */
+  tradeCount: number;
 }
 
 export interface TemplateRow {

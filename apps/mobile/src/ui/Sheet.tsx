@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   titles: { flex: 1, minWidth: 0 },
-  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   body: { padding: space.lg, gap: space.lg, paddingBottom: space.xl },
   footer: { padding: space.lg, gap: space.sm, borderTopWidth: StyleSheet.hairlineWidth },
 });

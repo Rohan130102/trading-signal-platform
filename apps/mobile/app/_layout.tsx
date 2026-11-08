@@ -50,8 +50,6 @@ function App() {
     if (state.phase !== 'starting') void SplashScreen.hideAsync().catch(() => undefined);
   }, [state.phase]);
 
-  useEffect(() => listenForNotifications(setPending), []);
-
   useEffect(() => {
     if (!redirect) return;
     // Opening a link while signed out still leads there after signing in.
@@ -72,6 +70,23 @@ function App() {
   useEffect(() => {
     if (canSeeSignals) void syncPushToken().catch(() => undefined);
   }, [canSeeSignals]);
+
+  // The first-use tour, once, after the first full sign-in. A notification being opened goes first, and it
+  // waits until the subscriber's tabs are on screen: pushed during a redirect it would be replaced at once.
+  // Remembered per person, so someone signing in after another on the same phone still gets their tour.
+  const touredFor = useRef<string | null>(null);
+  const onTabs = segments[0] === '(subscriber)';
+  useEffect(() => {
+    if (!settled || !onTabs || pending || !me || me.role !== 'SUBSCRIBER' || !me.access.allowed) return;
+    if (me.onboardedAt || touredFor.current === me.id) return;
+    // A moment's wait lets a screen that navigates on success (setting a password) finish first; if the
+    // route changes again meanwhile, this is cancelled and scheduled afresh.
+    const timer = setTimeout(() => {
+      touredFor.current = me.id;
+      router.push('/onboarding' as never);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [me, onTabs, pending, router, settled]);
 
   return (
     <NavigationThemeProvider value={navigation}>
@@ -104,7 +119,16 @@ function App() {
           <Stack.Screen name="admin/health" options={{ title: 'Notification health' }} />
           <Stack.Screen name="admin/account" options={{ title: 'Account' }} />
           <Stack.Screen name="admin/drafts" options={{ title: 'Drafts', presentation: 'modal' }} />
+          <Stack.Screen name="admin/instruments" options={{ title: 'Instruments' }} />
+          <Stack.Screen name="admin/instrument" options={{ title: 'Instrument', presentation: 'modal' }} />
+          <Stack.Screen name="admin/announcements" options={{ title: 'Announcements' }} />
+          <Stack.Screen name="admin/history" options={{ title: 'History' }} />
+          <Stack.Screen
+            name="onboarding"
+            options={{ presentation: 'fullScreenModal', headerShown: false, animation: 'fade' }}
+          />
         </Stack>
+        <NotificationBridge onOpen={setPending} />
         <LiveAlerts adminLink={me?.role === 'ADMIN'} />
         {API.problem && <Blocking title="This build cannot start" body={API.problem} />}
         {!API.problem && (state.phase === 'loading' || state.phase === 'starting') && <Starting />}
@@ -114,7 +138,19 @@ function App() {
   );
 }
 
-/** Live events outside the feed show here. Inside the feed the new card itself is the alert. */
+/** Pushes that arrive while the app is open join the same in-app banner as live events. */
+function NotificationBridge({ onOpen }: { onOpen: (path: string) => void }) {
+  const { pushArrived } = useRealtime();
+  const arrived = useRef(pushArrived);
+  arrived.current = pushArrived;
+  useEffect(() => listenForNotifications(onOpen, (arrival) => arrived.current(arrival)), [onOpen]);
+  return null;
+}
+
+/**
+ * One banner per alert while the app is open, below the status bar and notch. It disappears by itself,
+ * never blocks navigation, and tapping it opens the trade.
+ */
 function LiveAlerts({ adminLink }: { adminLink: boolean }) {
   const { latest, clearLatest } = useRealtime();
   const toast = useToast();
@@ -129,15 +165,23 @@ function LiveAlerts({ adminLink }: { adminLink: boolean }) {
     const onThisTrade =
       latest.tradeId !== null &&
       (here.current === `/trades/${latest.tradeId}` || here.current === `/admin/trades/${latest.tradeId}`);
-    if (here.current === '/compose') return;
-    if ((here.current === '/feed' || onThisTrade) && latest.priority !== 'PRIORITY') return;
-    const buy = latest.payload.direction === 'BUY';
+    if (here.current === '/compose' || here.current === '/onboarding') return;
+    // On Signals the new card is the alert, and on Alerts the new row is. Priority still interrupts.
+    if ((here.current === '/feed' || here.current === '/alerts' || onThisTrade) && latest.priority !== 'PRIORITY')
+      return;
     const isNew = latest.category === 'NEW_SIGNAL';
     const tradeId = latest.tradeId;
     toast({
       title: latest.title,
-      body: latest.body.split('\n')[0],
-      tone: latest.priority === 'PRIORITY' ? 'warning' : isNew ? (buy ? 'buy' : 'sell') : 'info',
+      body: latest.body,
+      tone:
+        latest.priority === 'PRIORITY'
+          ? 'warning'
+          : isNew && latest.direction
+            ? latest.direction === 'BUY'
+              ? 'buy'
+              : 'sell'
+            : 'info',
       duration: latest.priority === 'PRIORITY' ? 10_000 : 5000,
       onPress: tradeId
         ? () => router.push((adminLink ? `/admin/trades/${tradeId}` : `/trades/${tradeId}`) as never)

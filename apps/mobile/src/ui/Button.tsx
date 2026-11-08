@@ -1,5 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import * as Haptics from 'expo-haptics';
+import { haptics } from '@/lib/haptics';
 import type { ComponentProps, ReactNode } from 'react';
 import { ActivityIndicator, Pressable, type PressableProps, StyleSheet, View, type ViewStyle } from 'react-native';
 import { useColors } from '@/theme';
@@ -56,9 +56,7 @@ export function Button({
       accessibilityState={{ disabled: off, busy: Boolean(loading) }}
       disabled={off}
       onPress={(event) => {
-        void Haptics.impactAsync(heavy ? Haptics.ImpactFeedbackStyle.Medium : Haptics.ImpactFeedbackStyle.Light).catch(
-          () => undefined,
-        );
+        haptics.impact(heavy ? 'medium' : 'light');
         onPress?.(event);
       }}
       style={({ pressed }) => [
@@ -66,7 +64,7 @@ export function Button({
         {
           backgroundColor: look.bg,
           borderColor: look.border,
-          minHeight: large ? 54 : small ? 40 : TOUCH,
+          minHeight: large ? 54 : small ? 44 : TOUCH,
           paddingHorizontal: small ? space.md : space.lg,
           opacity: off && !loading ? 0.45 : pressed ? 0.8 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],

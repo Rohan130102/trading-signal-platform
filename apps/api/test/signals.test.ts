@@ -98,7 +98,7 @@ describe('publishing', () => {
     const trade = await publish({ instrumentId: id, entry: 1000, targets: ['1150'], stopLoss: '820' });
     expect(trade.pointSize).toBe('10');
 
-    const { id: _i, active: _a, sortOrder: _s, ...spec } = created.body;
+    const { id: _i, active: _a, sortOrder: _s, archivedAt: _ar, tradeCount: _tc, ...spec } = created.body;
     const edited = await admin().req('PUT', `/admin/instruments/${id}`, { ...spec, pointSize: '5' });
     expect(edited.status).toBe(200);
     const after = await admin().get(`/admin/trades/${trade.id}`);

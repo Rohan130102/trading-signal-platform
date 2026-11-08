@@ -20,15 +20,20 @@ AppSettings (single row), PublicPerformanceApproval, RateLimitBucket, WorkerHear
 
 ## Tables that matter most
 
-| Table             | Purpose                                                          | Notes                                                                                                                                                                  |
-| ----------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `signal_events`   | The record of everything said about a trade, plus announcements. | Append-only. `seq`, `created_at`, `prev_hash` and `hash` are set by a trigger and cannot be supplied. Stores the exact title and body sent, and the structured values. |
-| `trades`          | Current projection of a signal.                                  | Updated in the same transaction as its event. `version` provides optimistic locking. `instrument_spec` freezes the configuration at publication.                       |
-| `trade_closures`  | Each exit: inputs, results, methodology version.                 | Only change allowed: gaining `superseded_by_event_id`, once.                                                                                                           |
-| `outbox_events`   | One job per broadcast event.                                     | Written in the event's transaction.                                                                                                                                    |
-| `push_deliveries` | One row per event per device.                                    | `UNIQUE(event_id, push_subscription_id)` makes fan-out idempotent.                                                                                                     |
-| `subscriptions`   | Current entitlement.                                             | `UNIQUE(user_id)` prevents duplicates.                                                                                                                                 |
-| `audit_logs`      | Who did what.                                                    | Append-only.                                                                                                                                                           |
+| Table                | Purpose                                                                       | Notes                                                                                                                                                                  |
+| -------------------- | ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `signal_events`      | The record of everything said about a trade, plus announcements.              | Append-only. `seq`, `created_at`, `prev_hash` and `hash` are set by a trigger and cannot be supplied. Stores the exact title and body sent, and the structured values. |
+| `trades`             | Current projection of a signal.                                               | Updated in the same transaction as its event. `version` provides optimistic locking. `instrument_spec` freezes the configuration at publication.                       |
+| `trade_closures`     | Each exit: inputs, results, methodology version.                              | Only change allowed: gaining `superseded_by_event_id`, once.                                                                                                           |
+| `outbox_events`      | One job per broadcast event.                                                  | Written in the event's transaction.                                                                                                                                    |
+| `push_deliveries`    | One row per event per device.                                                 | `UNIQUE(event_id, push_subscription_id)` makes fan-out idempotent.                                                                                                     |
+| `subscriptions`      | Current entitlement.                                                          | `UNIQUE(user_id)` prevents duplicates.                                                                                                                                 |
+| `audit_logs`         | Who did what.                                                                 | Append-only.                                                                                                                                                           |
+| `announcements`      | Editable announcement records: draft, scheduled, published, archived, binned. | Publishing appends one `ANNOUNCEMENT` event in the same transaction (idempotency key `announcement:<id>`). Only never-sent rows can be deleted.                        |
+| `trade_archives`     | Finished trades an administrator moved out of the Signals list.               | A row per trade. The trade and its events are untouched; removing the row restores it.                                                                                 |
+| `user_hidden_items`  | What one subscriber hid from their own lists.                                 | Primary key `(user_id, item_type, item_id)`. Affects nobody else.                                                                                                      |
+| `notification_reads` | Single notifications opened, on top of `users.last_read_seq`.                 | Unread = after the marker and not in this table. The list, the tab and the app badge use the same rule.                                                                |
+| `device_bindings`    | One subscriber per app installation.                                          | Partial unique index on `installation_id` where not released, so concurrent sign-ins cannot bind twice. Released rows stay as history.                                 |
 
 ## Guarantees enforced by the database
 
@@ -67,6 +72,16 @@ Figures are computed with `decimal.js` and rounded to the column's scale before 
 Each `trade_closures` row keeps its results (`price_move`, `points`, `gross_pnl`, `net_pnl`) with the inputs that produced
 them (`entry_price_used`, `exit_price`, `quantity`, `multiplier_used`, `fees`) and `methodology_version`. A later change in
 formula cannot silently reinterpret an old result. Aggregates across exits are always computed, never stored.
+
+`trades.last_activity_seq` is kept by an `AFTER INSERT` trigger on `signal_events`, so the Signals list can order by the
+latest change and page with a cursor. It runs while the writer already holds the trade's row lock.
+
+## Migrations and rollback
+
+Migrations are additive. `20261108000000_mobile_experience` adds tables and columns only and backfills an announcement
+record for every announcement already sent. To reverse it, stop the application, take a backup, roll the code back,
+and run `apps/api/prisma/rollback/20261108000000_mobile_experience.down.sql` in one transaction. That removes drafts,
+schedules, hidden items, bindings and read marks; every trade, event and audit entry stays.
 
 ## Retention
 

@@ -6,7 +6,8 @@ import { BellRing, Inbox, X } from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FeedCard } from '@/components/trade';
-import { Button, buttonClass, EmptyState, ErrorState, Loading, PageHeader, Select } from '@/components/ui';
+import { InstrumentPicker } from '@/components/instrument-picker';
+import { Button, buttonClass, EmptyState, ErrorState, Loading, PageHeader } from '@/components/ui';
 import { api, queryString } from '@/lib/api';
 import { usePush } from '@/lib/push';
 import { useRealtime } from '@/lib/realtime';
@@ -89,10 +90,28 @@ function PushPrompt() {
 
 export default function FeedPage() {
   const { start, setUnread, state } = useRealtime();
-  const [symbol, setSymbol] = useState('');
+  const [symbol, setSymbolState] = useState('');
+  useEffect(() => {
+    try {
+      setSymbolState(localStorage.getItem('sd-feed-symbol') ?? '');
+    } catch {
+      // Private mode or blocked storage: start from all instruments.
+    }
+  }, []);
+  const setSymbol = (next: string) => {
+    setSymbolState(next);
+    try {
+      localStorage.setItem('sd-feed-symbol', next);
+    } catch {
+      // See above.
+    }
+  };
   const symbols = useQuery({
     queryKey: ['symbols'],
-    queryFn: () => api.get<{ symbols: { symbol: string }[] }>('/instruments/symbols'),
+    queryFn: () =>
+      api.get<{ symbols: { symbol: string; displayName: string; exchange: string | null; archived: boolean }[] }>(
+        '/instruments/symbols',
+      ),
     staleTime: 300_000,
   });
 
@@ -149,19 +168,7 @@ export default function FeedPage() {
         description={state === 'live' ? 'New signals and updates appear here by themselves.' : undefined}
         action={
           (symbols.data?.symbols.length ?? 0) > 1 ? (
-            <div className="w-40">
-              <label htmlFor="feed-symbol" className="sr-only">
-                Filter by instrument
-              </label>
-              <Select id="feed-symbol" value={symbol} onChange={(e) => setSymbol(e.target.value)}>
-                <option value="">All instruments</option>
-                {symbols.data?.symbols.map((s) => (
-                  <option key={s.symbol} value={s.symbol}>
-                    {s.symbol}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <InstrumentPicker value={symbol} onChange={setSymbol} instruments={symbols.data?.symbols ?? []} />
           ) : undefined
         }
       />

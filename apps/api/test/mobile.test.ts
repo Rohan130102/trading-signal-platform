@@ -13,47 +13,9 @@ import {
   publish,
   waitUntil,
   withDb,
-  type ApiResponse,
 } from './helpers.js';
 import { WebSocket } from 'ws';
-
-/** A client that behaves like a native app: a bearer token, no cookie and no Origin header. */
-class NativeClient {
-  constructor(public token: string | null = null) {}
-
-  async req<T = any>(
-    method: string,
-    path: string,
-    body?: unknown,
-    extra: Record<string, string> = {},
-  ): Promise<ApiResponse<T>> {
-    const res = await fetch(`${ctx().api}${path}`, {
-      method,
-      headers: {
-        ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
-        ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
-        ...extra,
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const text = await res.text();
-    return { status: res.status, body: (text ? JSON.parse(text) : null) as T, headers: res.headers };
-  }
-
-  get<T = any>(path: string) {
-    return this.req<T>('GET', path);
-  }
-
-  post<T = any>(path: string, body: unknown = {}) {
-    return this.req<T>('POST', path, body);
-  }
-
-  async login(identifier: string, password: string) {
-    const res = await this.post('/auth/token', { identifier, password, deviceLabel: 'Test phone' });
-    if (res.status === 200) this.token = res.body.token;
-    return res;
-  }
-}
+import { NativeClient, newInstallationId } from './native.js';
 
 async function nativeSubscriber(days = 30) {
   const created = await newSubscriber(days);
@@ -85,7 +47,11 @@ const waitForExpo = (token: string, count = 1) =>
 describe('native sign-in', () => {
   it('returns a token in the body and sets no cookie', async () => {
     const created = await newSubscriber(30);
-    const res = await new NativeClient().post('/auth/token', { identifier: created.loginId, password: PASSWORD });
+    const res = await new NativeClient().post('/auth/token', {
+      identifier: created.loginId,
+      password: PASSWORD,
+      installationId: newInstallationId(),
+    });
     expect(res.status).toBe(200);
     expect(res.body.token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
     expect(Date.parse(res.body.expiresAt)).toBeGreaterThan(Date.now());
@@ -354,7 +320,7 @@ describe('native push delivery', () => {
     const messages = await waitForExpo(token, 3);
     const channels = messages.map((m) => m.message.channelId);
     expect(channels).toEqual(['signals', 'updates', 'announcements']);
-    expect(messages[2]?.message.data.path).toBe('/feed');
+    expect(messages[2]?.message.data.path).toBe('/news');
   });
 
   it('hides content when the subscriber asked for no previews', async () => {
