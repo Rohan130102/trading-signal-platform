@@ -1,6 +1,8 @@
+export * from './announcements.js';
 export * from './composer.js';
 export * from './contracts.js';
 export * from './decimal.js';
+export * from './devices.js';
 export * from './display.js';
 export * from './dto.js';
 export * from './instrument.js';
@@ -9,6 +11,7 @@ export * from './live-connection.js';
 export * from './notifications.js';
 export * from './pnl.js';
 export * from './signal.js';
+export * from './signals-feed.js';
 export * from './status.js';
 export * from './subscription.js';
 export * from './templates.js';

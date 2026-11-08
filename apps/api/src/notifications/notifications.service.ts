@@ -14,6 +14,24 @@ import { AuditService } from '../audit/audit.service.js';
 import { PushTransport } from './push-transport.js';
 
 const WORKER_HEALTHY_SECONDS = 20;
+/** Thresholds for the alerts on the health page and in the worker's log. */
+export const BACKLOG_ALERT_SECONDS = 60;
+export const FAILURE_RATE_ALERT = 0.05;
+
+interface Percentiles {
+  samples: bigint;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+}
+
+const round = (value: number | null | undefined) => (value === null || value === undefined ? null : Math.round(value));
+const percentiles = (row: Percentiles | undefined) => ({
+  samples: Number(row?.samples ?? 0),
+  p50Ms: round(row?.p50),
+  p95Ms: round(row?.p95),
+  p99Ms: round(row?.p99),
+});
 
 @Injectable()
 export class NotificationsService {
@@ -164,6 +182,58 @@ export class NotificationsService {
     return this.getPreferences(userId);
   }
 
+  /**
+   * Conditions that need a person to look. Shown on the health page, and logged by the worker so a log
+   * alerting rule can page someone. Each is something measured, not inferred.
+   */
+  async alerts(now = new Date()): Promise<string[]> {
+    const backlogCutoff = new Date(now.getTime() - BACKLOG_ALERT_SECONDS * 1000);
+    const hourAgo = new Date(now.getTime() - 3_600_000);
+    const [worker, stuckOutbox, dead, stuckPush, recent] = await Promise.all([
+      this.prisma.workerHeartbeat.findFirst({ orderBy: { lastSeenAt: 'desc' }, select: { lastSeenAt: true } }),
+      this.prisma.outboxEvent.count({ where: { status: { in: ['PENDING', 'PROCESSING'] }, createdAt: { lt: backlogCutoff } } }),
+      this.prisma.outboxEvent.count({ where: { status: 'DEAD' } }),
+      this.prisma.pushDelivery.count({
+        where: { status: { in: ['PENDING', 'SENDING', 'RETRY'] }, createdAt: { lt: backlogCutoff } },
+      }),
+      this.prisma.pushDelivery.groupBy({
+        by: ['status'],
+        where: { updatedAt: { gte: hourAgo }, status: { in: ['ACCEPTED', 'FAILED'] } },
+        _count: { _all: true },
+      }),
+    ]);
+    const alerts: string[] = [];
+    const workerAge = worker ? (now.getTime() - worker.lastSeenAt.getTime()) / 1000 : null;
+    if (workerAge === null || workerAge >= WORKER_HEALTHY_SECONDS) {
+      alerts.push('The notification worker is not running, so no alerts are being sent.');
+    }
+    if (stuckOutbox > 0) alerts.push(`${stuckOutbox} events have waited over a minute to be queued for sending.`);
+    if (dead > 0) alerts.push(`${dead} events failed to queue after every retry. Use "Retry failed" once the cause is fixed.`);
+    if (stuckPush > 0) alerts.push(`${stuckPush} notifications have waited over a minute to be handed to the push service.`);
+    const accepted = recent.find((g) => g.status === 'ACCEPTED')?._count._all ?? 0;
+    const failed = recent.find((g) => g.status === 'FAILED')?._count._all ?? 0;
+    if (failed >= 5 && failed / Math.max(1, accepted + failed) > FAILURE_RATE_ALERT) {
+      alerts.push(`${failed} of ${accepted + failed} notifications failed in the last hour.`);
+    }
+    return alerts;
+  }
+
+  /**
+   * Recorded when someone opens a notification on this device. This is the only delivery signal a phone
+   * can give: arrival itself is not reported by Apple or Google.
+   */
+  async markOpened(userId: string, sessionId: string, eventId: string): Promise<{ recorded: boolean }> {
+    const updated = await this.prisma.pushDelivery.updateMany({
+      where: { eventId, userId, openedAt: null, pushSubscription: { sessionId } },
+      data: { openedAt: new Date() },
+    });
+    const event = await this.prisma.signalEvent.findFirst({ where: { id: eventId, broadcast: true }, select: { id: true } });
+    if (event) {
+      await this.prisma.notificationRead.createMany({ data: [{ userId, eventId }], skipDuplicates: true });
+    }
+    return { recorded: updated.count > 0 };
+  }
+
   async health() {
     const now = new Date();
     const dayAgo = new Date(now.getTime() - 86_400_000);
@@ -202,13 +272,40 @@ export class NotificationsService {
         },
       }),
     ]);
+    const [queue, acceptance, opened, alerts] = await Promise.all([
+      this.prisma.$queryRaw<Percentiles[]>`
+        SELECT count(*) AS samples,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY ms) AS p50,
+               percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) AS p95,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY ms) AS p99
+        FROM (SELECT EXTRACT(EPOCH FROM (o.processed_at - e.created_at)) * 1000 AS ms
+              FROM outbox_events o JOIN signal_events e ON e.id = o.event_id
+              WHERE o.processed_at IS NOT NULL AND e.created_at >= ${dayAgo}) s`,
+      this.prisma.$queryRaw<Percentiles[]>`
+        SELECT count(*) AS samples,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY ms) AS p50,
+               percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) AS p95,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY ms) AS p99
+        FROM (SELECT EXTRACT(EPOCH FROM (d.accepted_at - e.created_at)) * 1000 AS ms
+              FROM push_deliveries d JOIN signal_events e ON e.id = d.event_id
+              WHERE d.accepted_at IS NOT NULL AND d.accepted_at >= ${dayAgo}) s`,
+      this.prisma.$queryRaw<Percentiles[]>`
+        SELECT count(*) AS samples,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY ms) AS p50,
+               percentile_cont(0.95) WITHIN GROUP (ORDER BY ms) AS p95,
+               percentile_cont(0.99) WITHIN GROUP (ORDER BY ms) AS p99
+        FROM (SELECT EXTRACT(EPOCH FROM (d.opened_at - e.created_at)) * 1000 AS ms
+              FROM push_deliveries d JOIN signal_events e ON e.id = d.event_id
+              WHERE d.opened_at IS NOT NULL AND d.opened_at >= ${dayAgo}) s`,
+      this.alerts(now),
+    ]);
     const lastWorker = workers[0];
     const workerAge = lastWorker ? (now.getTime() - lastWorker.lastSeenAt.getTime()) / 1000 : null;
     const counts = Object.fromEntries(pushGroups.map((g) => [g.status, g._count._all]));
     const stats = latency[0];
     const workerHealthy = workerAge !== null && workerAge < WORKER_HEALTHY_SECONDS;
     return {
-      status: !workerHealthy || outboxDead > 0 ? 'ATTENTION' : 'HEALTHY',
+      status: !workerHealthy || outboxDead > 0 || alerts.length > 0 ? 'ATTENTION' : 'HEALTHY',
       worker: {
         healthy: workerHealthy,
         lastSeenSecondsAgo: workerAge === null ? null : Math.round(workerAge),
@@ -243,6 +340,14 @@ export class NotificationsService {
         sloTargetP95Ms: 2000,
         note: 'Time from commit until the server wrote to connected sockets. Excludes the network to the device.',
       },
+      timings: {
+        queue: percentiles(queue[0]),
+        providerAcceptance: percentiles(acceptance[0]),
+        opened: { ...percentiles(opened[0]), opens: Number(opened[0]?.samples ?? 0) },
+        note:
+          'Measured over the last 24 hours from stored timestamps. Acceptance by Apple or Google is not arrival on the phone, which they do not report; an open is the only confirmed receipt.',
+      },
+      alerts,
       recentFailures: recentFailures.map((f) => ({
         id: f.id,
         attempts: f.attempts,

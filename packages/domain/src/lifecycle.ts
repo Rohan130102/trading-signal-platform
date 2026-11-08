@@ -129,6 +129,8 @@ export interface EventPayload {
   // URGENT_INSTRUCTION / ANNOUNCEMENT
   title?: string;
   message?: string;
+  announcementId?: string;
+  category?: string;
   // CORRECTION
   correctionReason?: string;
   changes?: { field: string; from: string | null; to: string | null }[];
