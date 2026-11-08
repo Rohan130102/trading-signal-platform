@@ -85,6 +85,16 @@ async function landSubscriber() {
   await d.waitFor({ id: 'feed-list' }, 20_000);
 }
 
+/**
+ * A signal published while the app is open is announced in a banner at the top; a subscriber's waits to be
+ * answered. A person dismisses it before using what is under it, and so does a journey.
+ */
+async function dismissAlert(timeout = 10_000) {
+  const close = await d.waitFor({ id: 'live-alert-close' }, timeout);
+  await d.tapAt(close.x, close.y);
+  await d.waitGone({ id: 'live-alert' });
+}
+
 /** Filters are saved on the phone, so a journey that sets them puts them back. */
 async function resetFilters() {
   await d.tap({ id: 'filter-button' });
@@ -332,8 +342,16 @@ J['subscriber-live-signal'] = async () => {
     assert(text.includes(expected), `The new card shows ${expected}`);
   }
   await d.screenshot('feed-new-signal');
-  await d.tap({ any: SIGNAL_CARD });
+  // On Signals too, a new signal is announced: a banner that waits to be answered, and the card marked New.
+  await d.waitFor({ id: 'live-alert' }, 10_000);
+  await expectText('New signal');
+  await d.waitFor({ id: 'fresh-badge' });
+  await d.screenshot('feed-new-signal-banner');
+  await new Promise((resolve) => setTimeout(resolve, 9000));
+  assert(await d.has({ id: 'live-alert' }), 'The new-signal banner stays until it is answered');
+  await d.tap({ id: 'live-alert-open' });
   await d.waitFor({ id: 'trade-detail' });
+  assert(!(await d.has({ id: 'live-alert' })), 'Opening the signal answers its banner');
   await expectText(/Awaiting entry|Published and awaiting/);
   await d.screenshot('trade-awaiting');
 
@@ -346,7 +364,7 @@ J['subscriber-live-signal'] = async () => {
   await d.back();
   await d.waitFor({ id: 'feed-list' });
   // The update is attached to its trade: the same card, its current stop, and the change shown on it.
-  await expectText('Latest update');
+  await d.waitFor({ id: 'latest-update' });
   await expectText('3,200.00');
   assert((await cardCount('3,300.00')) === 1, 'The update did not become a second card');
   await d.screenshot('feed-update');
@@ -863,6 +881,7 @@ J['keyboard-keeps-buttons-reachable'] = async () => {
   await signInAdmin();
   const { height } = await d.size();
   const trade = await publish({ entry: 3991 });
+  await dismissAlert();
   await d.tap({ id: 'quick-buy' });
   await d.tap({ id: 'entry-price' });
   await delay(1200);
@@ -1021,6 +1040,7 @@ J['subscriber-hide-and-restore'] = async () => {
   await signInSubscriber();
   const trade = await publish({ entry: 4011 });
   await d.waitFor({ any: SIGNAL_CARD, desc: /4,011\.00/ }, 20_000);
+  await dismissAlert();
   await d.tap({ id: `signal-menu-${trade.ref}` });
   await d.waitFor({ id: 'action-sheet' });
   await d.screenshot('signal-menu');
@@ -1059,6 +1079,7 @@ J['subscriber-filters'] = async () => {
   await signInSubscriber();
   const btc = await publish({ symbol: 'BTC/USD', entry: 64010 });
   await d.waitFor({ any: SIGNAL_CARD, desc: /BTC\/USD/ }, 20_000);
+  await dismissAlert();
   await d.tap({ id: 'instrument-button' });
   await d.waitFor({ id: 'instrument-picker' });
   await d.type({ id: 'instrument-search' }, 'BTC');

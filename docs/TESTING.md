@@ -8,21 +8,21 @@ end-to-end suite needs ports 3000 and 4000, which a running demo held, so on 8 N
 
 ## Results
 
-| Gate                                                            | Result                                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------ |
-| Clean install from lockfile (`npm ci`) and build                | Pass                                                   |
-| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                   |
-| ESLint, zero warnings allowed                                   | Pass                                                   |
-| Prettier                                                        | Pass                                                   |
-| Unit tests                                                      | **168 of 168** (154 before, 14 added)                  |
-| Integration tests                                               | **219 of 219** (186 before, 33 added)                  |
-| Native app unit and component tests (Jest)                      | **79 of 79** (61 before, 18 added)                     |
-| Release bundles for Android and iOS (`expo export`)             | Pass                                                   |
-| Native app journeys, Android emulator in Expo Go                | **28 of 28**, including 7 new ones (see below)         |
-| End-to-end tests                                                | **77 of 77**                                           |
-| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                  |
-| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship |
-| Tests skipped or weakened to pass                               | None                                                   |
+| Gate                                                            | Result                                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Clean install from lockfile (`npm ci`) and build                | Pass                                                                                                 |
+| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                 |
+| ESLint, zero warnings allowed                                   | Pass                                                                                                 |
+| Prettier                                                        | Pass                                                                                                 |
+| Unit tests                                                      | **168 of 168** (154 before, 14 added)                                                                |
+| Integration tests                                               | **219 of 219** (186 before, 33 added)                                                                |
+| Native app unit and component tests (Jest)                      | **85 of 85** (61 before, 24 added)                                                                   |
+| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                 |
+| Native app journeys, Android emulator in Expo Go                | **28 of 28**, including 7 new ones (see below); the live-signal journey checks the new-signal banner |
+| End-to-end tests                                                | **77 of 77**                                                                                         |
+| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                                                                |
+| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship                                               |
+| Tests skipped or weakened to pass                               | None                                                                                                 |
 
 ### Native app journeys, 8 November
 

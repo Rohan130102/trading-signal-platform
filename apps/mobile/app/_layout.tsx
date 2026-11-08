@@ -6,15 +6,16 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { LiveAlertBanner, type ShownAlert } from '@/alerts/LiveAlertBanner';
 import { API } from '@/lib/config';
 import { listenForNotifications, syncPushToken } from '@/lib/push';
 import { connectQueryToDevice, createQueryClient } from '@/lib/query';
-import { RealtimeProvider, useRealtime } from '@/lib/realtime';
+import { type LiveAlert, RealtimeProvider, useRealtime } from '@/lib/realtime';
 import { gateRedirect, resolveDeepLink } from '@/lib/routing';
 import { SessionProvider, useSession } from '@/lib/session';
 import { ThemeProvider, useColors, useTheme } from '@/theme';
 import { space } from '@/theme/tokens';
-import { Button, EmptyState, Loading, Logo, T, ToastProvider, useToast } from '@/ui';
+import { Button, EmptyState, Loading, Logo, T, ToastProvider } from '@/ui';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -129,7 +130,7 @@ function App() {
           />
         </Stack>
         <NotificationBridge onOpen={setPending} />
-        <LiveAlerts adminLink={me?.role === 'ADMIN'} />
+        <LiveAlerts admin={me?.role === 'ADMIN'} />
         {API.problem && <Blocking title="This build cannot start" body={API.problem} />}
         {!API.problem && (state.phase === 'loading' || state.phase === 'starting') && <Starting />}
         {!API.problem && state.phase === 'unreachable' && <Unreachable />}
@@ -147,48 +148,70 @@ function NotificationBridge({ onOpen }: { onOpen: (path: string) => void }) {
   return null;
 }
 
+/** Where an alert leads, for the person looking at it. */
+function alertPath(alert: LiveAlert, admin: boolean): string | null {
+  if (alert.tradeId) return admin ? `/admin/trades/${alert.tradeId}` : `/trades/${alert.tradeId}`;
+  if (alert.category === 'ANNOUNCEMENT' && !admin) return '/news';
+  return null;
+}
+
 /**
- * One banner per alert while the app is open, below the status bar and notch. It disappears by itself,
- * never blocks navigation, and tapping it opens the trade.
+ * One banner per alert while the app is open, on every screen, Signals and Alerts included (the phone
+ * also buzzes; see RealtimeProvider). A new signal or a priority alert stays until the subscriber opens
+ * or dismisses it, and an ordinary update arriving after it does not push it off screen: it is counted
+ * instead. The only places without a banner are the trade the alert is about, already updating in front
+ * of the person, and screens where they are busy (composing, the first-use tour).
  */
-function LiveAlerts({ adminLink }: { adminLink: boolean }) {
+function LiveAlerts({ admin }: { admin: boolean }) {
   const { latest, clearLatest } = useRealtime();
-  const toast = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const here = useRef(pathname);
   here.current = pathname;
+  const counter = useRef(0);
+  const [shown, setShown] = useState<ShownAlert | null>(null);
+
   useEffect(() => {
     if (!latest) return;
     clearLatest();
-    // No alert about what is already on screen, or about what this person has just done here.
-    const onThisTrade =
-      latest.tradeId !== null &&
-      (here.current === `/trades/${latest.tradeId}` || here.current === `/admin/trades/${latest.tradeId}`);
     if (here.current === '/compose' || here.current === '/onboarding') return;
-    // On Signals the new card is the alert, and on Alerts the new row is. Priority still interrupts.
-    if ((here.current === '/feed' || here.current === '/alerts' || onThisTrade) && latest.priority !== 'PRIORITY')
-      return;
-    const isNew = latest.category === 'NEW_SIGNAL';
-    const tradeId = latest.tradeId;
-    toast({
-      title: latest.title,
-      body: latest.body,
-      tone:
-        latest.priority === 'PRIORITY'
-          ? 'warning'
-          : isNew && latest.direction
-            ? latest.direction === 'BUY'
-              ? 'buy'
-              : 'sell'
-            : 'info',
-      duration: latest.priority === 'PRIORITY' ? 10_000 : 5000,
-      onPress: tradeId
-        ? () => router.push((adminLink ? `/admin/trades/${tradeId}` : `/trades/${tradeId}`) as never)
-        : undefined,
+    const path = alertPath(latest, admin);
+    if (path && here.current === path && latest.tradeId) return;
+    const important = latest.category === 'NEW_SIGNAL' || latest.priority === 'PRIORITY';
+    counter.current += 1;
+    const key = counter.current;
+    setShown((prev) => {
+      if (prev?.important && !important) return { ...prev, more: prev.more + 1 };
+      return { key, alert: latest, more: prev ? prev.more + 1 : 0, sticky: important && !admin, important };
     });
-  }, [adminLink, clearLatest, latest, router, toast]);
-  return null;
+  }, [admin, clearLatest, latest]);
+
+  // Opening the trade some other way (its card, a notification) answers the banner too.
+  useEffect(() => {
+    if (shown && shown.alert.tradeId && pathname === alertPath(shown.alert, admin)) setShown(null);
+  }, [admin, pathname, shown]);
+
+  if (!shown) return null;
+  return (
+    <LiveAlertBanner
+      key={shown.key}
+      shown={shown}
+      onDismiss={() => setShown(null)}
+      onOpen={() => {
+        const path = alertPath(shown.alert, admin);
+        setShown(null);
+        if (path) router.push(path as never);
+      }}
+      onSeeAll={
+        admin
+          ? undefined
+          : () => {
+              setShown(null);
+              router.push('/alerts' as never);
+            }
+      }
+    />
+  );
 }
 
 function Cover({ children }: { children: React.ReactNode }) {

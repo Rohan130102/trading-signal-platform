@@ -43,6 +43,14 @@ interface RealtimeValue {
   clearLatest: () => void;
   /** A push that arrived while the app is open. */
   pushArrived: (arrival: PushArrival) => void;
+  /** Hears every alert as it is announced (once each), for screens that mark what is new. */
+  onAlert: (listener: (alert: LiveAlert) => void) => () => void;
+}
+
+/** How strongly the phone should buzz for an alert. */
+export function alertWeight(alert: Pick<LiveAlert, 'category' | 'priority'>): 'signal' | 'priority' | 'update' {
+  if (alert.priority === 'PRIORITY') return 'priority';
+  return alert.category === 'NEW_SIGNAL' ? 'signal' : 'update';
 }
 
 const RealtimeContext = createContext<RealtimeValue | null>(null);
@@ -108,6 +116,7 @@ export function RealtimeProvider({ enabled, children }: { enabled: boolean; chil
   const connection = useRef<LiveConnection | null>(null);
   const seen = useRef(new SeenEvents());
   const lastBuzz = useRef(0);
+  const listeners = useRef(new Set<(alert: LiveAlert) => void>());
 
   const refreshLists = useCallback(
     (tradeId: string | null) => {
@@ -125,16 +134,31 @@ export function RealtimeProvider({ enabled, children }: { enabled: boolean; chil
     [client],
   );
 
-  /** One banner and one buzz per event, and a burst of catch-up events buzzes once. */
+  /**
+   * One banner and one buzz per event, on every screen, Signals included. A burst of catch-up events
+   * buzzes once, unless a new signal or a priority alert follows an ordinary update.
+   */
+  const lastWeight = useRef<ReturnType<typeof alertWeight>>('update');
   const announce = useCallback((alert: LiveAlert) => {
     if (seen.current.has(alert.eventId)) return;
     seen.current.add(alert.eventId);
     setLatest(alert);
+    for (const listener of listeners.current) listener(alert);
     const now = Date.now();
-    if (now - lastBuzz.current > 2000) {
+    const weight = alertWeight(alert);
+    const stronger = weight !== 'update' && lastWeight.current === 'update';
+    if (now - lastBuzz.current > 2000 || stronger) {
       lastBuzz.current = now;
-      haptics.notify(alert.priority === 'PRIORITY' ? 'warning' : 'success');
+      lastWeight.current = weight;
+      haptics.alert(weight);
     }
+  }, []);
+
+  const onAlert = useCallback((listener: (alert: LiveAlert) => void) => {
+    listeners.current.add(listener);
+    return () => {
+      listeners.current.delete(listener);
+    };
   }, []);
 
   useEffect(() => {
@@ -205,7 +229,7 @@ export function RealtimeProvider({ enabled, children }: { enabled: boolean; chil
         tradeId: arrival.tradeId,
         category: arrival.category,
         priority: arrival.priority,
-        direction: null,
+        direction: arrival.direction,
       });
       connection.current?.wake();
       refreshLists(arrival.tradeId);
@@ -216,8 +240,8 @@ export function RealtimeProvider({ enabled, children }: { enabled: boolean; chil
   const start = useCallback((fromSeq: number) => connection.current?.start(fromSeq) ?? false, []);
   const clearLatest = useCallback(() => setLatest(null), []);
   const value = useMemo<RealtimeValue>(
-    () => ({ state, start, unread, setUnread, latest, clearLatest, pushArrived }),
-    [clearLatest, latest, pushArrived, start, state, unread],
+    () => ({ state, start, unread, setUnread, latest, clearLatest, pushArrived, onAlert }),
+    [clearLatest, latest, onAlert, pushArrived, start, state, unread],
   );
   return <RealtimeContext.Provider value={value}>{children}</RealtimeContext.Provider>;
 }

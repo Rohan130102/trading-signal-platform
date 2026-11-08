@@ -7,7 +7,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { api } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
 import { enablePush, type PushStatus, readPushStatus } from '@/lib/push';
-import { DirectionBadge, Levels, StatusBadge } from '@/trade';
+import { DirectionBadge, StatusBadge } from '@/trade';
+import { CompactLevels } from '@/trade/SignalCard';
 import { useColors } from '@/theme';
 import { radius, space } from '@/theme/tokens';
 import { Badge, Button, ModalFrame, T } from '@/ui';
@@ -92,13 +93,13 @@ function Onboarding() {
     <Step key="signal" icon="reader-outline" title="Reading a signal">
       <Example>
         <View style={styles.row}>
-          <DirectionBadge direction="BUY" large />
-          <T v="heading" style={{ fontWeight: '700' }}>
+          <DirectionBadge direction="BUY" />
+          <T v="strong" style={{ fontWeight: '700', fontSize: 16 }}>
             GOLD
           </T>
           <StatusBadge status="ACTIVE" />
         </View>
-        <Levels
+        <CompactLevels
           precision={2}
           entryLow="100.00"
           entryHigh="100.00"

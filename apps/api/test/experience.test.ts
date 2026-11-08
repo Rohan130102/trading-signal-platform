@@ -605,9 +605,11 @@ describe('notification metadata and timing', () => {
         seq: trade.events[0].seq,
         tradeVersion: trade.events[0].tradeVersion,
         category: 'NEW_SIGNAL',
+        direction: trade.direction,
       },
     });
     expect(update?.message).toMatchObject({ interruptionLevel: 'active', channelId: 'updates' });
+    expect(update?.message.data.direction).toBeNull();
     expect(update?.message.data.seq).toBeGreaterThan(signal?.message.data.seq);
     expect(note?.message).toMatchObject({
       interruptionLevel: 'active',

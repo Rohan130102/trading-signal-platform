@@ -1,7 +1,8 @@
 import { countActiveFilters, filterToQuery, type SignalCard as Card, type SignalsPage } from '@signaldesk/domain';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FilterBar, useInstruments, useSavedFilter } from '@/filters';
 import { api, queryString } from '@/lib/api';
@@ -82,11 +83,35 @@ export default function Signals() {
   const c = useColors();
   const client = useQueryClient();
   const toast = useToast();
-  const { start, setUnread } = useRealtime();
+  const { start, setUnread, onAlert } = useRealtime();
   const instruments = useInstruments();
   const known = useMemo(() => instruments.data?.map((i) => i.symbol), [instruments.data]);
   const { filter, setFilter, loaded } = useSavedFilter('signals-filter', known);
   const [menuFor, setMenuFor] = useState<Card | null>(null);
+  const list = useRef<FlatList<Card>>(null);
+  const scrolledDown = useRef(false);
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
+  const [newAbove, setNewAbove] = useState(0);
+
+  // A signal published while this list is open is outlined and labelled New for a while (the banner and the
+  // buzz come from the root layout). Scrolled down the list, a button offers to go up to it.
+  useEffect(
+    () =>
+      onAlert((alert) => {
+        if (alert.category !== 'NEW_SIGNAL' || !alert.tradeId) return;
+        const id = alert.tradeId;
+        setFresh((current) => new Set(current).add(id));
+        if (scrolledDown.current) setNewAbove((n) => n + 1);
+        setTimeout(() => {
+          setFresh((current) => {
+            const next = new Set(current);
+            next.delete(id);
+            return next;
+          });
+        }, FRESH_MS);
+      }),
+    [onAlert],
+  );
 
   const signals = useInfiniteQuery({
     queryKey: ['signals', filter],
@@ -154,6 +179,7 @@ export default function Signals() {
   return (
     <SafeAreaView style={[styles.fill, { backgroundColor: c.bg }]} edges={['top']}>
       <FlatList
+        ref={list}
         testID="feed-list"
         data={cards}
         keyExtractor={(card) => card.id}
@@ -167,6 +193,12 @@ export default function Signals() {
         initialNumToRender={6}
         windowSize={7}
         removeClippedSubviews
+        extraData={fresh}
+        scrollEventThrottle={100}
+        onScroll={(e) => {
+          scrolledDown.current = e.nativeEvent.contentOffset.y > 240;
+          if (!scrolledDown.current) setNewAbove(0);
+        }}
         ListHeaderComponent={
           <View style={styles.header}>
             <PageTitle title="Signals" right={<LivePill />} />
@@ -200,9 +232,27 @@ export default function Signals() {
             />
           ) : undefined
         }
-        ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
-        renderItem={({ item }) => <SignalCard card={item} onMenu={setMenuFor} />}
+        ItemSeparatorComponent={() => <View style={{ height: space.sm + 2 }} />}
+        renderItem={({ item }) => <SignalCard card={item} onMenu={setMenuFor} fresh={fresh.has(item.id)} />}
       />
+      {newAbove > 0 && (
+        <Pressable
+          testID="new-signals-above"
+          accessibilityRole="button"
+          accessibilityLabel={newAbove === 1 ? 'New signal. Go to the top.' : `${newAbove} new signals. Go to the top.`}
+          onPress={() => {
+            haptics.selection();
+            setNewAbove(0);
+            list.current?.scrollToOffset({ offset: 0, animated: true });
+          }}
+          style={({ pressed }) => [styles.above, { backgroundColor: c.primary, opacity: pressed ? 0.85 : 1 }]}
+        >
+          <Ionicons name="arrow-up" size={16} color={c.primaryText} />
+          <T v="strong" style={{ color: c.primaryText }}>
+            {newAbove === 1 ? 'New signal' : `${newAbove} new signals`}
+          </T>
+        </Pressable>
+      )}
       <ActionSheet
         visible={menuFor !== null}
         title={menuFor ? `${menuFor.direction === 'BUY' ? 'Buy' : 'Sell'} ${menuFor.symbol}` : ''}
@@ -226,8 +276,27 @@ export default function Signals() {
   );
 }
 
+/** How long a newly arrived signal stays outlined. */
+const FRESH_MS = 20_000;
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  above: {
+    position: 'absolute',
+    alignSelf: 'center',
+    bottom: space.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: space.lg,
+    borderRadius: 999,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
   list: { padding: space.lg, paddingBottom: space.xxl, flexGrow: 1 },
   header: { gap: space.md, marginBottom: space.md },
 });

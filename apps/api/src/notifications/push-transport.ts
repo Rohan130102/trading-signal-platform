@@ -24,7 +24,15 @@ export interface PushMessage {
   /** iPhone groups notifications with the same thread, here one per trade. Nothing is replaced. */
   threadId?: string;
   /** What the app needs to order and de-duplicate alerts, and to open the right place. */
-  data?: { tradeId: string | null; seq: number; tradeVersion: number | null; category: string; priority: string };
+  data?: {
+    tradeId: string | null;
+    seq: number;
+    tradeVersion: number | null;
+    category: string;
+    priority: string;
+    /** BUY or SELL for a new signal, so the app colours its banner the same way as the card. */
+    direction: string | null;
+  };
 }
 
 export type PushResult =
