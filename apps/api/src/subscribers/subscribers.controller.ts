@@ -5,10 +5,11 @@ import {
   createSubscriberSchema,
   listSubscribersQuery,
   renewSubscriptionSchema,
+  screenshotPermissionSchema,
   updateSubscriberSchema,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
-import { AdminOnly, Auth, type AuthContext, RequestId, Summary, ZBody, ZQuery } from '../common/http.js';
+import { AdminOnly, Auth, type AuthContext, MasterOnly, RequestId, Summary, ZBody, ZQuery } from '../common/http.js';
 import { SubscribersService } from './subscribers.service.js';
 
 type AccountAction = z.infer<typeof accountActionSchema>;
@@ -49,6 +50,18 @@ export class SubscribersController {
     @ZBody(updateSubscriberSchema) body: z.infer<typeof updateSubscriberSchema>,
   ) {
     return this.subscribers.update(id, body, { id: auth.user.id, requestId });
+  }
+
+  @Put(':id/screenshots')
+  @MasterOnly()
+  @Summary('Allow or block screenshots for this subscriber, or follow the platform default. Master Admin only.')
+  setScreenshots(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(screenshotPermissionSchema) body: z.infer<typeof screenshotPermissionSchema>,
+  ) {
+    return this.subscribers.setScreenshotPermission(id, body.screenshotsAllowed, { id: auth.user.id, requestId });
   }
 
   @Post(':id/renew')

@@ -13,6 +13,7 @@ import {
   AppError,
   Auth,
   type AuthContext,
+  MasterOnly,
   notFound,
   RequestId,
   Summary,
@@ -192,7 +193,8 @@ export class AdminController {
   }
 
   @Put('settings')
-  @Summary('Update settings')
+  @MasterOnly()
+  @Summary('Update settings and platform rules. Master Admin only.')
   updateSettings(
     @Auth() auth: AuthContext,
     @RequestId() requestId: string,
@@ -232,7 +234,8 @@ export class AdminController {
   }
 
   @Post('compliance/public-performance/approvals')
-  @Summary('Record a documented compliance sign-off')
+  @MasterOnly()
+  @Summary('Record a documented compliance sign-off. Master Admin only.')
   async addApproval(
     @Auth() auth: AuthContext,
     @RequestId() requestId: string,
@@ -258,6 +261,7 @@ export class AdminController {
   }
 
   @Post('compliance/public-performance/approvals/:id/revoke')
+  @MasterOnly()
   @HttpCode(200)
   @Summary('Revoke an approval. The public section closes straight away.')
   async revokeApproval(

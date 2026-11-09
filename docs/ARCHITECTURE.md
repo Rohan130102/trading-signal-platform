@@ -61,9 +61,13 @@ DRAFT ──publish──▶ PUBLISHED ──activate──▶ ACTIVE ──part
              CANCELLED  EXPIRED           CLOSED ◀────────────────────┘
 ```
 
-Only an `ACTIVATE` action moves a signal to `ACTIVE`. By the desk's rule, publishing applies it in the same transaction, so a
-new signal is active at once; the activation is still its own event (internal, so subscribers get one alert), and it is never a
-fill: no execution record is created. `activateOnPublish: false` keeps the older wait-for-entry flow. Terminal states
+Only an `ACTIVATE` action moves a signal to `ACTIVE`. A new signal starts as the Master Admin's platform setting says:
+**awaiting entry** (the default) or **active immediately**, and the administrator can choose either when publishing
+(`activateOnPublish`). Awaiting entry, it has an entry window (default four hours, set in minutes; a publish can give its
+own end time or none). When the window ends first, the worker's sweep (every 15 seconds) expires it with a broadcast
+`ENTRY_EXPIRED` event, so subscribers are told not to enter; one key per trade and version keeps several workers from
+expiring it twice. Starting active applies `ACTIVATE` in the publish transaction as its own internal event, so
+subscribers get one alert; it is never a fill and creates no execution record. Terminal states
 have no way out. A closed trade's levels cannot change, but an exit can be corrected: a new closure
 supersedes the old one, which is kept and flagged. See `packages/domain/src/status.ts` for the table of
 which action is allowed from which state.
@@ -111,3 +115,39 @@ code changes: each API instance tails the log independently, and workers share t
 | Native apps                       | The REST and WebSocket contracts are client-agnostic.                                                                  |
 | More admin roles                  | `Role` plus the `AdminOnly` decorator.                                                                                 |
 | Higher push volume                | Replace the delivery loop with BullMQ behind the same outbox.                                                          |
+
+## Master Admin and platform rules
+
+One flag on an administrator account, `users.is_master_admin`, marks a Master Admin. The guard checks it on every request
+from the database, like the role, through the `MasterOnly()` decorator. Only a Master Admin can:
+
+- register administrators (temporary password shown once; password change and two-step verification required at first
+  sign-in), suspend, disable, reactivate and reset them, and grant or remove Master Admin. There is always at least one
+  active Master Admin: the rows are locked while this is checked, so two changes at once cannot remove the last one.
+- change settings (`PUT /admin/settings`) and record or revoke public-performance approvals.
+- remove finished trades from subscriber screens, and set a subscriber's screenshot permission.
+
+The first administrator created with `npm run admin:create` becomes the Master Admin. The migration made the
+longest-serving active administrator the Master Admin on an existing installation, and logged it. `npm run
+admin:make-master -- <login>` is the break-glass route when no Master Admin can sign in.
+
+Platform rules live in `app_settings`, so routine changes need no code: the start mode, the entry window, the trailing
+stop wording (`GENERAL`, the new stop only; or `DETAILED`, with the distance in points), whether subscribers may take
+screenshots, and the history scope. Each change is audited with its old and new value, and a `screen_refresh`
+notification makes open apps read the rules again.
+
+## What each subscriber sees
+
+`AudienceService` applies two rules to every subscriber list, count and badge (Signals, History, Alerts, the event feed,
+the trade page, unread counts and the push badge): trades removed from subscriber screens are left out with all their
+alerts, and with the `MEMBERSHIP` history scope a subscriber's lists start when their membership did (published or still
+live during it; live trades are always shown). A subscriber can clear finished trades from their own lists; that uses
+`user_hidden_items` and changes nobody else's view. None of this touches trades, events or any figure.
+
+## Removing a trade from subscriber screens
+
+`trade_removals` holds one row per removed trade, like `trade_archives`. Only finished trades qualify, all or nothing,
+with a reason and the typed word `REMOVE`. The audit entry records who, why, and each trade's outcome. Performance
+figures, internal and public, keep counting removed trades, and the public page states how many there are, so removing a
+losing trade can never improve the results. A removed trade accepts no lifecycle action, so nothing can alert
+subscribers about a trade they cannot open, until it is put back.

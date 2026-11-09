@@ -135,6 +135,9 @@ export interface AdminTradeDetail extends Omit<TradeSummary, never> {
   allowedActions: string[];
   contractMultiplier: string | null;
   tickSize: string;
+  archivedAt: string | null;
+  /** Taken off subscriber screens by the Master Admin. Still counted in performance figures. */
+  removal: { removedAt: string; removedBy: string; reason: string } | null;
 }
 
 export interface SubscriptionView {
@@ -160,6 +163,10 @@ export interface MeResponse {
   support: { contact: string; renewalInstructions: string; serviceName: string };
   /** When this person finished or skipped the first-use tour. Null shows it. */
   onboardedAt: string | null;
+  /** Registers and manages administrators and changes platform rules. */
+  isMasterAdmin: boolean;
+  /** The platform's rule for this person, set by the Master Admin. Applied by the app as far as the OS allows. */
+  security: { screenshotsAllowed: boolean };
 }
 
 /** What anyone may read, signed in or not. */
@@ -172,6 +179,46 @@ export interface PublicInfo {
   privacyNotice: string;
   supportContact: string;
   publicResultsAvailable: boolean;
+  /** The About section of the public page. */
+  aboutBody: string;
+  /** When demonstration data was last cleared. Results start after it. */
+  dataResetAt: string | null;
+}
+
+/** One finished trade on the public page. Times are when the desk published, activated and closed it. */
+export interface PublicTradeRecord {
+  ref: string | null;
+  symbol: string;
+  direction: Direction | null;
+  status: TradeStatus;
+  publishedAt: string | null;
+  /** When the desk marked the signal active. Not a fill, and not a subscriber's execution. */
+  activatedAt: string | null;
+  /** Time of the last recorded exit. */
+  exitedAt: string | null;
+  closedAt: string | null;
+  basis: CalculationBasis | null;
+  weightedPoints: string | null;
+  outcome: TradeAggregate['outcome'] | null;
+}
+
+export interface PublicPerformanceResponse {
+  measurementPeriod: { from: string | null; to: string | null };
+  lifecycle: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
+  hypothetical: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
+  declared: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
+  records: PublicTradeRecord[];
+  /** Finished trades taken off subscriber screens. They are still counted in every figure above. */
+  removedFromScreens: number;
+  symbols: string[];
+  pointsComparable: boolean;
+  dataResetAt: string | null;
+  methodology: { version: string; statements: string[]; definitions: { term: string; meaning: string }[] };
+  disclosures: {
+    riskDisclosure: string;
+    regulatoryStatement: string;
+    approval: { jurisdiction: string; scope: string; documentReference: string; expiresAt: string };
+  };
 }
 
 export interface DraftRow {
@@ -221,7 +268,12 @@ export interface HistoryPage {
 }
 
 export interface AdminTradesPage {
-  trades: (TradeSummary & { aggregate: TradeAggregate | null; archivedAt: string | null })[];
+  trades: (TradeSummary & {
+    aggregate: TradeAggregate | null;
+    archivedAt: string | null;
+    /** Taken off subscriber screens by the Master Admin. */
+    removedAt: string | null;
+  })[];
   total: number;
   page: number;
   pageSize: number;
@@ -310,6 +362,10 @@ export interface SubscriberRow {
   lastLoginAt: string | null;
   createdAt: string;
   subscription: SubscriptionView;
+  /** This subscriber's own screenshot permission. Null follows the platform default. */
+  screenshotsAllowed: boolean | null;
+  /** What applies to them now. */
+  screenshotsEffective: boolean;
 }
 
 export interface SubscriberDetail extends SubscriberRow {
@@ -343,6 +399,8 @@ export interface PerformanceReport {
   quoteCurrency: string | null;
   pointsComparable: boolean;
   methodology: { version: string; statements: string[] };
+  /** Finished trades taken off subscriber screens. Counted in every figure above. */
+  removedFromScreens: number;
 }
 
 export interface InstrumentRow extends InstrumentSpec {

@@ -12,6 +12,7 @@ import { log } from '../common/log.js';
 import { env } from '../config/env.js';
 import { CH_EVENTS, CH_PUSH, ListenerService } from '../db/listener.service.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
+import { AudienceService } from '../feed/audience.service.js';
 import { TradesService } from '../trades/trades.service.js';
 import { NotificationsService } from './notifications.service.js';
 import {
@@ -92,6 +93,7 @@ export class WorkerService implements OnModuleDestroy {
     private readonly trades: TradesService,
     private readonly announcements: AnnouncementsService,
     private readonly notifications: NotificationsService,
+    private readonly audience: AudienceService,
   ) {}
 
   private lastBacklogAlert = { at: 0, text: '' };
@@ -360,17 +362,10 @@ export class WorkerService implements OnModuleDestroy {
   }
 
   /** Decides whether this delivery should still be sent. If not, it is finished here and null comes back. */
-  /** One query for the whole batch: each person's unread count, for the app icon badge. */
+  /** One query for the whole batch: each person's unread count for the app icon badge, as the app counts it. */
   private async unreadByUser(userIds: string[]): Promise<Map<string, number>> {
-    if (userIds.length === 0) return new Map();
-    const rows = await this.prisma.$queryRaw<{ id: string; unread: bigint }[]>`
-      SELECT u.id, (
-        SELECT count(*) FROM signal_events e
-        WHERE e.broadcast AND e.seq > u.last_read_seq
-          AND NOT EXISTS (SELECT 1 FROM notification_reads r WHERE r.user_id = u.id AND r.event_id = e.id)
-      ) AS unread
-      FROM users u WHERE u.id = ANY(${userIds}::uuid[])`;
-    return new Map(rows.map((r) => [r.id, Math.min(BADGE_CAP, Number(r.unread))]));
+    const counts = await this.audience.unreadCounts(userIds);
+    return new Map([...counts].map(([id, unread]) => [id, Math.min(BADGE_CAP, unread)]));
   }
 
   /** Logs a warning a log alerting rule can page on, at most every five minutes while the problem lasts. */

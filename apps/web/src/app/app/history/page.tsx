@@ -8,17 +8,30 @@ import {
   STATUS_LABELS,
   type TradeSummary,
 } from '@signaldesk/domain';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { History as HistoryIcon, Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Eraser, History as HistoryIcon, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { DirectionBadge, StatusBadge } from '@/components/trade';
-import { Button, EmptyState, ErrorState, Field, Input, Loading, PageHeader, Pagination, Select } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  ErrorState,
+  Field,
+  Input,
+  Loading,
+  PageHeader,
+  Pagination,
+  Select,
+  Switch,
+} from '@/components/ui';
 import { api, queryString } from '@/lib/api';
 import { formatDateTime, signedPoints } from '@/lib/format';
 
 interface HistoryResult {
-  trades: (TradeSummary & { outcome: PublicOutcome | null })[];
+  trades: (TradeSummary & { outcome: PublicOutcome | null; hidden?: boolean })[];
   total: number;
   page: number;
   pageSize: number;
@@ -29,14 +42,43 @@ const INITIAL = { q: '', symbol: '', status: '' as TradeStatus | '', from: '', t
 export default function HistoryPage() {
   const [filters, setFilters] = useState(INITIAL);
   const [page, setPage] = useState(1);
+  const [cleared, setCleared] = useState(false);
+  const client = useQueryClient();
+  const reload = () => {
+    void client.invalidateQueries({ queryKey: ['history'] });
+    void client.invalidateQueries({ queryKey: ['feed'] });
+    void client.invalidateQueries({ queryKey: ['active'] });
+  };
+  const clear = useMutation({
+    mutationFn: () => api.post<{ cleared: number }>('/me/history/clear', { confirm: true }),
+    onSuccess: (r) => {
+      reload();
+      toast.success(
+        r.cleared === 0 ? 'Nothing to clear' : `${r.cleared} finished signal${r.cleared === 1 ? '' : 's'} cleared`,
+      );
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const restore = useMutation({
+    mutationFn: () => api.post<{ restored: number }>('/me/history/restore', {}),
+    onSuccess: (r) => {
+      reload();
+      setCleared(false);
+      toast.success(`${r.restored} brought back`);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const symbols = useQuery({
     queryKey: ['symbols'],
     queryFn: () => api.get<{ symbols: { symbol: string }[] }>('/instruments/symbols'),
     staleTime: 300_000,
   });
   const history = useQuery({
-    queryKey: ['history', filters, page],
-    queryFn: () => api.get<HistoryResult>(`/trades/history${queryString({ ...filters, page, pageSize: 20 })}`),
+    queryKey: ['history', filters, page, cleared],
+    queryFn: () =>
+      api.get<HistoryResult>(
+        `/trades/history${queryString({ ...filters, visibility: cleared ? 'HIDDEN' : 'SHOWN', page, pageSize: 20 })}`,
+      ),
     placeholderData: keepPreviousData,
   });
   const update = (patch: Partial<typeof INITIAL>) => {
@@ -46,7 +88,39 @@ export default function HistoryPage() {
   const filtered = Object.values(filters).some(Boolean);
   return (
     <>
-      <PageHeader title="History" description="Every signal, whatever happened to it." />
+      <PageHeader
+        title="History"
+        description="Signals from your membership, whatever happened to them. Only you see what you clear."
+        action={
+          <Button
+            loading={clear.isPending}
+            onClick={() =>
+              window.confirm(
+                'Clear finished signals from your history and Signals? Live signals stay. Nothing is deleted, and only your own view changes.',
+              ) && clear.mutate()
+            }
+          >
+            <Eraser className="size-4" aria-hidden /> Clear history
+          </Button>
+        }
+      />
+      <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-line px-3">
+        <div className="min-w-60 flex-1">
+          <Switch
+            label="Show only what I cleared or hid"
+            checked={cleared}
+            onChange={(v) => {
+              setCleared(v);
+              setPage(1);
+            }}
+          />
+        </div>
+        {cleared && (
+          <Button size="sm" loading={restore.isPending} onClick={() => restore.mutate()}>
+            Bring them all back
+          </Button>
+        )}
+      </div>
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[1.4fr_1fr_1fr_1fr_1fr]">
         <Field label="Search" className="col-span-2 sm:col-span-1">
           {(c) => (
@@ -124,6 +198,7 @@ export default function HistoryPage() {
                   <DirectionBadge direction={t.direction} />
                   <span className="font-semibold">{t.symbol}</span>
                   <StatusBadge status={t.status} />
+                  {t.hidden && <Badge>Cleared</Badge>}
                   <span className="num text-[13px] text-muted">
                     {t.entryType === 'RANGE'
                       ? `${formatPrice(t, t.entryLow)} – ${formatPrice(t, t.entryHigh)}`

@@ -59,8 +59,10 @@ Before anything else, check the instrument assumptions: see [docs/ASSUMPTIONS.md
 | `npm run test:mobile`                                       | The phone app's component and logic tests                                                                                        |
 | `npm run lint`, `npm run typecheck`, `npm run format:check` | Static checks                                                                                                                    |
 | `npm run db:migrate`, `npm run db:seed`                     | Database setup                                                                                                                   |
-| `npm run admin:create -- <login> "<Name>"`                  | Provision an administrator                                                                                                       |
+| `npm run admin:create -- <login> "<Name>"`                  | Provision an administrator. The first one becomes the Master Admin, who registers the others in the app                          |
 | `npm run admin:reset -- <login>`                            | Break-glass administrator recovery                                                                                               |
+| `npm run admin:make-master -- <login>`                      | Break-glass: make an active administrator a Master Admin                                                                         |
+| `npm run data:reset-demo`                                   | Clear demonstration data. A dry run until confirmed; keeps a snapshot. See [docs/SECURITY.md](docs/SECURITY.md)                  |
 | `npm run vapid:generate`                                    | Web Push keys                                                                                                                    |
 | `npm run openapi`                                           | Regenerate `docs/openapi.json`                                                                                                   |
 

@@ -11,11 +11,13 @@ import {
   type SignalsPage,
   statusesForGroup,
   type StatusGroup,
+  TERMINAL_STATUSES,
   type TradeStatus,
 } from '@signaldesk/domain';
 import { notFound } from '../common/http.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { toFeedEvent, toPublicOutcome, toTradeSummary } from '../trades/mappers.js';
+import { AudienceService } from './audience.service.js';
 
 /** The latest update plus up to three earlier ones, which is all a collapsed card shows. */
 const RECENT_UPDATES = 4;
@@ -34,16 +36,14 @@ export interface SignalsQuery {
  */
 @Injectable()
 export class FeedService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audience: AudienceService,
+  ) {}
 
   /** Events after the read marker that were not opened one by one. The badge, the tab and the list agree. */
-  async unreadCount(userId: string, lastReadSeq?: bigint): Promise<number> {
-    const marker =
-      lastReadSeq ??
-      (await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } })).lastReadSeq;
-    return this.prisma.signalEvent.count({
-      where: { broadcast: true, seq: { gt: marker }, reads: { none: { userId } } },
-    });
+  unreadCount(userId: string): Promise<number> {
+    return this.audience.unreadCount(userId);
   }
 
   async hiddenIds(userId: string, type: HiddenItemType): Promise<string[]> {
@@ -56,11 +56,13 @@ export class FeedService {
 
   async signals(userId: string, query: SignalsQuery): Promise<SignalsPage> {
     const statuses = statusesForGroup(query.status);
-    const [user, hidden] = await Promise.all([
+    const [user, hidden, from] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
       this.hiddenIds(userId, 'TRADE'),
+      this.audience.scopeStart(userId),
     ]);
     const where: Prisma.TradeWhereInput = {
+      AND: [this.audience.tradeWhere(from)],
       status: statuses ? { in: statuses as TradeStatus[] } : { not: 'DRAFT' },
       lastActivitySeq: query.before !== undefined ? { lt: BigInt(query.before) } : { not: null },
       archive: { is: null },
@@ -98,7 +100,7 @@ export class FeedService {
     );
     const [head, unread] = await Promise.all([
       this.prisma.signalEvent.aggregate({ where: { broadcast: true }, _max: { seq: true } }),
-      this.unreadCount(userId, user.lastReadSeq),
+      this.unreadCount(userId),
     ]);
     const cards: SignalCard[] = page.map((row) => ({
       ...toTradeSummary(row),
@@ -117,9 +119,16 @@ export class FeedService {
   }
 
   async notifications(userId: string, query: { before?: number; limit: number }): Promise<NotificationsPage> {
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } });
+    const [user, from] = await Promise.all([
+      this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
+      this.audience.scopeStart(userId),
+    ]);
     const rows = await this.prisma.signalEvent.findMany({
-      where: { broadcast: true, ...(query.before !== undefined ? { seq: { lt: BigInt(query.before) } } : {}) },
+      where: {
+        broadcast: true,
+        ...this.audience.eventWhere(from),
+        ...(query.before !== undefined ? { seq: { lt: BigInt(query.before) } } : {}),
+      },
       orderBy: { seq: 'desc' },
       take: query.limit + 1,
       include: { reads: { where: { userId }, select: { eventId: true } } },
@@ -147,7 +156,7 @@ export class FeedService {
     });
     return {
       items,
-      unread: await this.unreadCount(userId, user.lastReadSeq),
+      unread: await this.unreadCount(userId),
       nextBefore: hasMore ? (items[items.length - 1]?.seq ?? null) : null,
     };
   }
@@ -166,7 +175,7 @@ export class FeedService {
         skipDuplicates: true,
       });
     }
-    return this.unreadCount(userId, user.lastReadSeq);
+    return this.unreadCount(userId);
   }
 
   async hide(userId: string, type: HiddenItemType, id: string): Promise<void> {
@@ -180,6 +189,35 @@ export class FeedService {
       create: { userId, itemType: type, itemId: id },
       update: {},
     });
+  }
+
+  /**
+   * Clears this subscriber's own history: every finished trade they can see is hidden from their lists. Live
+   * trades stay, because their instructions are still in force. Nobody else is affected and nothing is deleted;
+   * restoreHistory brings them back.
+   */
+  async clearHistory(userId: string): Promise<{ cleared: number }> {
+    const from = await this.audience.scopeStart(userId);
+    const rows = await this.prisma.trade.findMany({
+      where: {
+        AND: [this.audience.tradeWhere(from)],
+        status: { in: [...TERMINAL_STATUSES] as TradeStatus[] },
+        NOT: { id: { in: await this.hiddenIds(userId, 'TRADE') } },
+      },
+      select: { id: true },
+    });
+    if (rows.length > 0) {
+      await this.prisma.userHiddenItem.createMany({
+        data: rows.map((r) => ({ userId, itemType: 'TRADE', itemId: r.id })),
+        skipDuplicates: true,
+      });
+    }
+    return { cleared: rows.length };
+  }
+
+  async restoreHistory(userId: string): Promise<{ restored: number }> {
+    const removed = await this.prisma.userHiddenItem.deleteMany({ where: { userId, itemType: 'TRADE' } });
+    return { restored: removed.count };
   }
 
   async unhide(userId: string, type: HiddenItemType, id: string): Promise<void> {

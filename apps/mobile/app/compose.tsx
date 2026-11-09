@@ -6,11 +6,15 @@ import {
   type Direction,
   type DraftInput,
   type DraftRow,
+  ENTRY_WINDOW_CHOICES,
+  entryWindowLabel,
   type EntryType,
+  formatDateTime,
   formatPoints,
   formatPrice,
   type InstrumentRow,
   isSignalReady,
+  type PlatformSettings,
   isTemplateForDirection,
   previewSignalEvent,
   type Priority,
@@ -63,7 +67,10 @@ interface FormState {
   priority: Priority;
   templateId: string;
   commentary: string;
-  deadlineHours: number | null;
+  /** DEFAULT follows the platform's start mode. */
+  startAs: 'DEFAULT' | 'AWAITING_ENTRY' | 'ACTIVE';
+  /** DEFAULT: the platform's entry window. NONE: no limit. Otherwise minutes. */
+  window: string;
 }
 
 const EMPTY: FormState = {
@@ -78,11 +85,11 @@ const EMPTY: FormState = {
   priority: 'NORMAL',
   templateId: '',
   commentary: '',
-  deadlineHours: null,
+  startAs: 'DEFAULT',
+  window: 'DEFAULT',
 };
 
 const RECENT_KEY = 'recent-instruments';
-const DEADLINES = [1, 4, 12, 24];
 
 function Compose() {
   const router = useRouter();
@@ -102,6 +109,10 @@ function Compose() {
     queryKey: ['admin', 'drafts'],
     queryFn: () => api.get<{ drafts: DraftRow[] }>('/admin/drafts'),
     enabled: Boolean(params.draft),
+  });
+  const platform = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<PlatformSettings>('/admin/settings'),
   });
 
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -165,14 +176,13 @@ function Compose() {
         try {
           const saved = JSON.parse(raw) as { form: FormState; draftRef: { id: string; version: number } | null };
           if (saved.form.entryLow || saved.form.direction) {
-            setForm(saved.form);
+            setForm({ ...EMPTY, ...saved.form });
             setDraftRef(saved.draftRef);
             if (
               saved.form.custom ||
               saved.form.commentary ||
               saved.form.priority !== 'NORMAL' ||
-              saved.form.templateId ||
-              saved.form.deadlineHours
+              saved.form.templateId
             ) {
               setAdvanced(true);
             }
@@ -230,21 +240,27 @@ function Compose() {
     [computed, form],
   );
   // Same contents, same key: a double tap or a retry after a lost response cannot publish twice.
-  const fieldsKey = `${JSON.stringify(fields)}#${cycle}#${form.deadlineHours}`;
+  const defaultMode = platform.data?.signalStartMode ?? 'AWAITING_ENTRY';
+  const defaultWindow = platform.data?.entryExpiryMinutesDefault ?? 0;
+  const startsActive = form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE';
+  const fieldsKey = `${JSON.stringify(fields)}#${cycle}#${form.startAs}#${form.window}`;
   const idempotencyKey = useMemo(() => {
     void fieldsKey;
     return newKey();
   }, [fieldsKey]);
-  // The deadline is worked out when publishing, so a retry keeps the same instant.
+  // The window's end is worked out from the choice, and kept with the key, so a retry keeps the same instant.
   const deadline = useMemo(() => {
     void fieldsKey;
-    return form.deadlineHours ? new Date(Date.now() + form.deadlineHours * 3_600_000).toISOString() : undefined;
-  }, [fieldsKey, form.deadlineHours]);
+    if (startsActive || form.window === 'DEFAULT') return undefined;
+    if (form.window === 'NONE') return null;
+    return new Date(Date.now() + Number(form.window) * 60_000).toISOString();
+  }, [fieldsKey, form.window, startsActive]);
 
   const publish = useMutation({
     mutationFn: (confirmDuplicate: boolean) =>
       api.post<{ tradeId: string; replayed: boolean; trade: AdminTradeDetail }>('/admin/signals', {
         ...fields,
+        activateOnPublish: form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
         entryExpiresAt: deadline,
         idempotencyKey,
         confirmDuplicate,
@@ -511,6 +527,55 @@ function Compose() {
               }}
             />
           </Card>
+          <Card style={{ gap: space.md }}>
+            <T v="small" c="muted">
+              Starts as
+            </T>
+            <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
+              label="Starts as"
+              value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
+              onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
+              options={[
+                { value: 'AWAITING_ENTRY', label: 'Awaiting entry', testID: 'compose-start-waiting' },
+                { value: 'ACTIVE', label: 'Active now', testID: 'compose-start-active' },
+              ]}
+            />
+            {startsActive ? (
+              <T v="caption" c="subtle">
+                Active as soon as it is published. That is not a fill.
+              </T>
+            ) : (
+              <>
+                <T v="small" c="muted">
+                  Cancel automatically if not active within
+                </T>
+                <ChipRow>
+                  <Chip
+                    testID="compose-window-default"
+                    label={defaultWindow > 0 ? `${entryWindowLabel(defaultWindow)} (default)` : 'No limit (default)'}
+                    on={form.window === 'DEFAULT'}
+                    onPress={() => set('window', 'DEFAULT')}
+                  />
+                  {ENTRY_WINDOW_CHOICES.filter((m) => m !== defaultWindow).map((m) => (
+                    <Chip
+                      key={m}
+                      testID={`compose-window-${m}`}
+                      label={entryWindowLabel(m)}
+                      on={form.window === String(m)}
+                      onPress={() => set('window', String(m))}
+                    />
+                  ))}
+                  {defaultWindow > 0 && (
+                    <Chip label="No limit" on={form.window === 'NONE'} onPress={() => set('window', 'NONE')} />
+                  )}
+                </ChipRow>
+                <T v="caption" c="subtle">
+                  Activate it from the trade when the entry is reached. If the window ends first, subscribers are told
+                  not to enter.
+                </T>
+              </>
+            )}
+          </Card>
           <Pressable
             testID="compose-more"
             accessibilityRole="button"
@@ -550,22 +615,6 @@ function Compose() {
                   </ChipRow>
                 </View>
               )}
-              <View style={{ gap: space.sm }}>
-                <T v="small" c="muted">
-                  If not entered, expire after
-                </T>
-                <ChipRow>
-                  <Chip label="No limit" on={!form.deadlineHours} onPress={() => set('deadlineHours', null)} />
-                  {DEADLINES.map((hours) => (
-                    <Chip
-                      key={hours}
-                      label={`${hours}h`}
-                      on={form.deadlineHours === hours}
-                      onPress={() => set('deadlineHours', hours)}
-                    />
-                  ))}
-                </ChipRow>
-              </View>
               <Field
                 testID="compose-comment"
                 label="Comment"
@@ -701,6 +750,13 @@ function Published({
         </T>
         <T c="muted" center num>
           {`${trade.direction} ${trade.symbol} · ${trade.ref}`}
+        </T>
+        <T v="small" c="muted" center testID="published-start">
+          {live.data.status === 'PUBLISHED'
+            ? live.data.entryExpiresAt
+              ? `Awaiting entry. Cancelled automatically if not active by ${formatDateTime(live.data.entryExpiresAt)}.`
+              : 'Awaiting entry. Activate it from the trade when the entry is reached.'
+            : 'Active now.'}
         </T>
         <Card style={{ alignSelf: 'stretch', gap: space.md }}>
           <Levels

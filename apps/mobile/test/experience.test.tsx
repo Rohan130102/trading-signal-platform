@@ -30,8 +30,10 @@ jest.mock('@/lib/api', () => ({
 }));
 const mockApi = (jest.requireMock('@/lib/api') as { api: { post: jest.Mock } }).api;
 jest.mock('expo-screen-capture', () => ({
-  usePreventScreenCapture: jest.fn(),
+  preventScreenCaptureAsync: jest.fn(async () => undefined),
+  allowScreenCaptureAsync: jest.fn(async () => undefined),
   enableAppSwitcherProtectionAsync: jest.fn(async () => undefined),
+  disableAppSwitcherProtectionAsync: jest.fn(async () => undefined),
   addScreenshotListener: jest.fn(() => ({ remove: jest.fn() })),
 }));
 let mockMe: Partial<MeResponse> | null = null;
@@ -195,19 +197,44 @@ describe('the filter bar', () => {
 });
 
 describe('screen protection', () => {
+  const capture = jest.requireMock('expo-screen-capture') as {
+    preventScreenCaptureAsync: jest.Mock;
+    allowScreenCaptureAsync: jest.Mock;
+  };
+
   it('blocks capture on a subscriber screen without drawing anything over it', async () => {
-    const capture = jest.requireMock('expo-screen-capture') as { usePreventScreenCapture: jest.Mock };
-    capture.usePreventScreenCapture.mockClear();
-    mockMe = { role: 'SUBSCRIBER', loginId: 'jane.doe' };
+    capture.preventScreenCaptureAsync.mockClear();
+    mockMe = { role: 'SUBSCRIBER', loginId: 'jane.doe', security: { screenshotsAllowed: false } };
     await wrap(
       <ProtectedScreen id="feed" screen="feed">
         <Text>Signals</Text>
       </ProtectedScreen>,
     );
-    expect(capture.usePreventScreenCapture).toHaveBeenCalledWith('feed');
+    expect(capture.preventScreenCaptureAsync).toHaveBeenCalledWith('feed');
     expect(screen.getByText('Signals')).toBeTruthy();
     expect(screen.queryByTestId('watermark', { includeHiddenElements: true })).toBeNull();
     expect(screen.queryAllByText(/jane\.doe|SignalDesk/, { includeHiddenElements: true })).toHaveLength(0);
+  });
+
+  it('blocks capture until the server says otherwise, and not at all when the Master Admin allows it', async () => {
+    capture.preventScreenCaptureAsync.mockClear();
+    mockMe = { role: 'SUBSCRIBER', loginId: 'jane.doe' };
+    const first = await wrap(
+      <ProtectedScreen id="history" screen="history">
+        <Text>History</Text>
+      </ProtectedScreen>,
+    );
+    expect(capture.preventScreenCaptureAsync).toHaveBeenCalledWith('history');
+    await first.unmount();
+
+    capture.preventScreenCaptureAsync.mockClear();
+    mockMe = { role: 'SUBSCRIBER', loginId: 'jane.doe', security: { screenshotsAllowed: true } };
+    await wrap(
+      <ProtectedScreen id="history" screen="history">
+        <Text>History</Text>
+      </ProtectedScreen>,
+    );
+    expect(capture.preventScreenCaptureAsync).not.toHaveBeenCalled();
   });
 });
 

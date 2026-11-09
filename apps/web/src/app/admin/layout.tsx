@@ -14,6 +14,7 @@ import {
   Plus,
   ScrollText,
   Settings,
+  ShieldCheck,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -40,8 +41,11 @@ const SECONDARY = [
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
+/** The Master Admin's own pages. The API enforces this; the link is only hidden for everyone else. */
+const MASTER = [{ href: '/admin/admins', label: 'Administrators', icon: ShieldCheck }];
 
-function Shell({ children, name }: { children: ReactNode; name: string }) {
+function Shell({ children, name, master }: { children: ReactNode; name: string; master: boolean }) {
+  const secondary = master ? [...SECONDARY, ...MASTER] : SECONDARY;
   const pathname = usePathname();
   const [more, setMore] = useState(false);
   useStartRealtimeFromHead(true);
@@ -83,7 +87,7 @@ function Shell({ children, name }: { children: ReactNode; name: string }) {
         <nav aria-label="Main" className="flex flex-1 flex-col gap-0.5">
           {PRIMARY.map(link)}
           <div className="my-2 border-t border-line" />
-          {SECONDARY.map(link)}
+          {secondary.map(link)}
         </nav>
         <div className="flex items-center justify-between gap-2 border-t border-line pt-3">
           <LivePill />
@@ -150,10 +154,10 @@ function Shell({ children, name }: { children: ReactNode; name: string }) {
           <li>
             <Link
               href="/admin/subscribers"
-              aria-current={active(PRIMARY[2] as (typeof PRIMARY)[number]) ? 'page' : undefined}
+              aria-current={active(PRIMARY[3] as (typeof PRIMARY)[number]) ? 'page' : undefined}
               className={clsx(
                 'flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] font-medium',
-                active(PRIMARY[2] as (typeof PRIMARY)[number]) ? 'text-text' : 'text-muted',
+                active(PRIMARY[3] as (typeof PRIMARY)[number]) ? 'text-text' : 'text-muted',
               )}
             >
               <Users className="size-5" aria-hidden />
@@ -174,8 +178,9 @@ function Shell({ children, name }: { children: ReactNode; name: string }) {
       </nav>
       <Dialog open={more} onOpenChange={setMore} title="More">
         <nav aria-label="More" className="flex flex-col gap-0.5">
-          {link(PRIMARY[3] as (typeof PRIMARY)[number])}
-          {SECONDARY.map(link)}
+          {link(PRIMARY[2] as (typeof PRIMARY)[number])}
+          {link(PRIMARY[4] as (typeof PRIMARY)[number])}
+          {secondary.map(link)}
           <button
             type="button"
             onClick={() => void signOut()}
@@ -195,7 +200,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     <SessionGate role="ADMIN">
       {(me) => (
         <RealtimeProvider>
-          <Shell name={me.support.serviceName}>{children}</Shell>
+          <Shell name={me.support.serviceName} master={me.isMasterAdmin}>
+            {children}
+          </Shell>
         </RealtimeProvider>
       )}
     </SessionGate>

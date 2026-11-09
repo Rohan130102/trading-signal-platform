@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   Ban,
   BookCheck,
+  EyeOff,
   CircleCheck,
   Flag,
   Lock,
@@ -27,11 +28,13 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { DispatchStatus } from '@/components/admin/dispatch';
+import { canRemove, RemoveTradesDialog, useRestoreTrades } from '@/components/admin/remove-trades';
 import { ActionDialog, type ActionKind } from '@/components/admin/trade-actions';
 import { DirectionBadge, Levels, StatusBadge, Timeline } from '@/components/trade';
 import { Badge, Button, Card, CardHeader, ErrorState, Kbd, Loading, Stat } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime, money, percent, signedPoints } from '@/lib/format';
+import { useMe } from '@/lib/session';
 
 const PRIMARY: { kind: ActionKind; label: string; icon: typeof Play; key?: string; variant?: 'primary' | 'danger' }[] =
   [
@@ -63,6 +66,9 @@ export default function AdminTradePage() {
         : 15_000,
   });
   const [action, setAction] = useState<{ kind: ActionKind; targetIndex?: number } | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const master = useMe().data?.isMasterAdmin === true;
+  const putBack = useRestoreTrades();
   const data = trade.data;
   const available = useMemo(() => (data?.allowedActions ?? []) as ActionKind[], [data?.allowedActions]);
 
@@ -127,6 +133,26 @@ export default function AdminTradePage() {
           <span className="num">{t.ref}</span> · Published {formatDateTime(t.publishedAt)} · Version {t.version}
         </p>
       </header>
+      {t.removal && (
+        <div
+          role="status"
+          className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-stop/30 bg-stop-soft p-3 text-sm text-stop"
+        >
+          <p className="flex items-start gap-2">
+            <EyeOff className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <span>
+              Removed from subscriber screens by {t.removal.removedBy} on {formatDateTime(t.removal.removedAt)}:{' '}
+              <span className="text-text">“{t.removal.reason}”</span>. It is still counted in performance figures.
+              Nothing can be changed until it is put back.
+            </span>
+          </p>
+          {master && (
+            <Button size="sm" loading={putBack.isPending} onClick={() => putBack.mutate([t.id])}>
+              Put back on screens
+            </Button>
+          )}
+        </div>
+      )}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]">
         <div className="flex min-w-0 flex-col gap-4">
           <Card className="p-4 sm:p-5">
@@ -275,6 +301,13 @@ export default function AdminTradePage() {
                 ))}
               </div>
             )}
+            {master && canRemove({ ...t, removedAt: t.removal?.removedAt ?? null }) && (
+              <div className="border-t border-line p-3">
+                <Button variant="danger" className="w-full justify-start" onClick={() => setRemoving(true)}>
+                  <EyeOff className="size-4" aria-hidden /> Remove from subscriber screens
+                </Button>
+              </div>
+            )}
             <div className="border-t border-line p-3">
               <Link
                 href={`/admin/compose?symbol=${encodeURIComponent(t.symbol)}&direction=${t.direction}`}
@@ -295,6 +328,7 @@ export default function AdminTradePage() {
           onClose={() => setAction(null)}
         />
       )}
+      {removing && <RemoveTradesDialog trades={[t]} onClose={() => setRemoving(false)} />}
     </>
   );
 }

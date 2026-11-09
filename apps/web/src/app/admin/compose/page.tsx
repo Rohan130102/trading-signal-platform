@@ -17,6 +17,9 @@ import {
   defaultSignalTemplateKind,
   isTemplateForDirection,
   previewSignalEvent,
+  ENTRY_WINDOW_CHOICES,
+  entryWindowLabel,
+  type PlatformSettings,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
@@ -40,6 +43,7 @@ import {
   Kbd,
   Loading,
   PageHeader,
+  Labeled,
   Segmented,
   Select,
   Skeleton,
@@ -47,7 +51,7 @@ import {
   Textarea,
 } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
-import { formatRelative } from '@/lib/format';
+import { formatDateTime, formatRelative } from '@/lib/format';
 
 type InstrumentRow = InstrumentSpec & { id: string; active: boolean; sortOrder: number };
 
@@ -75,6 +79,10 @@ interface FormState {
   priority: Priority;
   templateId: string;
   commentary: string;
+  /** DEFAULT follows the platform's start mode. */
+  startAs: 'DEFAULT' | 'AWAITING_ENTRY' | 'ACTIVE';
+  /** DEFAULT: the platform window. NONE: no limit. CUSTOM: the time in `deadline`. Otherwise minutes. */
+  window: string;
   deadline: string;
 }
 
@@ -90,6 +98,8 @@ const EMPTY: FormState = {
   priority: 'NORMAL',
   templateId: '',
   commentary: '',
+  startAs: 'DEFAULT',
+  window: 'DEFAULT',
   deadline: '',
 };
 
@@ -130,6 +140,10 @@ function Composer() {
   const drafts = useQuery({
     queryKey: ['admin', 'drafts'],
     queryFn: () => api.get<{ drafts: DraftRow[] }>('/admin/drafts'),
+  });
+  const platform = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<PlatformSettings>('/admin/settings'),
   });
 
   const [form, setForm] = useState<FormState>(EMPTY);
@@ -178,15 +192,9 @@ function Composer() {
       STORAGE_KEY,
     );
     if (saved?.form) {
-      setForm(saved.form);
+      setForm({ ...EMPTY, ...saved.form });
       setDraftRef(saved.draftRef);
-      if (
-        saved.form.custom ||
-        saved.form.commentary ||
-        saved.form.priority !== 'NORMAL' ||
-        saved.form.templateId ||
-        saved.form.deadline
-      )
+      if (saved.form.custom || saved.form.commentary || saved.form.priority !== 'NORMAL' || saved.form.templateId)
         setMode('advanced');
       return;
     }
@@ -252,11 +260,29 @@ function Composer() {
       priority: form.priority,
       templateId: form.templateId || null,
       commentary: form.commentary.trim() || undefined,
-      entryExpiresAt: form.deadline ? new Date(form.deadline).toISOString() : undefined,
     }),
     [form, computed],
   );
-  const fieldsKey = `${JSON.stringify(fields)}#${cycle}`;
+  const defaultMode = platform.data?.signalStartMode ?? 'AWAITING_ENTRY';
+  const defaultWindow = platform.data?.entryExpiryMinutesDefault ?? 0;
+  const startsActive = form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE';
+  const windowOptions = [...new Set([...ENTRY_WINDOW_CHOICES])].filter((m) => m !== defaultWindow);
+  /** Worked out when the button is pressed, so a long review does not shorten the window. */
+  const startFields = () => ({
+    activateOnPublish: form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
+    entryExpiresAt: startsActive
+      ? undefined
+      : form.window === 'NONE'
+        ? null
+        : form.window === 'CUSTOM'
+          ? form.deadline
+            ? new Date(form.deadline).toISOString()
+            : undefined
+          : form.window === 'DEFAULT'
+            ? undefined
+            : new Date(Date.now() + Number(form.window) * 60_000).toISOString(),
+  });
+  const fieldsKey = `${JSON.stringify(fields)}#${form.startAs}#${form.window}#${form.deadline}#${cycle}`;
   const idempotencyKey = useMemo(() => {
     void fieldsKey;
     return crypto.randomUUID();
@@ -266,6 +292,7 @@ function Composer() {
     mutationFn: (confirmDuplicate: boolean) =>
       api.post<{ tradeId: string; replayed: boolean; trade: AdminTradeDetail }>('/admin/signals', {
         ...fields,
+        ...startFields(),
         idempotencyKey,
         confirmDuplicate,
         draftId: draftRef?.id,
@@ -700,6 +727,65 @@ function Composer() {
             </div>
           </Card>
 
+          <Card className="flex flex-col gap-4 p-4 sm:p-5">
+            <Labeled
+              label="Starts as"
+              hint={
+                startsActive
+                  ? 'Active as soon as it is published. That is not a fill.'
+                  : 'Waits for entry. Activate it from the trade page when the entry is reached.'
+              }
+            >
+              <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
+                label="Starts as"
+                value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
+                onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
+                options={[
+                  {
+                    value: 'AWAITING_ENTRY',
+                    label: `Awaiting entry${defaultMode === 'AWAITING_ENTRY' ? ' (default)' : ''}`,
+                  },
+                  { value: 'ACTIVE', label: `Active now${defaultMode === 'ACTIVE' ? ' (default)' : ''}` },
+                ]}
+              />
+            </Labeled>
+            {!startsActive && (
+              <div className={clsx('grid gap-4', form.window === 'CUSTOM' && 'sm:grid-cols-2')}>
+                <Field
+                  label="Entry window"
+                  hint="If it is not activated in time, it is cancelled automatically and subscribers are told not to enter."
+                >
+                  {(c) => (
+                    <Select {...c} value={form.window} onChange={(e) => set('window', e.target.value)}>
+                      <option value="DEFAULT">
+                        {defaultWindow > 0 ? `${entryWindowLabel(defaultWindow)} (default)` : 'No limit (default)'}
+                      </option>
+                      {windowOptions.map((m) => (
+                        <option key={m} value={String(m)}>
+                          {entryWindowLabel(m)}
+                        </option>
+                      ))}
+                      {defaultWindow > 0 && <option value="NONE">No limit</option>}
+                      <option value="CUSTOM">Until a set time…</option>
+                    </Select>
+                  )}
+                </Field>
+                {form.window === 'CUSTOM' && (
+                  <Field label="Cancel if not active by">
+                    {(c) => (
+                      <Input
+                        {...c}
+                        type="datetime-local"
+                        value={form.deadline}
+                        onChange={(e) => set('deadline', e.target.value)}
+                      />
+                    )}
+                  </Field>
+                )}
+              </div>
+            )}
+          </Card>
+
           {mode === 'advanced' && (
             <Card className="flex flex-col gap-4 p-4 sm:p-5">
               <div className="rounded-lg border border-line px-3">
@@ -722,16 +808,6 @@ function Composer() {
                         </option>
                       ))}
                     </Select>
-                  )}
-                </Field>
-                <Field label="Entry valid until" hint="Optional. An unfilled signal expires at this time.">
-                  {(c) => (
-                    <Input
-                      {...c}
-                      type="datetime-local"
-                      value={form.deadline}
-                      onChange={(e) => set('deadline', e.target.value)}
-                    />
                   )}
                 </Field>
               </div>
@@ -882,7 +958,11 @@ function Published({ trade, onAnother }: { trade: AdminTradeDetail; onAnother: (
           Published as <span className="num">{live.data.ref}</span>
         </h1>
         <p className="mt-1 text-sm text-muted">
-          It is now in every active subscriber&rsquo;s feed, and the trade is active straight away.
+          {live.data.status === 'PUBLISHED'
+            ? live.data.entryExpiresAt
+              ? `It is in every active subscriber’s feed, awaiting entry. If it is not activated by ${formatDateTime(live.data.entryExpiresAt)}, it is cancelled automatically.`
+              : 'It is in every active subscriber’s feed, awaiting entry. Activate it from the trade page when the entry is reached.'
+            : 'It is now in every active subscriber’s feed, and the trade is active straight away.'}
         </p>
       </div>
       <Card className="mt-4 p-4">

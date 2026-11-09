@@ -6,6 +6,7 @@ import { View } from 'react-native';
 import { AccessBadge, CredentialsCard } from '@/admin/parts';
 import { api } from '@/lib/api';
 import { newKey } from '@/lib/ids';
+import { useSession } from '@/lib/session';
 import { space } from '@/theme/tokens';
 import {
   Button,
@@ -21,6 +22,7 @@ import {
   Loading,
   Screen,
   SectionTitle,
+  Segmented,
   Sheet,
   Stat,
   T,
@@ -170,6 +172,7 @@ export default function SubscriberScreen() {
             </Card>
           )}
           <BoundPhones subscriberId={s.id} />
+          <Screenshots detail={s} onSaved={refetchAll} />
           {dialog === 'renew' && <RenewSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'adjust' && <AdjustSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'contact' && <ContactSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
@@ -185,6 +188,52 @@ export default function SubscriberScreen() {
  * The app installations bound to this subscriber. Releasing one lets another account sign in on that phone
  * and signs this subscriber out of it. Every release is in the audit log with its reason.
  */
+/** Screenshot permission for this subscriber. Only the Master Admin changes it; their app applies it at once. */
+function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
+  const master = useSession().me?.isMasterAdmin === true;
+  const toast = useToast();
+  const save = useMutation({
+    mutationFn: (value: boolean | null) =>
+      api.put(`/admin/subscribers/${detail.id}/screenshots`, { screenshotsAllowed: value }),
+    onSuccess: () => {
+      onSaved();
+      toast({ tone: 'success', title: 'Saved. Their app applies it straight away.' });
+    },
+    onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
+  });
+  const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  return (
+    <>
+      <SectionTitle>Screenshots</SectionTitle>
+      <Card style={{ gap: space.md }} testID="subscriber-screenshots">
+        <T v="small" c="muted">
+          {detail.screenshotsEffective ? 'Allowed for this subscriber now.' : 'Blocked for this subscriber now.'}
+        </T>
+        {master ? (
+          <Segmented<'DEFAULT' | 'BLOCK' | 'ALLOW'>
+            label="Screenshot permission"
+            value={value}
+            onChange={(v) => !save.isPending && save.mutate(v === 'DEFAULT' ? null : v === 'ALLOW')}
+            options={[
+              { value: 'DEFAULT', label: 'Default', testID: 'screens-default' },
+              { value: 'BLOCK', label: 'Block', testID: 'screens-block' },
+              { value: 'ALLOW', label: 'Allow', testID: 'screens-allow' },
+            ]}
+          />
+        ) : (
+          <T v="caption" c="subtle">
+            Only the Master Admin can change this.
+          </T>
+        )}
+        <T v="caption" c="subtle">
+          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
+          screenshot when it sees one.
+        </T>
+      </Card>
+    </>
+  );
+}
+
 function BoundPhones({ subscriberId }: { subscriberId: string }) {
   const client = useQueryClient();
   const toast = useToast();

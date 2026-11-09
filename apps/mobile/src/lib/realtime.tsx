@@ -173,6 +173,8 @@ export function RealtimeProvider({ enabled, children }: { enabled: boolean; chil
       isOffline: () => offline,
       onState: setState,
       onAccessChanged: () => afterAccessChanged(client),
+      // A trade was taken off subscriber screens or a rule changed (screenshots, history): read it all again.
+      onRefresh: () => void client.invalidateQueries(),
       onEvent: (event) => {
         // Live events arrive exactly once and in order (see LiveConnection), so counting here is safe.
         client.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ['feed'] }, (data) => mergeIntoFeed(data, event));

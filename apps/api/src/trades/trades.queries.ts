@@ -19,6 +19,7 @@ import {
 } from '@signaldesk/domain';
 import { notFound } from '../common/http.js';
 import { Prisma, PrismaService, str } from '../db/prisma.service.js';
+import { AudienceService } from '../feed/audience.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { toAdminClosure, toClosureRecord, toFeedEvent, toPublicOutcome, toTradeSummary } from './mappers.js';
 
@@ -34,8 +35,9 @@ export interface HistoryFilter {
   direction?: Direction;
   status?: TradeStatus;
   group?: StatusGroup;
-  visibility?: 'ALL' | 'HIDDEN';
+  visibility?: 'ALL' | 'SHOWN' | 'HIDDEN';
   archived?: 'ANY' | 'ARCHIVED' | 'NOT_ARCHIVED';
+  removed?: 'ANY' | 'REMOVED' | 'NOT_REMOVED';
   from?: string;
   to?: string;
   page: number;
@@ -47,6 +49,7 @@ export class TradesQueries {
   constructor(
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
+    private readonly audience: AudienceService,
   ) {}
 
   async feed(
@@ -54,8 +57,10 @@ export class TradesQueries {
     query: { before?: number; after?: number; limit: number; symbol?: string },
   ): Promise<FeedPage> {
     const ascending = query.after !== undefined;
+    const from = await this.audience.scopeStart(userId);
     const where: Prisma.SignalEventWhereInput = {
       broadcast: true,
+      ...this.audience.eventWhere(from),
       ...(ascending ? { seq: { gt: BigInt(query.after as number) } } : {}),
       ...(query.before !== undefined ? { seq: { lt: BigInt(query.before) } } : {}),
       ...(query.symbol ? { payload: { path: ['symbol'], equals: query.symbol } } : {}),
@@ -68,13 +73,11 @@ export class TradesQueries {
     });
     const hasMore = rows.length > query.limit;
     const page = hasMore ? rows.slice(0, query.limit) : rows;
-    const [head, user] = await Promise.all([
+    const [head, user, unread] = await Promise.all([
       this.prisma.signalEvent.aggregate({ where: { broadcast: true }, _max: { seq: true } }),
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
+      this.audience.unreadCount(userId),
     ]);
-    const unread = await this.prisma.signalEvent.count({
-      where: { broadcast: true, seq: { gt: user.lastReadSeq }, reads: { none: { userId } } },
-    });
     return {
       events: page.map((r) => toFeedEvent(r, r.trade?.status ?? null)),
       headSeq: Number(head._max.seq ?? 0),
@@ -90,22 +93,23 @@ export class TradesQueries {
     // Monotonic: a slower tab can never move the read marker backwards.
     await this.prisma
       .$executeRaw`UPDATE users SET last_read_seq = GREATEST(last_read_seq, ${bounded}) WHERE id = ${userId}::uuid`;
-    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } });
-    return this.prisma.signalEvent.count({
-      where: { broadcast: true, seq: { gt: user.lastReadSeq }, reads: { none: { userId } } },
-    });
+    return this.audience.unreadCount(userId);
   }
 
   async activeTrades(): Promise<TradeSummary[]> {
     const rows = await this.prisma.trade.findMany({
-      where: { status: { in: [...LIVE_STATUSES] as TradeStatus[] } },
+      where: { status: { in: [...LIVE_STATUSES] as TradeStatus[] }, removal: { is: null } },
       orderBy: { publishedAt: 'desc' },
       include: WITH_LAST,
     });
     return rows.map(toTradeSummary);
   }
 
-  private async historyWhere(filter: HistoryFilter, hiddenIds?: string[]): Promise<Prisma.TradeWhereInput> {
+  private async historyWhere(
+    filter: HistoryFilter,
+    hiddenIds?: string[],
+    audience?: Prisma.TradeWhereInput,
+  ): Promise<Prisma.TradeWhereInput> {
     const tz = await this.settings.timezone();
     const q = filter.q?.trim();
     const symbols = [...new Set([...(filter.symbols ?? []), ...(filter.symbol ? [filter.symbol] : [])])];
@@ -114,10 +118,17 @@ export class TradesQueries {
       AND: [
         { status: filter.status ?? (grouped ? { in: grouped as TradeStatus[] } : { not: 'DRAFT' }) },
         { status: { not: 'DRAFT' } },
+        ...(audience ? [audience] : []),
+        ...(filter.removed === 'REMOVED'
+          ? [{ removal: { isNot: null } }]
+          : filter.removed === 'NOT_REMOVED'
+            ? [{ removal: { is: null } }]
+            : []),
       ],
       ...(symbols.length > 0 ? { instrument: { symbol: { in: symbols } } } : {}),
       ...(filter.direction ? { direction: filter.direction } : {}),
       ...(filter.visibility === 'HIDDEN' ? { id: { in: hiddenIds ?? [] } } : {}),
+      ...(filter.visibility === 'SHOWN' && (hiddenIds?.length ?? 0) > 0 ? { id: { notIn: hiddenIds } } : {}),
       ...(filter.archived === 'ARCHIVED'
         ? { archive: { isNot: null } }
         : filter.archived === 'NOT_ARCHIVED'
@@ -143,13 +154,17 @@ export class TradesQueries {
     };
   }
 
-  /** Every published trade, with whether this subscriber hid it and whether an administrator archived it. */
-  async history(filter: HistoryFilter, userId?: string): Promise<HistoryResponse> {
-    const hiddenRows = userId
-      ? await this.prisma.userHiddenItem.findMany({ where: { userId, itemType: 'TRADE' }, select: { itemId: true } })
-      : [];
+  /**
+   * This subscriber's trade history: trades of their membership that are still on subscriber screens, with
+   * whether they hid it and whether an administrator archived it.
+   */
+  async history(filter: HistoryFilter, userId: string): Promise<HistoryResponse> {
+    const [hiddenRows, from] = await Promise.all([
+      this.prisma.userHiddenItem.findMany({ where: { userId, itemType: 'TRADE' }, select: { itemId: true } }),
+      this.audience.scopeStart(userId),
+    ]);
     const hidden = new Set(hiddenRows.map((r) => r.itemId));
-    const where = await this.historyWhere(filter, [...hidden]);
+    const where = await this.historyWhere({ ...filter, removed: 'ANY' }, [...hidden], this.audience.tradeWhere(from));
     const [rows, total] = await Promise.all([
       this.prisma.trade.findMany({
         where,
@@ -173,9 +188,10 @@ export class TradesQueries {
     };
   }
 
-  async subscriberDetail(id: string, userId?: string): Promise<TradeDetail> {
+  async subscriberDetail(id: string, userId: string): Promise<TradeDetail> {
+    const from = await this.audience.scopeStart(userId);
     const row = await this.prisma.trade.findFirst({
-      where: { id, status: { not: 'DRAFT' } },
+      where: { id, status: { not: 'DRAFT' }, AND: [this.audience.tradeWhere(from)] },
       include: { ...WITH_LAST, closures: true, archive: { select: { tradeId: true } } },
     });
     if (!row) throw notFound('Trade not found');
@@ -183,9 +199,7 @@ export class TradesQueries {
       where: { tradeId: id, broadcast: true },
       orderBy: { seq: 'asc' },
     });
-    const hidden = userId
-      ? (await this.prisma.userHiddenItem.count({ where: { userId, itemType: 'TRADE', itemId: id } })) > 0
-      : false;
+    const hidden = (await this.prisma.userHiddenItem.count({ where: { userId, itemType: 'TRADE', itemId: id } })) > 0;
     return {
       ...toTradeSummary(row),
       events: events.map((e) => toFeedEvent(e, row.status)),
@@ -205,7 +219,12 @@ export class TradesQueries {
         orderBy: { publishedAt: 'desc' },
         skip: (filter.page - 1) * filter.pageSize,
         take: filter.pageSize,
-        include: { ...WITH_LAST, closures: true, archive: { select: { archivedAt: true } } },
+        include: {
+          ...WITH_LAST,
+          closures: true,
+          archive: { select: { archivedAt: true } },
+          removal: { select: { removedAt: true } },
+        },
       }),
       this.prisma.trade.count({ where }),
     ]);
@@ -215,6 +234,7 @@ export class TradesQueries {
         return {
           ...toTradeSummary(r),
           archivedAt: r.archive?.archivedAt.toISOString() ?? null,
+          removedAt: r.removal?.removedAt.toISOString() ?? null,
           aggregate:
             closures.length > 0 ? aggregateClosures(closures.map(toClosureRecord), r.status === 'CLOSED') : null,
         };
@@ -282,6 +302,8 @@ export class TradesQueries {
       include: {
         ...WITH_LAST,
         closures: { orderBy: { createdAt: 'asc' } },
+        archive: { select: { archivedAt: true } },
+        removal: { include: { removedBy: { select: { name: true } } } },
       },
     });
     if (!row) throw notFound('Trade not found');
@@ -310,9 +332,18 @@ export class TradesQueries {
             quantity: str(row.executionQuantity),
           }
         : null,
-      allowedActions: allowedActions(row.status),
+      // A removed trade is frozen until it is restored: nothing may alert subscribers about it.
+      allowedActions: row.removal ? [] : allowedActions(row.status),
       contractMultiplier: spec.contractMultiplier,
       tickSize: spec.tickSize,
+      archivedAt: row.archive?.archivedAt.toISOString() ?? null,
+      removal: row.removal
+        ? {
+            removedAt: row.removal.removedAt.toISOString(),
+            removedBy: row.removal.removedBy.name,
+            reason: row.removal.reason,
+          }
+        : null,
     };
   }
 }

@@ -124,6 +124,8 @@ function App() {
           <Stack.Screen name="admin/instrument" options={{ title: 'Instrument', presentation: 'modal' }} />
           <Stack.Screen name="admin/announcements" options={{ title: 'Announcements' }} />
           <Stack.Screen name="admin/history" options={{ title: 'History' }} />
+          <Stack.Screen name="admin/admins" options={{ title: 'Administrators' }} />
+          <Stack.Screen name="admin/settings" options={{ title: 'Platform settings' }} />
           <Stack.Screen
             name="onboarding"
             options={{ presentation: 'fullScreenModal', headerShown: false, animation: 'fade' }}

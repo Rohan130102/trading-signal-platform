@@ -9,9 +9,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, View } from 'react-native';
+import { Alert, AppState, Linking, View } from 'react-native';
 import { api } from '@/lib/api';
-import { APP_VERSION, IN_EXPO_GO } from '@/lib/config';
+import { APP_VERSION, IN_EXPO_GO, websiteUrl } from '@/lib/config';
 import { hapticsEnabled, onHapticsChange, setHapticsEnabled } from '@/lib/haptics';
 import { disablePush, enablePush, openSystemSettings, type PushStatus, readPushStatus } from '@/lib/push';
 import { useMe, useSession } from '@/lib/session';
@@ -462,6 +462,18 @@ export function AccountSections() {
           title="Risk disclosure and privacy"
           onPress={() => router.push('/disclosures')}
         />
+        {websiteUrl() ? (
+          <>
+            <Divider />
+            <ListRow
+              testID="account-about"
+              icon="information-circle-outline"
+              title="About us and performance"
+              subtitle="Opens in your browser"
+              onPress={() => void Linking.openURL(`${websiteUrl()}/about`)}
+            />
+          </>
+        ) : null}
         {me.support.contact ? (
           <>
             <Divider />

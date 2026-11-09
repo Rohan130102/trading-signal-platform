@@ -24,6 +24,8 @@ export interface LiveConnectionOptions {
   onEvent: (event: FeedEvent) => void;
   /** The server ended this connection because access changed. */
   onAccessChanged: () => void;
+  /** Lists changed without a new event (a trade was removed, a rule changed): reload them. */
+  onRefresh?: (reason: string) => void;
 }
 
 const CONNECTING = 0;
@@ -118,7 +120,7 @@ export class LiveConnection {
       }, PING_MS);
     };
     socket.onmessage = (message) => {
-      const data = JSON.parse(message.data as string) as { type: string; event?: FeedEvent };
+      const data = JSON.parse(message.data as string) as { type: string; event?: FeedEvent; reason?: string };
       if (data.type === 'event' && data.event) {
         if (this.lastSeq !== null && data.event.seq <= this.lastSeq) return;
         this.lastSeq = data.event.seq;
@@ -129,6 +131,8 @@ export class LiveConnection {
         this.attempts = 0;
         this.ready = true;
         this.options.onState('live');
+      } else if (data.type === 'refresh') {
+        this.options.onRefresh?.(data.reason ?? '');
       }
     };
     socket.onclose = (event) => {

@@ -10,12 +10,15 @@ import {
   formatPrice,
   isDecimalLiteral,
   money,
+  type PlatformSettings,
   previewExit,
   remainingFraction,
   signedPoints,
+  toDec,
+  type TrailingStopWording,
   trailStopPrice,
 } from '@signaldesk/domain';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactNode, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { ApiError, api } from '@/lib/api';
@@ -392,10 +395,23 @@ function BreakevenForm({ frame, trade, run, pending, error }: Shared) {
 }
 
 function TrailForm({ frame, trade, run, pending, error }: Shared) {
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<PlatformSettings>('/admin/settings'),
+  });
+  const [by, setBy] = useState<'DISTANCE' | 'PRICE'>('DISTANCE');
   const [reference, setReference] = useState('');
   const [points, setPoints] = useState('');
+  const [price, setPrice] = useState('');
+  const [chosen, setChosen] = useState<TrailingStopWording | null>(null);
   const [comment, setComment] = useState('');
-  const computed = useMemo(() => trailStopPrice(trade, trade.direction, reference, points), [points, reference, trade]);
+  const wording: TrailingStopWording =
+    by === 'PRICE' ? 'GENERAL' : (chosen ?? settings.data?.trailingStopWording ?? 'GENERAL');
+  const computed = useMemo(() => {
+    if (by === 'PRICE') return isDecimalLiteral(price.trim()) ? toDec(price.trim()) : null;
+    return trailStopPrice(trade, trade.direction, reference, points);
+  }, [by, points, price, reference, trade]);
+  const next = computed ? formatPrice(trade, computed) : null;
   return (
     <Sheet
       {...frame}
@@ -406,7 +422,11 @@ function TrailForm({ frame, trade, run, pending, error }: Shared) {
           label="Trail and notify"
           disabled={!computed}
           onPress={() =>
-            run({ referencePrice: reference.trim(), trailPoints: points.trim(), comment: optional(comment) })
+            run(
+              by === 'PRICE'
+                ? { price: price.trim(), comment: optional(comment) }
+                : { referencePrice: reference.trim(), trailPoints: points.trim(), wording, comment: optional(comment) },
+            )
           }
         />
       }
@@ -415,34 +435,75 @@ function TrailForm({ frame, trade, run, pending, error }: Shared) {
         This platform has no market data. It records the instruction at the price you give, and does not move the stop
         by itself afterwards.
       </T>
-      <Row>
-        <Half>
-          <PriceField
-            testID="trail-reference"
-            label="Current market price"
-            value={reference}
-            onChange={setReference}
-            autoFocus
-          />
-        </Half>
-        <Half>
-          <PriceField
-            testID="trail-points"
-            label="Trail distance (points)"
-            value={points}
-            onChange={setPoints}
-            hint={`1 pt = ${trade.pointSize} ${trade.quoteCurrency}`}
-          />
-        </Half>
-      </Row>
-      {computed && (
+      <Segmented<'DISTANCE' | 'PRICE'>
+        label="Trail by"
+        value={by}
+        onChange={setBy}
+        options={[
+          { value: 'DISTANCE', label: 'Distance', testID: 'trail-by-distance' },
+          { value: 'PRICE', label: 'New stop-loss', testID: 'trail-by-price' },
+        ]}
+      />
+      {by === 'DISTANCE' ? (
+        <Row>
+          <Half>
+            <PriceField
+              testID="trail-reference"
+              label="Current market price"
+              value={reference}
+              onChange={setReference}
+              autoFocus
+            />
+          </Half>
+          <Half>
+            <PriceField
+              testID="trail-points"
+              label="Trail distance (points)"
+              value={points}
+              onChange={setPoints}
+              hint={`1 pt = ${trade.pointSize} ${trade.quoteCurrency}`}
+            />
+          </Half>
+        </Row>
+      ) : (
+        <PriceField testID="trail-price" big label="New stop-loss" value={price} onChange={setPrice} autoFocus />
+      )}
+      {by === 'DISTANCE' && (
+        <>
+          <T v="small" c="muted">
+            Alert wording
+          </T>
+          <ChipRow>
+            <Chip
+              testID="trail-wording-general"
+              label="General"
+              on={wording === 'GENERAL'}
+              onPress={() => setChosen('GENERAL')}
+            />
+            <Chip
+              testID="trail-wording-detailed"
+              label="Show points"
+              on={wording === 'DETAILED'}
+              onPress={() => setChosen('DETAILED')}
+            />
+          </ChipRow>
+        </>
+      )}
+      {next && (
         <View style={styles.change} testID="trail-result">
           <T c="muted">New stop-loss</T>
           <T v="price" c="stop">
-            {formatPrice(trade, computed)}
+            {next}
           </T>
           <T c="muted">{`(was ${formatPrice(trade, trade.stopLoss)})`}</T>
         </View>
+      )}
+      {next && (
+        <T v="small" c="muted" testID="trail-preview">
+          {wording === 'GENERAL'
+            ? `Subscribers read: “Trail the stop-loss on trade ${trade.ref} to ${next}.”`
+            : `Subscribers read: “Stop-loss on trade ${trade.ref} trailed from ${formatPrice(trade, trade.stopLoss)} to ${next} (${formatPoints(points.trim() || '0')} pts from ${formatPrice(trade, reference.trim() || '0')}).”`}
+        </T>
       )}
       <Comment value={comment} onChange={setComment} />
     </Sheet>

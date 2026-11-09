@@ -78,6 +78,11 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 | `/admin/trade-archive` (+ `/preview`, `/before`, `/restore`)                                               | Archive finished trades. Bulk changes need the confirmed count                                                          |
 | `/admin/instruments/:id/archive`, `/restore`                                                               | Retire an instrument without touching its trades                                                                        |
 | `/admin/subscribers/:id/devices`, `/admin/devices/:id/release`                                             | Review and release phone bindings                                                                                       |
+| `/admin/admins` (+ `/:id/status`, `/:id/master`, `/:id/reset`)                                             | Master Admin only. Register and manage administrators                                                                   |
+| `/admin/trade-removals` (+ `/restore`)                                                                     | Master Admin only. Remove finished trades from subscriber screens: reason, typed `REMOVE`, confirmed count              |
+| `PUT /admin/subscribers/:id/screenshots`                                                                   | Master Admin only. `{ screenshotsAllowed: true \| false \| null }`, null follows the platform default                   |
+| `PUT /admin/settings`                                                                                      | Master Admin only. Service text and platform rules                                                                      |
+| `/me/history/clear`, `/me/history/restore`                                                                 | A subscriber clears finished trades from their own lists, or brings them back                                           |
 
 ## Trade commands
 

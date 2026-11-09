@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { AdminController } from './admin/admin.controller.js';
+import { AdminsController } from './admins/admins.controller.js';
+import { AdminsService } from './admins/admins.service.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
 import { AnnouncementsService } from './announcements/announcements.service.js';
 import { AuditService } from './audit/audit.service.js';
@@ -13,6 +15,7 @@ import { ListenerService } from './db/listener.service.js';
 import { DevicesController } from './devices/devices.controller.js';
 import { DevicesService } from './devices/devices.service.js';
 import { FeedController } from './feed/feed.controller.js';
+import { AudienceService } from './feed/audience.service.js';
 import { FeedService } from './feed/feed.service.js';
 import { PrismaService } from './db/prisma.service.js';
 import { HealthController } from './health/health.controller.js';
@@ -32,6 +35,8 @@ import { TemplatesController } from './templates/templates.controller.js';
 import { TemplatesService } from './templates/templates.service.js';
 import { TradeArchiveController } from './trades/archive.controller.js';
 import { TradeArchiveService } from './trades/archive.service.js';
+import { TradeRemovalController } from './trades/removal.controller.js';
+import { TradeRemovalService } from './trades/removal.service.js';
 import { EventStore } from './trades/event-store.js';
 import { TradesQueries } from './trades/trades.queries.js';
 import { AdminTradesController, SubscriberTradesController } from './trades/trades.controller.js';
@@ -44,6 +49,8 @@ export const CONTROLLERS = [
   SubscriberTradesController,
   AdminTradesController,
   TradeArchiveController,
+  TradeRemovalController,
+  AdminsController,
   AnnouncementsController,
   DevicesController,
   InstrumentsController,
@@ -65,8 +72,11 @@ const SERVICES = [
   AuthService,
   EventStore,
   AnnouncementsService,
+  AudienceService,
   FeedService,
   TradeArchiveService,
+  TradeRemovalService,
+  AdminsService,
   TemplatesService,
   TradesService,
   TradesQueries,
