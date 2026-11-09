@@ -11,7 +11,7 @@ import {
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { FilterBar, useInstruments, useSavedFilter } from '@/filters';
 import { api, queryString } from '@/lib/api';
@@ -22,6 +22,7 @@ import { radius, space } from '@/theme/tokens';
 import {
   ActionSheet,
   Badge,
+  Button,
   Chip,
   EmptyState,
   ErrorState,
@@ -44,7 +45,10 @@ function useDebounced<T>(value: T, ms: number): T {
   return settled;
 }
 
-/** Every published trade, searchable. Paged by the server, so a long record never loads all at once. */
+/**
+ * This subscriber's own history: signals of their membership, searchable, minus what they cleared. Paged by
+ * the server, so a long record never loads all at once. Clearing changes nobody else's view and deletes nothing.
+ */
 export default function History() {
   const c = useColors();
   const router = useRouter();
@@ -65,7 +69,7 @@ export default function History() {
     queryFn: ({ pageParam }) => {
       const { status, ...rest } = filterToQuery(filter);
       return api.get<HistoryResponse>(
-        `/trades/history${queryString({ q, ...rest, group: status, visibility: hiddenOnly ? 'HIDDEN' : undefined, page: pageParam, pageSize: 20 })}`,
+        `/trades/history${queryString({ q, ...rest, group: status, visibility: hiddenOnly ? 'HIDDEN' : 'SHOWN', page: pageParam, pageSize: 20 })}`,
       );
     },
     getNextPageParam: (last) => (last.page * last.pageSize < last.total ? last.page + 1 : undefined),
@@ -73,6 +77,48 @@ export default function History() {
   const trades = useMemo(() => history.data?.pages.flatMap((p) => p.trades) ?? [], [history.data]);
   const pull = useRefresh(useCallback(() => history.refetch(), [history]));
   const filtered = Boolean(q) || hiddenOnly || trades.length !== history.data?.pages[0]?.total;
+
+  const reload = useCallback(() => {
+    void client.invalidateQueries({ queryKey: ['history'] });
+    void client.invalidateQueries({ queryKey: ['signals'] });
+  }, [client]);
+  const clearAll = useCallback(
+    () =>
+      Alert.alert(
+        'Clear your history?',
+        'Finished signals leave your History and Signals. Live signals stay. Nothing is deleted, and only your own view changes.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear',
+            style: 'destructive',
+            onPress: () =>
+              void api
+                .post<{ cleared: number }>('/me/history/clear', { confirm: true })
+                .then((r) => {
+                  haptics.notify('success');
+                  toast({ tone: 'success', title: r.cleared === 0 ? 'Nothing to clear' : `${r.cleared} cleared` });
+                  reload();
+                })
+                .catch((error: Error) => toast({ tone: 'error', title: 'That did not work', body: error.message })),
+          },
+        ],
+      ),
+    [reload, toast],
+  );
+  const restoreAll = useCallback(
+    () =>
+      void api
+        .post<{ restored: number }>('/me/history/restore', {})
+        .then((r) => {
+          haptics.notify('success');
+          toast({ tone: 'success', title: `${r.restored} brought back` });
+          setHiddenOnly(false);
+          reload();
+        })
+        .catch((error: Error) => toast({ tone: 'error', title: 'That did not work', body: error.message })),
+    [reload, toast],
+  );
 
   const show = useCallback(
     (row: HistoryRow) =>
@@ -105,7 +151,22 @@ export default function History() {
         }}
         ListHeaderComponent={
           <View style={styles.header}>
-            <PageTitle title="History" />
+            <PageTitle
+              title="History"
+              right={
+                hiddenOnly ? (
+                  <Button
+                    testID="history-restore"
+                    small
+                    label="Bring all back"
+                    icon="eye-outline"
+                    onPress={restoreAll}
+                  />
+                ) : (
+                  <Button testID="history-clear" small label="Clear" icon="trash-outline" onPress={clearAll} />
+                )
+              }
+            />
             <Field
               testID="history-search"
               label="Search by reference or instrument"
@@ -122,14 +183,14 @@ export default function History() {
               extraCount={hiddenOnly ? 1 : 0}
               extraChips={
                 hiddenOnly ? (
-                  <Chip icon="close" label="Hidden by me" on onPress={() => setHiddenOnly(false)} />
+                  <Chip icon="close" label="Cleared or hidden by me" on onPress={() => setHiddenOnly(false)} />
                 ) : undefined
               }
               sheetExtra={
                 <ToggleRow
                   testID="hidden-only"
-                  label="Only what I hid"
-                  hint="Trades you hid from your Signals list."
+                  label="Only what I cleared or hid"
+                  hint="Trades you cleared or hid from your Signals list."
                   value={hiddenOnly}
                   onChange={setHiddenOnly}
                 />
@@ -145,10 +206,10 @@ export default function History() {
           ) : (
             <EmptyState icon="time-outline" title={filtered ? 'Nothing matches that' : 'No trades yet'}>
               {hiddenOnly
-                ? 'You have not hidden any trades.'
+                ? 'You have not cleared or hidden any trades.'
                 : filtered
                   ? 'Try fewer filters.'
-                  : 'Every signal stays here with its full record of changes.'}
+                  : 'Signals from your membership stay here with their full record of changes.'}
             </EmptyState>
           )
         }

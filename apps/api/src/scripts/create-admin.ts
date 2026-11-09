@@ -6,6 +6,8 @@ import { PrismaClient } from '../generated/prisma/client.js';
 /**
  * Safe first-administrator provisioning. Nothing ships with a default password: this prints a
  * temporary one once. On first sign-in the administrator must replace it and enrol in MFA.
+ * When no active Master Admin exists yet, this administrator becomes the Master Admin. Further
+ * administrators are registered by the Master Admin in the app.
  *
  * Usage: npm run admin:create -- <loginId> "<Full Name>"
  */
@@ -26,10 +28,14 @@ async function main(): Promise<void> {
     return;
   }
   const temporaryPassword = newTemporaryPassword();
-  await prisma.$transaction(async (tx) => {
+  const master = await prisma.$transaction(async (tx) => {
+    // Serialises two provisioning runs, so they cannot both become the first Master Admin.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('signaldesk:master-admin'))`;
+    const hasMaster = (await tx.user.count({ where: { role: 'ADMIN', isMasterAdmin: true, status: 'ACTIVE' } })) > 0;
     const user = await tx.user.create({
       data: {
         role: 'ADMIN',
+        isMasterAdmin: !hasMaster,
         name: nameArg as string,
         loginId,
         passwordHash: await argon2.hash(temporaryPassword, { type: argon2.argon2id }),
@@ -37,9 +43,12 @@ async function main(): Promise<void> {
         tempPasswordExpiresAt: new Date(Date.now() + 24 * 3_600_000),
       },
     });
-    await tx.auditLog.create({ data: { action: 'ADMIN_PROVISIONED', targetType: 'user', targetId: user.id } });
+    await tx.auditLog.create({
+      data: { action: 'ADMIN_PROVISIONED', targetType: 'user', targetId: user.id, metadata: { master: !hasMaster } },
+    });
+    return !hasMaster;
   });
-  console.log(`Administrator "${loginId}" created.`);
+  console.log(`Administrator "${loginId}" created${master ? ' as the Master Admin' : ''}.`);
   console.log(`Temporary password (shown once, valid 24 hours): ${temporaryPassword}`);
   console.log('You will be asked to change it and set up two-step verification when you first sign in.');
 }

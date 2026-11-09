@@ -33,6 +33,8 @@
     "test:perf": "node scripts/perf.mjs",
     "openapi": "npm run openapi -w @signaldesk/api",
     "admin:reset": "npm run admin:reset -w @signaldesk/api",
+    "admin:make-master": "npm run admin:make-master -w @signaldesk/api",
+    "data:reset-demo": "npm run data:reset-demo -w @signaldesk/api",
     "test:mobile": "npm run build -w @signaldesk/domain && npm test -w @signaldesk/mobile",
     "mobile": "npm start -w @signaldesk/mobile"
   },

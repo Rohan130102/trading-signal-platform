@@ -41,6 +41,18 @@ export function resolveApiConfig(
 
 export const API = resolveApiConfig();
 
+/**
+ * The public website, for the About and performance page. The same address as the API unless a build names a
+ * separate one, which is how the web app and the API are served together behind one address.
+ */
+export function websiteUrl(
+  configured: string | undefined = process.env.EXPO_PUBLIC_WEB_URL,
+  apiOrigin: string | null = API.origin,
+): string | null {
+  const value = (configured ?? '').trim().replace(/\/+$/, '');
+  return value || apiOrigin;
+}
+
 export function socketUrl(origin: string): string {
   return `${origin.replace(/^http/, 'ws')}/ws`;
 }

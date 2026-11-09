@@ -7,6 +7,7 @@ import {
   bearerToken,
   forbidden,
   IS_PUBLIC,
+  MASTER_ONLY,
   parseCookies,
   REQUIRES_SIGNAL_ACCESS,
   ROLES,
@@ -44,6 +45,12 @@ export class SessionGuard implements CanActivate {
     }
     const roles = this.reflector.getAllAndOverride<string[]>(ROLES, targets);
     if (roles && !roles.includes(session.user.role)) throw forbidden();
+    if (
+      this.reflector.getAllAndOverride<boolean>(MASTER_ONLY, targets) &&
+      !(session.user.role === 'ADMIN' && session.user.isMasterAdmin)
+    ) {
+      throw forbidden('MASTER_ADMIN_REQUIRED', 'Only the Master Admin can do this.');
+    }
 
     if (this.reflector.getAllAndOverride<boolean>(REQUIRES_SIGNAL_ACCESS, targets) && !session.access.allowed) {
       throw new AppError(

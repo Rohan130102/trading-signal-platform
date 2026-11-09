@@ -589,13 +589,27 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
       break;
     }
     case 'TRAIL_STOP': {
-      requirePrice(s.spec, command.referencePrice, 'referencePrice', 'Reference price');
-      const distance = pointsToPriceDistance(s.spec, command.trailPoints);
-      if (distance.lessThanOrEqualTo(0)) fail('VALIDATION', 'Trail distance must be greater than zero.');
-      const reference = toDec(command.referencePrice);
-      const stop = s.direction === 'BUY' ? reference.minus(distance) : reference.plus(distance);
-      if (stop.lessThanOrEqualTo(0)) fail('VALIDATION', 'That trail distance gives a stop-loss below zero.');
-      if (!isOnTick(s.spec, stop)) fail('OFF_TICK', 'That trail distance does not resolve to a valid price tick.');
+      const byPoints = command.referencePrice !== undefined || command.trailPoints !== undefined;
+      if (command.price !== undefined && byPoints) {
+        fail('VALIDATION', 'Give either the new stop-loss, or a reference price and a distance. Not both.');
+      }
+      let stop: Dec;
+      let reference: Dec | null = null;
+      if (command.price !== undefined) {
+        requirePrice(s.spec, command.price, 'price', 'New stop-loss');
+        stop = toDec(command.price);
+      } else {
+        if (command.referencePrice === undefined || command.trailPoints === undefined) {
+          fail('VALIDATION', 'Give the new stop-loss, or a reference price and a distance in points.');
+        }
+        requirePrice(s.spec, command.referencePrice, 'referencePrice', 'Reference price');
+        const distance = pointsToPriceDistance(s.spec, command.trailPoints);
+        if (distance.lessThanOrEqualTo(0)) fail('VALIDATION', 'Trail distance must be greater than zero.');
+        reference = toDec(command.referencePrice);
+        stop = s.direction === 'BUY' ? reference.minus(distance) : reference.plus(distance);
+        if (stop.lessThanOrEqualTo(0)) fail('VALIDATION', 'That trail distance gives a stop-loss below zero.');
+        if (!isOnTick(s.spec, stop)) fail('OFF_TICK', 'That trail distance does not resolve to a valid price tick.');
+      }
       if (isWorse(s.direction, stop, toDec(s.stopLoss)) || stop.equals(toDec(s.stopLoss))) {
         fail(
           'TRAIL_NOT_TIGHTER',
@@ -603,20 +617,24 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         );
       }
       assertStopConsistent(s, canon(stop));
+      // The distance can only be stated when it was given. Without it the general wording is the only honest one.
+      const detailed = command.wording === 'DETAILED' && reference !== null && command.trailPoints !== undefined;
       emit(
         'STOP_MOVED',
         true,
-        'STOP_TRAILED',
+        detailed ? 'STOP_TRAILED' : 'STOP_TRAILED_GENERAL',
         {
           previousStop: s.stopLoss,
           newStop: canon(stop),
           stopKind: 'TRAIL',
-          trailPoints: canon(command.trailPoints),
-          referencePrice: canon(reference),
+          ...(command.trailPoints !== undefined ? { trailPoints: canon(command.trailPoints) } : {}),
+          ...(reference !== null ? { referencePrice: canon(reference) } : {}),
         },
         {
           previousStop: formatPrice(s.spec, s.stopLoss),
-          trail: `${formatPoints(command.trailPoints)} pts from ${formatPrice(s.spec, reference)}`,
+          ...(detailed && reference !== null && command.trailPoints !== undefined
+            ? { trail: `${formatPoints(command.trailPoints)} pts from ${formatPrice(s.spec, reference)}` }
+            : {}),
         },
       );
       break;

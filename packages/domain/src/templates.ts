@@ -8,6 +8,7 @@ export const TEMPLATE_KINDS = [
   'TARGET_HIT',
   'STOP_MOVED',
   'STOP_TRAILED',
+  'STOP_TRAILED_GENERAL',
   'TARGETS_MODIFIED',
   'PARTIAL_BOOKED',
   'FULL_PROFIT_BOOKED',
@@ -146,6 +147,14 @@ export const DEFAULT_TEMPLATES: TemplateDefinition[] = [
     tone: 'UPDATE',
     title: 'Trail stop-loss to {{stop}}: {{direction}} {{instrument}}',
     body: 'Stop-loss on trade {{ref}} trailed from {{previousStop}} to {{stop}} ({{trail}}).\n{{comment}}',
+  },
+  {
+    // The default: tells subscribers what to do without the desk's distance arithmetic.
+    kind: 'STOP_TRAILED_GENERAL',
+    name: 'Trail stop-loss (general)',
+    tone: 'UPDATE',
+    title: 'Trail stop-loss to {{stop}}: {{direction}} {{instrument}}',
+    body: 'Trail the stop-loss on trade {{ref}} to {{stop}}.\n{{comment}}',
   },
   {
     kind: 'TARGETS_MODIFIED',

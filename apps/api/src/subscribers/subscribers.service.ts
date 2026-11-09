@@ -10,12 +10,14 @@ import {
   listSubscribersQuery,
   localDateToInstant,
   renewSubscriptionSchema,
+  screenshotsAllowedFor,
   subscriptionState,
   updateSubscriberSchema,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
 import { AppError, notFound } from '../common/http.js';
 import { newTemporaryPassword } from '../common/crypto.js';
+import { notifyRefresh } from '../db/listener.service.js';
 import { isUniqueViolation, Prisma, PrismaService, TX_OPTIONS } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuthService } from '../auth/auth.service.js';
@@ -40,7 +42,7 @@ export class SubscribersService {
     private readonly settings: SettingsService,
   ) {}
 
-  private present(row: Row, tz: string, now = new Date()) {
+  private present(row: Row, tz: string, screenshotsDefault: boolean, now = new Date()) {
     const sub = row.subscription;
     return {
       id: row.id,
@@ -61,11 +63,36 @@ export class SubscribersService {
         daysRemaining: sub ? daysRemaining(sub, now, tz) : 0,
         timezone: tz,
       },
+      screenshotsAllowed: row.screenshotsAllowed,
+      screenshotsEffective: screenshotsAllowedFor(row.screenshotsAllowed, screenshotsDefault),
     };
   }
 
+  /** The Master Admin's choice for one subscriber. Null follows the platform default. */
+  async setScreenshotPermission(id: string, allowed: boolean | null, actor: Actor) {
+    const row = await this.prisma.user.findFirst({ where: { id, role: 'SUBSCRIBER' } });
+    if (!row) throw notFound('Subscriber not found');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id }, data: { screenshotsAllowed: allowed } });
+      await this.audit.record(
+        {
+          actorId: actor.id,
+          action: 'SUBSCRIBER_SCREENSHOT_PERMISSION_SET',
+          targetType: 'user',
+          targetId: id,
+          metadata: { from: row.screenshotsAllowed, to: allowed },
+          requestId: actor.requestId,
+        },
+        tx,
+      );
+      // Their open app picks the new rule up at once.
+      await notifyRefresh(tx, 'SETTINGS_CHANGED');
+    });
+    return this.detail(id);
+  }
+
   async list(query: z.infer<typeof listSubscribersQuery>) {
-    const tz = await this.settings.timezone();
+    const [tz, platform] = await Promise.all([this.settings.timezone(), this.settings.platform()]);
     const now = new Date();
     const soon = new Date(now.getTime() + EXPIRING_DAYS * 86_400_000);
     const q = query.q?.trim();
@@ -101,7 +128,7 @@ export class SubscribersService {
       this.prisma.user.count({ where }),
     ]);
     return {
-      subscribers: rows.map((r) => this.present(r, tz, now)),
+      subscribers: rows.map((r) => this.present(r, tz, platform.screenshotsAllowedDefault, now)),
       total,
       page: query.page,
       pageSize: query.pageSize,
@@ -109,7 +136,7 @@ export class SubscribersService {
   }
 
   async detail(id: string) {
-    const tz = await this.settings.timezone();
+    const [tz, platform] = await Promise.all([this.settings.timezone(), this.settings.platform()]);
     const row = await this.prisma.user.findFirst({
       where: { id, role: 'SUBSCRIBER' },
       include: {
@@ -129,7 +156,7 @@ export class SubscribersService {
     });
     if (!row) throw notFound('Subscriber not found');
     return {
-      ...this.present(row, tz),
+      ...this.present(row, tz, platform.screenshotsAllowedDefault),
       events:
         row.subscription?.events.map((e) => ({
           id: e.id,

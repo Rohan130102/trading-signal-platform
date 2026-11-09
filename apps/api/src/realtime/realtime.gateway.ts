@@ -8,7 +8,7 @@ import { log } from '../common/log.js';
 import { env } from '../config/env.js';
 import { AuthService } from '../auth/auth.service.js';
 import { SESSION_COOKIE } from '../auth/session.guard.js';
-import { CH_ACCESS, CH_EVENTS, ListenerService } from '../db/listener.service.js';
+import { CH_ACCESS, CH_EVENTS, CH_REFRESH, ListenerService } from '../db/listener.service.js';
 import { PrismaService } from '../db/prisma.service.js';
 import { toFeedEvent } from '../trades/mappers.js';
 
@@ -73,6 +73,11 @@ export class RealtimeGateway implements OnModuleDestroy {
     });
 
     this.listener.on(CH_EVENTS, () => void this.tail());
+    // Only a reason travels; each app reloads through the API, which applies the viewer's own access.
+    this.listener.on(CH_REFRESH, (reason) => {
+      const message = { type: 'refresh', reason: reason.slice(0, 40) };
+      for (const conn of this.conns) this.send(conn, message);
+    });
     this.listener.on(CH_ACCESS, (userId) => {
       this.revalidateUser(userId).catch((error: Error) =>
         log('warn', 'access_recheck_failed', { error: error.message }),

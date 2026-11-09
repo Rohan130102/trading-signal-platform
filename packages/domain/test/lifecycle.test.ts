@@ -177,7 +177,17 @@ describe('stop-loss changes', () => {
   it('a trail computes the stop from the reference and can only tighten', () => {
     const d = run(tradeState(), { action: 'TRAIL_STOP', referencePrice: '3400', trailPoints: '50' });
     expect(d.next.stopLoss).toBe('3350');
-    expect(d.events[0]?.templateKind).toBe('STOP_TRAILED');
+    // General wording unless the distance is asked for.
+    expect(d.events[0]?.templateKind).toBe('STOP_TRAILED_GENERAL');
+    expect(d.events[0]?.templateContext.trail).toBeUndefined();
+    const detailed = run(tradeState(), {
+      action: 'TRAIL_STOP',
+      referencePrice: '3400',
+      trailPoints: '50',
+      wording: 'DETAILED',
+    });
+    expect(detailed.events[0]?.templateKind).toBe('STOP_TRAILED');
+    expect(detailed.events[0]?.templateContext.trail).toBe('50 pts from 3,400.00');
     expect(
       code(() =>
         run(tradeState({ stopLoss: '3380' }), { action: 'TRAIL_STOP', referencePrice: '3400', trailPoints: '50' }),
@@ -190,6 +200,27 @@ describe('stop-loss changes', () => {
       targets: [{ index: 1, price: '3150', originalPrice: '3150', status: 'OPEN', hitAt: null }],
     });
     expect(run(sell, { action: 'TRAIL_STOP', referencePrice: '3250', trailPoints: '50' }).next.stopLoss).toBe('3300');
+  });
+
+  it('a trail can name the new stop directly, which is always worded generally', () => {
+    const d = run(tradeState(), { action: 'TRAIL_STOP', price: '3340', wording: 'DETAILED' });
+    expect(d.next.stopLoss).toBe('3340');
+    expect(d.events[0]?.templateKind).toBe('STOP_TRAILED_GENERAL');
+    expect(d.events[0]?.payload.trailPoints).toBeUndefined();
+    expect(code(() => run(tradeState(), { action: 'TRAIL_STOP', price: '3340', trailPoints: '10' }))).toBe(
+      'VALIDATION',
+    );
+    expect(code(() => run(tradeState(), { action: 'TRAIL_STOP', referencePrice: '3400' }))).toBe('VALIDATION');
+    expect(code(() => run(tradeState({ stopLoss: '3380' }), { action: 'TRAIL_STOP', price: '3340' }))).toBe(
+      'TRAIL_NOT_TIGHTER',
+    );
+  });
+
+  it('the general trail wording renders without any distance', () => {
+    const d = run(tradeState(), { action: 'TRAIL_STOP', referencePrice: '3400', trailPoints: '50' });
+    const template = defaultTemplate('STOP_TRAILED_GENERAL');
+    const body = renderTemplateText(template.body, d.events[0]?.templateContext ?? {});
+    expect(body).toMatch(/^Trail the stop-loss on trade T-\d+ to 3,350\.00\.$/);
   });
 });
 

@@ -14,7 +14,9 @@
     "admin:create": "node dist/scripts/create-admin.js",
     "openapi": "node dist/scripts/export-openapi.js",
     "test:integration": "vitest run --config vitest.config.ts",
-    "admin:reset": "node dist/scripts/reset-admin.js"
+    "admin:reset": "node dist/scripts/reset-admin.js",
+    "admin:make-master": "node dist/scripts/promote-master.js",
+    "data:reset-demo": "node dist/scripts/reset-demo-data.js"
   },
   "dependencies": {
     "@nestjs/common": "12.3.3",

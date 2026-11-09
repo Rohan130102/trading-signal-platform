@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { CALCULATION_BASES } from './pnl.js';
+import { CALCULATION_BASES, TRADE_OUTCOMES } from './pnl.js';
+import {
+  HISTORY_SCOPES,
+  MAX_ENTRY_WINDOW_MINUTES,
+  MIN_ENTRY_WINDOW_MINUTES,
+  SIGNAL_START_MODES,
+  TRAILING_STOP_WORDINGS,
+} from './platform.js';
 import { DIRECTIONS, ENTRY_TYPES, MAX_TARGETS } from './signal.js';
 import { CLOSE_REASONS, PRIORITIES, TRADE_STATUSES, EVENT_TYPES } from './status.js';
 import { installationIdSchema } from './devices.js';
@@ -96,7 +103,10 @@ export const signalFieldsSchema = z.strictObject({
   priority: z.enum(PRIORITIES).default('NORMAL'),
   templateId: z.uuid().nullable().optional(),
   commentary: comment,
-  /** Optional deadline after which an unfilled signal expires. */
+  /**
+   * When an unfilled signal stops waiting and is cancelled automatically. Omitted: the platform default
+   * window applies. Null: no limit.
+   */
   entryExpiresAt: instant.nullable().optional(),
 });
 export type SignalFields = z.infer<typeof signalFieldsSchema>;
@@ -108,11 +118,11 @@ export const publishSignalSchema = signalFieldsSchema.extend({
   /** Set after the administrator has seen and accepted a duplicate-signal warning. */
   confirmDuplicate: z.boolean().default(false),
   /**
-   * The desk's rule: a published signal is active at once. The activation is recorded in the same
-   * transaction as the publication, as its own (internal) event, and is still not a fill. False keeps
-   * the older flow, where a signal waits for entry until an administrator activates it.
+   * True: the signal is active at once. The activation is recorded in the same transaction as the
+   * publication, as its own (internal) event, and is still not a fill. False: it waits for entry until an
+   * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
    */
-  activateOnPublish: z.boolean().default(true),
+  activateOnPublish: z.boolean().optional(),
 });
 
 /** Drafts may be incomplete: only publication requires the full signal. */
@@ -183,8 +193,12 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
   z.strictObject({
     action: z.literal('TRAIL_STOP'),
     ...commandBase,
-    referencePrice: priceSchema,
-    trailPoints: pointsSchema,
+    /** Give either the new stop price, or a reference price and a distance in points. */
+    price: priceSchema.optional(),
+    referencePrice: priceSchema.optional(),
+    trailPoints: pointsSchema.optional(),
+    /** GENERAL leaves the distance out of the alert. Omitted: the platform default applies. */
+    wording: z.enum(TRAILING_STOP_WORDINGS).optional(),
     comment,
   }),
   z.strictObject({
@@ -347,10 +361,12 @@ export const historyQuery = z.object({
   direction: z.enum(DIRECTIONS).optional(),
   status: z.enum(TRADE_STATUSES).optional(),
   group: z.enum(STATUS_GROUPS).default('ALL'),
-  /** HIDDEN: only what this subscriber hid from their Signals list. */
-  visibility: z.enum(['ALL', 'HIDDEN']).default('ALL'),
+  /** HIDDEN: only what this subscriber hid or cleared. SHOWN: everything else. ALL: both, marked. */
+  visibility: z.enum(['ALL', 'SHOWN', 'HIDDEN']).default('ALL'),
   /** Administrators only: ARCHIVED lists what was moved out of the Signals list. */
   archived: z.enum(['ANY', 'ARCHIVED', 'NOT_ARCHIVED']).default('ANY'),
+  /** Administrators only: REMOVED lists what the Master Admin took off subscriber screens. */
+  removed: z.enum(['ANY', 'REMOVED', 'NOT_REMOVED']).default('ANY'),
   from: localDate.optional(),
   to: localDate.optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -405,11 +421,22 @@ export const settingsSchema = z.strictObject({
   riskDisclosure: shortText(5000),
   privacyNotice: shortText(5000),
   serviceDescription: shortText(2000),
-  entryExpiryHoursDefault: z
+  /** The About section of the public page. Plain text. */
+  aboutBody: shortText(5000),
+  signalStartMode: z.enum(SIGNAL_START_MODES),
+  /** 0 means no limit. */
+  entryExpiryMinutesDefault: z
     .number()
     .int()
     .min(0)
-    .max(24 * 30),
+    .max(MAX_ENTRY_WINDOW_MINUTES)
+    .refine(
+      (v) => v === 0 || v >= MIN_ENTRY_WINDOW_MINUTES,
+      `Use 0 for no limit, or at least ${MIN_ENTRY_WINDOW_MINUTES} minutes`,
+    ),
+  trailingStopWording: z.enum(TRAILING_STOP_WORDINGS),
+  screenshotsAllowedDefault: z.boolean(),
+  historyScope: z.enum(HISTORY_SCOPES),
 });
 export type SettingsInput = z.infer<typeof settingsSchema>;
 
@@ -428,6 +455,8 @@ export const performanceQuery = z.object({
   to: localDate.optional(),
   symbol: z.string().trim().max(24).optional(),
   basis: z.enum(CALCULATION_BASES).optional(),
+  direction: z.enum(DIRECTIONS).optional(),
+  outcome: z.enum(TRADE_OUTCOMES).optional(),
 });
 
 export const auditQuery = z.object({

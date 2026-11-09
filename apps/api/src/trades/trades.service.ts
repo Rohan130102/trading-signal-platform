@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
   calculateLevels,
@@ -12,8 +12,10 @@ import {
   type InstrumentSpec,
   type NewClosure,
   publishSignalSchema,
+  resolveEntryExpiry,
   type SignalFields,
   snapshot,
+  startsActive,
   type TemplateContext,
   type TemplateKind,
   type TradeCommand,
@@ -39,6 +41,12 @@ export interface Actor {
 
 const SIGNAL_KINDS: TemplateKind[] = ['BUY_STANDARD', 'SELL_STANDARD', 'PRIORITY_SIGNAL'];
 const DUPLICATE_WINDOW_MS = 24 * 3_600_000;
+
+/** A stable UUID-shaped key for the automatic expiry of one trade at one version. */
+export function expiryKey(tradeId: string, version: number): string {
+  const hex = createHash('sha256').update(`entry-expiry:${tradeId}:${version}`).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 export function normalizeFields(fields: SignalFields) {
   return {
@@ -120,8 +128,13 @@ export class TradesService {
       }
     }
 
-    const settings = await this.settings.get();
-    const entryExpiresAt = this.resolveExpiry(input.entryExpiresAt, settings.entryExpiryHoursDefault);
+    const platform = await this.settings.platform();
+    const now = new Date();
+    const active = startsActive(input.activateOnPublish, platform.signalStartMode);
+    if (input.entryExpiresAt && !active && new Date(input.entryExpiresAt).getTime() <= now.getTime()) {
+      throw new AppError(422, 'VALIDATION', 'The entry window must end in the future.');
+    }
+    const entryExpiresAt = resolveEntryExpiry(input.entryExpiresAt, platform.entryExpiryMinutesDefault, active, now);
     const defaults = calculateLevels({ spec, direction: input.direction, entry });
     const usedDefaultLevels =
       defaults.stopLoss === stopLoss &&
@@ -161,7 +174,7 @@ export class TradesService {
           version: 1,
           draft: Prisma.DbNull,
           entryExpiresAt,
-          publishedAt: new Date(),
+          publishedAt: now,
         };
         let id: string;
         if (input.draftId) {
@@ -227,7 +240,7 @@ export class TradesService {
             },
           },
         });
-        if (input.activateOnPublish) await this.activateOnPublish(tx, id, input.idempotencyKey, actor);
+        if (active) await this.activateOnPublish(tx, id, input.idempotencyKey, actor);
         await this.audit.record(
           {
             actorId: actor.id,
@@ -242,6 +255,8 @@ export class TradesService {
               targets,
               stopLoss,
               usedDefaultLevels,
+              startedAs: active ? 'ACTIVE' : 'AWAITING_ENTRY',
+              entryExpiresAt: entryExpiresAt?.toISOString() ?? null,
             },
             requestId: actor.requestId,
           },
@@ -259,18 +274,6 @@ export class TradesService {
       }
       throw error;
     }
-  }
-
-  private resolveExpiry(requested: string | null | undefined, defaultHours: number): Date | null {
-    if (requested) {
-      const at = new Date(requested);
-      if (at.getTime() <= Date.now()) {
-        throw new AppError(422, 'VALIDATION', 'The entry deadline must be in the future.');
-      }
-      return at;
-    }
-    if (requested === null) return null;
-    return defaultHours > 0 ? new Date(Date.now() + defaultHours * 3_600_000) : null;
   }
 
   private async chooseSignalTemplate(tx: Tx, input: PublishInput) {
@@ -372,11 +375,18 @@ export class TradesService {
           select: { id: true },
         });
         if (twin) return true;
-        const row = await tx.trade.findUniqueOrThrow({ where: { id: tradeId }, include: { closures: true } });
+        const row = await tx.trade.findUniqueOrThrow({
+          where: { id: tradeId },
+          include: { closures: true, removal: { select: { tradeId: true } } },
+        });
         if (row.status === 'DRAFT') throw new DomainError('INVALID_TRANSITION', 'Publish this draft first.');
+        // A correction would alert subscribers about a trade they can no longer open.
+        if (row.removal) {
+          throw new AppError(409, 'TRADE_REMOVED', 'This trade was removed from subscriber screens. Restore it first.');
+        }
 
         const state = toTradeState(row);
-        const decision = decide(state, command, new Date());
+        const decision = decide(state, await this.withPlatformDefaults(command), new Date());
 
         let version = state.version;
         let firstEventId: string | null = null;
@@ -464,6 +474,14 @@ export class TradesService {
       }
       throw error;
     }
+  }
+
+  /** Fills in what the administrator left to the platform's rules. */
+  private async withPlatformDefaults(command: TradeCommand): Promise<TradeCommand> {
+    if (command.action === 'TRAIL_STOP' && command.wording === undefined) {
+      return { ...command, wording: (await this.settings.platform()).trailingStopWording };
+    }
+    return command;
   }
 
   private async persistClosure(tx: Tx, tradeId: string, eventId: string, closure: NewClosure): Promise<void> {
@@ -568,8 +586,9 @@ export class TradesService {
           {
             action: 'EXPIRE',
             expectedVersion: trade.version,
-            idempotencyKey: crypto.randomUUID(),
-            comment: 'Entry deadline passed.',
+            // One key per trade and version: several workers sweeping at once produce a single expiry.
+            idempotencyKey: expiryKey(trade.id, trade.version),
+            comment: 'Entry window ended before the signal became active.',
           },
           { id: null },
         );

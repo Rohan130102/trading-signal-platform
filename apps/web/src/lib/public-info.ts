@@ -11,6 +11,8 @@ const FALLBACK: PublicInfo = {
   privacyNotice: '',
   supportContact: '',
   publicResultsAvailable: false,
+  aboutBody: '',
+  dataResetAt: null,
 };
 
 /** A server-side read, so public pages still render if the API is briefly unavailable. */

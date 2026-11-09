@@ -3,12 +3,15 @@ import {
   aggregateClosures,
   type CalculationBasis,
   computePerformanceStats,
+  type Direction,
   endOfLocalDateExclusive,
   localDateToInstant,
   METHODOLOGY_VERSION,
   type PerformanceStats,
+  type PublicTradeRecord,
   type StatsTrade,
   type TradeAggregate,
+  type TradeOutcome,
 } from '@signaldesk/domain';
 import { env } from '../config/env.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
@@ -26,8 +29,44 @@ export const METHODOLOGY = {
     'Administrator-declared figures are not independently verified and do not represent results achieved by any subscriber.',
     'Monetary figures appear only where an entry, a quantity and a contract multiplier were recorded. They are never estimated.',
     'Corrections replace a record visibly. The replaced record is kept and flagged.',
+    'Trades removed from subscriber screens are still counted in every figure, so hiding a trade can never improve the results.',
   ],
 };
+
+/** Plain-language meanings of every term the public page shows. */
+export const DEFINITIONS = [
+  { term: 'Published', meaning: 'When the desk sent the signal to subscribers.' },
+  {
+    term: 'Activated',
+    meaning:
+      'When the desk marked the signal active because its entry level was reached. It is not a fill and not any subscriber’s execution.',
+  },
+  { term: 'Exit', meaning: 'When the last exit of the trade was recorded.' },
+  {
+    term: 'Points',
+    meaning:
+      'The price move from entry to exit in the instrument’s points, weighted by the share of the position each exit closed. Points of different instruments are not comparable.',
+  },
+  { term: 'Win', meaning: 'A fully closed trade whose weighted move (or net result, where recorded) is above zero.' },
+  { term: 'Loss', meaning: 'A fully closed trade whose weighted move (or net result) is below zero.' },
+  { term: 'Breakeven', meaning: 'A fully closed trade whose weighted move (or net result) is exactly zero.' },
+  {
+    term: 'Win rate',
+    meaning: 'Wins divided by wins, losses and breakevens. Open, cancelled and expired signals are not in it.',
+  },
+  {
+    term: 'Hypothetical outcome',
+    meaning: 'What following the signal at its stated levels would have produced. No real trade is implied.',
+  },
+  {
+    term: 'Declared execution',
+    meaning: 'An entry and exit the desk declared. Not independently verified.',
+  },
+  {
+    term: 'Expired, no entry',
+    meaning: 'A signal whose entry window ended before it became active. It was cancelled automatically.',
+  },
+];
 
 const MAX_TRADES = 5000;
 
@@ -36,6 +75,9 @@ export interface PerformanceFilter {
   to?: string;
   symbol?: string;
   basis?: CalculationBasis;
+  direction?: Direction;
+  /** Narrows the list of records only. Figures are never computed from a subset chosen by outcome. */
+  outcome?: TradeOutcome;
 }
 
 @Injectable()
@@ -50,6 +92,7 @@ export class PerformanceService {
     const where: Prisma.TradeWhereInput = {
       status: { not: 'DRAFT' },
       ...(filter.symbol ? { instrument: { symbol: filter.symbol } } : {}),
+      ...(filter.direction ? { direction: filter.direction } : {}),
       ...(filter.from || filter.to
         ? {
             publishedAt: {
@@ -59,9 +102,10 @@ export class PerformanceService {
           }
         : {}),
     };
+    // Removed trades are loaded like any other: every figure counts them.
     const rows = await this.prisma.trade.findMany({
       where,
-      include: { closures: { orderBy: { createdAt: 'asc' } } },
+      include: { closures: { orderBy: { createdAt: 'asc' } }, removal: { select: { tradeId: true } } },
       orderBy: { publishedAt: 'asc' },
       take: MAX_TRADES + 1,
     });
@@ -141,6 +185,7 @@ export class PerformanceService {
       quoteCurrency,
       pointsComparable: symbols.length <= 1,
       methodology: METHODOLOGY,
+      removedFromScreens: rows.filter((r) => r.row.removal !== null).length,
     };
   }
 
@@ -157,8 +202,8 @@ export class PerformanceService {
     };
   }
 
-  async publicResults(filter: { from?: string; to?: string; symbol?: string }) {
-    const { rows } = await this.load(filter);
+  async publicResults(filter: PerformanceFilter) {
+    const { rows } = await this.load({ ...filter, basis: undefined, outcome: undefined });
     const all = rows.map(({ row, aggregate }): StatsTrade => ({
       status: row.status,
       aggregate,
@@ -177,27 +222,42 @@ export class PerformanceService {
       withoutMoney(computePerformanceStats(all.filter((t) => t.status === 'CLOSED' && t.aggregate?.basis === basis)));
     const first = rows[0]?.row.publishedAt ?? null;
     const last = rows[rows.length - 1]?.row.publishedAt ?? null;
-    return {
-      measurementPeriod: { from: first?.toISOString() ?? null, to: last?.toISOString() ?? null },
-      lifecycle: withoutMoney(computePerformanceStats(all)),
-      hypothetical: stats('HYPOTHETICAL_OUTCOME'),
-      declared: stats('ADMIN_DECLARED_EXECUTION'),
-      records: rows
-        .filter(({ row }) => ['CLOSED', 'CANCELLED', 'EXPIRED'].includes(row.status))
-        .reverse()
-        .slice(0, 200)
-        .map(({ row, aggregate }) => ({
+    const symbols = [...new Set(rows.map((r) => (r.row.instrumentSpec as unknown as { symbol: string }).symbol))];
+    const records: PublicTradeRecord[] = rows
+      .filter(({ row }) => ['CLOSED', 'CANCELLED', 'EXPIRED'].includes(row.status))
+      .filter(({ aggregate }) => !filter.outcome || aggregate?.outcome === filter.outcome)
+      .reverse()
+      .slice(0, 1000)
+      .map(({ row, aggregate }) => {
+        const exits = row.closures.filter((c) => c.supersededByEventId === null);
+        const lastExit = exits.reduce<Date | null>(
+          (latest, c) => (latest === null || c.exitedAt > latest ? c.exitedAt : latest),
+          null,
+        );
+        return {
           ref: row.ref,
           symbol: (row.instrumentSpec as unknown as { symbol: string }).symbol,
           direction: row.direction,
           status: row.status,
           publishedAt: row.publishedAt?.toISOString() ?? null,
+          activatedAt: row.activatedAt?.toISOString() ?? null,
+          exitedAt: lastExit?.toISOString() ?? null,
           closedAt: row.closedAt?.toISOString() ?? null,
           basis: aggregate?.basis ?? null,
           weightedPoints: aggregate?.weightedPoints ?? null,
           outcome: aggregate?.outcome ?? null,
-        })),
-      methodology: METHODOLOGY,
+        };
+      });
+    return {
+      measurementPeriod: { from: first?.toISOString() ?? null, to: last?.toISOString() ?? null },
+      lifecycle: withoutMoney(computePerformanceStats(all)),
+      hypothetical: stats('HYPOTHETICAL_OUTCOME'),
+      declared: stats('ADMIN_DECLARED_EXECUTION'),
+      records,
+      removedFromScreens: rows.filter((r) => r.row.removal !== null).length,
+      symbols,
+      pointsComparable: symbols.length <= 1,
+      methodology: { ...METHODOLOGY, definitions: DEFINITIONS },
     };
   }
 }

@@ -19,11 +19,13 @@ import {
   Input,
   Loading,
   PageHeader,
+  Select,
   Stat,
   Textarea,
 } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime, formatLocalDate, newKey } from '@/lib/format';
+import { useMe } from '@/lib/session';
 
 type Detail = SubscriberDetail;
 
@@ -174,6 +176,7 @@ export default function SubscriberPage() {
               )}
             </div>
           </Card>
+          <Screenshots detail={s} onSaved={refresh} />
         </aside>
       </div>
       {dialog === 'renew' && <RenewDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
@@ -181,6 +184,49 @@ export default function SubscriberPage() {
       {dialog === 'reset' && <ResetDialog detail={s} onClose={() => setDialog(null)} />}
       {dialog === 'suspend' && <SuspendDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
     </>
+  );
+}
+
+/** The Master Admin's choice for this subscriber. Everyone else sees what applies. */
+function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
+  const master = useMe().data?.isMasterAdmin === true;
+  const save = useMutation({
+    mutationFn: (value: boolean | null) =>
+      api.put(`/admin/subscribers/${detail.id}/screenshots`, { screenshotsAllowed: value }),
+    onSuccess: () => {
+      onSaved();
+      toast.success('Screenshot permission saved. Their app applies it straight away.');
+    },
+    onError: (e) => toast.error((e as ApiError).message),
+  });
+  const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  return (
+    <Card className="mt-4">
+      <CardHeader
+        title="Screenshots"
+        description={detail.screenshotsEffective ? 'Allowed for this subscriber.' : 'Blocked for this subscriber.'}
+      />
+      <div className="flex flex-col gap-2 border-t border-line p-3">
+        <Field label="Permission" hint={master ? undefined : 'Only the Master Admin can change this.'}>
+          {(c) => (
+            <Select
+              {...c}
+              value={value}
+              disabled={!master || save.isPending}
+              onChange={(e) => save.mutate(e.target.value === 'DEFAULT' ? null : e.target.value === 'ALLOW')}
+            >
+              <option value="DEFAULT">Platform default</option>
+              <option value="BLOCK">Block</option>
+              <option value="ALLOW">Allow</option>
+            </Select>
+          )}
+        </Field>
+        <p className="text-xs leading-relaxed text-subtle">
+          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
+          screenshot when it sees one. Web browsers cannot block them.
+        </p>
+      </div>
+    </Card>
   );
 }
 

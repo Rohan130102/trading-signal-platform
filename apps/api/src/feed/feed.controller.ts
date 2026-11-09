@@ -1,5 +1,6 @@
 import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import {
+  clearHistorySchema,
   HIDDEN_ITEM_TYPES,
   type HiddenItemType,
   hideItemSchema,
@@ -56,6 +57,20 @@ export class FeedController {
   async hide(@Auth() auth: AuthContext, @ZBody(hideItemSchema) body: z.infer<typeof hideItemSchema>) {
     await this.feed.hide(auth.user.id, body.type, body.id);
     return { hidden: true };
+  }
+
+  @Post('me/history/clear')
+  @HttpCode(200)
+  @Summary('Clear your own history: finished trades leave your lists. Live trades stay. Nobody else is affected.')
+  clearHistory(@Auth() auth: AuthContext, @ZBody(clearHistorySchema) _body: z.infer<typeof clearHistorySchema>) {
+    return this.feed.clearHistory(auth.user.id);
+  }
+
+  @Post('me/history/restore')
+  @HttpCode(200)
+  @Summary('Bring back every trade you hid or cleared')
+  restoreHistory(@Auth() auth: AuthContext) {
+    return this.feed.restoreHistory(auth.user.id);
   }
 
   @Delete('me/hidden/:type/:id')

@@ -80,6 +80,8 @@ export class AuthService {
       mfaEnabledAt: user.mfaEnabledAt,
       lastReadSeq: user.lastReadSeq,
       onboardedAt: user.onboardedAt,
+      isMasterAdmin: user.role === 'ADMIN' && user.isMasterAdmin,
+      screenshotsAllowed: user.screenshotsAllowed,
     };
     const subscription = user.subscription
       ? { startsAt: user.subscription.startsAt, expiresAt: user.subscription.expiresAt }

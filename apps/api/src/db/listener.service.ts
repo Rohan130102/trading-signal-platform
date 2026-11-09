@@ -6,6 +6,16 @@ import { log } from '../common/log.js';
 export const CH_EVENTS = 'signal_events';
 export const CH_ACCESS = 'access_changes';
 export const CH_PUSH = 'push_ready';
+/** Something subscribers see changed without a new event: open apps reload their lists. */
+export const CH_REFRESH = 'screen_refresh';
+
+/** Sent when the surrounding transaction commits, to every API instance. */
+export async function notifyRefresh(
+  tx: { $executeRaw: (query: TemplateStringsArray, ...values: unknown[]) => Promise<number> },
+  reason: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_notify('screen_refresh', ${reason})`;
+}
 
 type Handler = (payload: string) => void;
 
