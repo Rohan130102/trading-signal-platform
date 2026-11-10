@@ -9,6 +9,7 @@ export * from './instrument.js';
 export * from './lifecycle.js';
 export * from './live-connection.js';
 export * from './notifications.js';
+export * from './platform.js';
 export * from './pnl.js';
 export * from './signal.js';
 export * from './signals-feed.js';

@@ -14,6 +14,7 @@ import { Activity, Archive, Plus, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { useState } from 'react';
+import { canRemove, RemoveTradesDialog, useRestoreTrades } from '@/components/admin/remove-trades';
 import { DirectionBadge, StatusBadge } from '@/components/trade';
 import {
   Badge,
@@ -31,9 +32,10 @@ import {
 } from '@/components/ui';
 import { api, queryString } from '@/lib/api';
 import { formatDateTime, signedPoints } from '@/lib/format';
+import { useMe } from '@/lib/session';
 
 interface Result {
-  trades: (TradeSummary & { aggregate: TradeAggregate | null; archivedAt: string | null })[];
+  trades: (TradeSummary & { aggregate: TradeAggregate | null; archivedAt: string | null; removedAt: string | null })[];
   total: number;
   page: number;
   pageSize: number;
@@ -45,17 +47,20 @@ export default function AdminTradesPage() {
   const [symbol, setSymbol] = useState('');
   const [page, setPage] = useState(1);
   const [archived, setArchived] = useState<'ANY' | 'ARCHIVED' | 'NOT_ARCHIVED'>('ANY');
+  const [removed, setRemoved] = useState<'ANY' | 'REMOVED' | 'NOT_REMOVED'>('ANY');
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [removing, setRemoving] = useState(false);
+  const master = useMe().data?.isMasterAdmin === true;
   const client = useQueryClient();
   const instruments = useQuery({
     queryKey: ['admin', 'instruments'],
     queryFn: () => api.get<{ instruments: { id: string; symbol: string }[] }>('/admin/instruments'),
   });
   const trades = useQuery({
-    queryKey: ['admin', 'trades', q, status, symbol, page, archived],
+    queryKey: ['admin', 'trades', q, status, symbol, page, archived, removed],
     queryFn: () =>
       api.get<Result>(
-        `/admin/trades${queryString({ q, symbol, page, pageSize: 25, archived, live: status === 'LIVE' ? 'true' : undefined, status: status === 'LIVE' ? undefined : status })}`,
+        `/admin/trades${queryString({ q, symbol, page, pageSize: 25, archived, removed, live: status === 'LIVE' ? 'true' : undefined, status: status === 'LIVE' ? undefined : status })}`,
       ),
     placeholderData: keepPreviousData,
   });
@@ -98,6 +103,9 @@ export default function AdminTradesPage() {
   const chosen = rows.filter((t) => selected.has(t.id));
   const allArchived = chosen.length > 0 && chosen.every((t) => t.archivedAt);
   const allArchivable = chosen.length > 0 && chosen.every((t) => !t.archivedAt && canArchiveTrade(t.status));
+  const allRemovable = master && chosen.length > 0 && chosen.every(canRemove);
+  const allRemoved = master && chosen.length > 0 && chosen.every((t) => t.removedAt);
+  const putBack = useRestoreTrades(() => setSelected(new Set()));
   return (
     <>
       <PageHeader
@@ -108,7 +116,7 @@ export default function AdminTradesPage() {
           </Link>
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr]">
         <Field label="Search" className="col-span-2 sm:col-span-1">
           {(c) => (
             <div className="relative">
@@ -184,6 +192,23 @@ export default function AdminTradesPage() {
             </Select>
           )}
         </Field>
+        <Field label="Subscriber screens">
+          {(c) => (
+            <Select
+              {...c}
+              value={removed}
+              onChange={(e) => {
+                setRemoved(e.target.value as typeof removed);
+                setPage(1);
+                setSelected(new Set());
+              }}
+            >
+              <option value="ANY">Shown or removed</option>
+              <option value="NOT_REMOVED">Shown</option>
+              <option value="REMOVED">Removed</option>
+            </Select>
+          )}
+        </Field>
       </div>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         <Archive className="size-4 text-muted" aria-hidden />
@@ -220,8 +245,18 @@ export default function AdminTradesPage() {
               Restore
             </Button>
           )}
-          {!allArchivable && !allArchived && (
-            <span className="text-sm text-muted">Only finished trades can be archived.</span>
+          {allRemovable && (
+            <Button size="sm" variant="danger" onClick={() => setRemoving(true)}>
+              Remove from subscriber screens
+            </Button>
+          )}
+          {allRemoved && (
+            <Button size="sm" loading={putBack.isPending} onClick={() => putBack.mutate(chosen.map((t) => t.id))}>
+              Put back on screens
+            </Button>
+          )}
+          {!allArchivable && !allArchived && !allRemovable && !allRemoved && (
+            <span className="text-sm text-muted">Only finished trades can be archived or removed.</span>
           )}
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
@@ -298,7 +333,8 @@ export default function AdminTradesPage() {
                       <DirectionBadge direction={t.direction} />
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge status={t.status} /> {t.archivedAt && <Badge>Archived</Badge>}
+                      <StatusBadge status={t.status} /> {t.archivedAt && <Badge>Archived</Badge>}{' '}
+                      {t.removedAt && <Badge tone="stop">Removed from screens</Badge>}
                     </td>
                     <td className="num px-4 py-2.5">
                       {t.entryType === 'RANGE'
@@ -326,6 +362,9 @@ export default function AdminTradesPage() {
             onChange={setPage}
           />
         </>
+      )}
+      {removing && (
+        <RemoveTradesDialog trades={chosen} onClose={() => setRemoving(false)} onDone={() => setSelected(new Set())} />
       )}
     </>
   );

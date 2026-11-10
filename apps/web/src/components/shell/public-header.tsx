@@ -9,9 +9,14 @@ export function PublicHeader({ name }: { name: string }) {
         <Logo className="size-6" />
         {name}
       </Link>
-      <Link href="/login" className={buttonClass('primary', 'sm')}>
-        Sign in
-      </Link>
+      <nav aria-label="Site" className="flex items-center gap-2">
+        <Link href="/about" className="rounded px-2 py-1.5 text-sm font-medium text-muted hover:text-text">
+          About
+        </Link>
+        <Link href="/login" className={buttonClass('primary', 'sm')}>
+          Sign in
+        </Link>
+      </nav>
     </header>
   );
 }
@@ -34,11 +39,9 @@ export function PublicFooter({
         <Link href="/disclosures" className="underline underline-offset-2 hover:text-text">
           Risk disclosure and privacy
         </Link>
-        {results && (
-          <Link href="/results" className="underline underline-offset-2 hover:text-text">
-            Historical record
-          </Link>
-        )}
+        <Link href={results ? '/about#performance' : '/about'} className="underline underline-offset-2 hover:text-text">
+          {results ? 'About us and performance' : 'About us'}
+        </Link>
         {supportContact && <span>Contact: {supportContact}</span>}
         {legalEntityName && <span>{legalEntityName}</span>}
       </div>

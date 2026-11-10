@@ -103,6 +103,19 @@ export function Field({ label, error, hint, required, className, children }: Fie
   );
 }
 
+/** A label and hint for a control that labels itself, such as Segmented, which carries its own legend. */
+export function Labeled({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[13px] font-medium text-muted" aria-hidden>
+        {label}
+      </span>
+      {children}
+      {hint && <p className="text-xs leading-relaxed text-subtle">{hint}</p>}
+    </div>
+  );
+}
+
 interface SegmentedOption<T extends string> {
   value: T;
   label: ReactNode;

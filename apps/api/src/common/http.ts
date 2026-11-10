@@ -133,11 +133,14 @@ export const Summary =
 export const IS_PUBLIC = 'sd:public';
 export const ROLES = 'sd:roles';
 export const REQUIRES_SIGNAL_ACCESS = 'sd:signal-access';
+export const MASTER_ONLY = 'sd:master-only';
 export const ALLOW_INCOMPLETE = 'sd:allow-incomplete';
 
 /** Routes are private unless marked public: forgetting a decorator fails closed. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 export const AdminOnly = () => SetMetadata(ROLES, ['ADMIN']);
+/** The Master Admin only: registering and managing administrators, platform rules, clearing trades. */
+export const MasterOnly = () => SetMetadata(MASTER_ONLY, true);
 /** Requires an active subscription (or an admin) at the moment of the request. */
 export const RequireSignalAccess = () => SetMetadata(REQUIRES_SIGNAL_ACCESS, true);
 /** Reachable while a password change or MFA step is still outstanding. */
@@ -153,6 +156,9 @@ export interface AuthUser {
   mfaEnabledAt: Date | null;
   lastReadSeq: bigint;
   onboardedAt: Date | null;
+  isMasterAdmin: boolean;
+  /** Subscribers only. Null follows the platform default. */
+  screenshotsAllowed: boolean | null;
 }
 
 export interface AuthContext {

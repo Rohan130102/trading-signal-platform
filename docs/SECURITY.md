@@ -62,13 +62,17 @@ the audit log), which also signs the old account out of that phone. Administrato
 
 ## Screen capture
 
-Subscriber screens are protected; administrator screens are not.
+The Master Admin decides whether subscribers may capture signal screens: a platform default (blocked unless changed) and,
+optionally, a choice for one subscriber. The app reads the rule from `/auth/me` (`security.screenshotsAllowed`), blocks
+capture until it knows, and applies a change straight away. When capture is blocked, subscriber screens are protected as
+below; administrator screens never are. These are the strongest controls each platform supports, and the limits are
+unavoidable:
 
 | Platform | What happens                                                                                                                                                                                                                                                                                                                                                 |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Android  | The window is marked secure (`FLAG_SECURE`). Screenshots, recordings and the recent-apps preview are blank. Enforced by Android.                                                                                                                                                                                                                             |
 | iPhone   | Apple has no supported API to block screenshots. Expo's module hides content from captures on recent iOS using the secure-text layer, which Apple does not document for this, so it is best effort. The app-switcher preview is blurred, and a screenshot is noticed after the fact and logged. No watermark is drawn over the content (the owner's choice). |
-| Web      | No protection is claimed. Disabling right-click is not protection.                                                                                                                                                                                                                                                                                           |
+| Web      | No protection is claimed, and the setting has no effect: a browser cannot stop screenshots, screen recording or another camera. Disabling right-click is not protection.                                                                                                                                                                                     |
 
 A logged screenshot records only the fact, the screen and the time, capped at 30 an hour per subscriber. A
 development bundle can switch capture back on for automated visual checks (`EXPO_PUBLIC_E2E_ALLOW_CAPTURE=1`); it is
@@ -93,3 +97,13 @@ confirmation.
 ## Reporting
 
 Set a contact for security reports before launch. None is configured.
+
+## Demonstration data reset
+
+`npm run data:reset-demo` clears trades, events, exits, executions and announcements, and what hangs off them, so the
+service can start fresh. It is a dry run unless given `--confirm "RESET <database>"`; it refuses in production (unless
+`--allow-production`) and while public results are being published. In one transaction it copies every cleared table
+into a snapshot schema `demo_reset_<timestamp>` in the same database, lifts the append-only triggers for the deletion
+only, puts them back, verifies the event chain and writes a `DEMO_DATA_RESET` audit entry. Accounts, subscriptions,
+instruments, templates, settings, devices, approvals and the audit log are kept; trade references and event numbers
+carry on, so nothing new can be confused with something cleared. Drop the snapshot schema when it is no longer needed.

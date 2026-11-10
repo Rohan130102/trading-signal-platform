@@ -63,6 +63,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       isOffline: () => navigator.onLine === false,
       onState: setState,
       onAccessChanged: () => afterAccessChanged(client),
+      // A trade was removed from subscriber screens or a rule changed: everything shown is read again.
+      onRefresh: () => void client.invalidateQueries(),
       onEvent: (event) => {
         client.setQueriesData<InfiniteData<FeedPage>>({ queryKey: ['feed'] }, (data) => mergeIntoFeed(data, event));
         setUnread((n) => n + 1);

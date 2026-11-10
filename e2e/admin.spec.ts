@@ -53,6 +53,11 @@ test('complete administrator journey', async ({ page, browser }) => {
     await expect(preview.getByText('Stop-loss', { exact: true })).toBeVisible();
     await expect(preview.getByText((entry - 180).toLocaleString('en-US', { minimumFractionDigits: 2 }))).toBeVisible();
     await expect(preview.getByText((entry + 150).toLocaleString('en-US', { minimumFractionDigits: 2 }))).toBeVisible();
+    // New signals wait for entry by default; this journey asks for one that is active straight away.
+    await expect(page.getByRole('radio', { name: /Awaiting entry \(default\)/ })).toBeChecked();
+    await expect(page.getByLabel('Entry window')).toBeVisible();
+    await page.getByRole('radio', { name: /Active now/ }).check({ force: true });
+    await expect(page.getByLabel('Entry window')).toHaveCount(0);
     await page.getByRole('button', { name: /Review and publish/ }).click();
     await expect(page.getByRole('heading', { name: 'Publish this signal?' })).toBeVisible();
     await page.getByRole('button', { name: 'Publish now' }).click();
@@ -64,7 +69,7 @@ test('complete administrator journey', async ({ page, browser }) => {
     await page.getByRole('link', { name: 'Open trade' }).click();
   });
 
-  await test.step('a published signal is active at once, with no separate activation step', async () => {
+  await test.step('a signal published as active needs no separate activation step', async () => {
     await expect(page.getByRole('main').getByText('Active', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Activate trade' })).toHaveCount(0);
   });
@@ -449,6 +454,19 @@ test('public performance stays closed, and the settings page says why', async ({
   await expect(page.getByRole('heading', { name: 'Public performance section' })).toBeVisible();
   await expect(page.getByText('Closed', { exact: true })).toBeVisible();
   await expect(page.getByText(/A disclaimer alone does not make/)).toBeVisible();
-  const res = await page.goto('/results');
-  expect(res?.status()).toBe(404);
+  // The About page is public; without the compliance gate it shows no figure at all.
+  await page.goto('/results');
+  await expect(page).toHaveURL(/\/about#performance$/);
+  await expect(page.getByText('Results are not published yet')).toBeVisible();
+  await expect(page.getByText('Win rate')).toHaveCount(0);
+});
+
+test('the Master Admin sets platform rules and registers administrators', async ({ page }) => {
+  await page.goto('/admin/settings');
+  await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
+  await expect(page.getByRole('radio', { name: 'Awaiting entry' })).toBeChecked();
+  await expect(page.getByLabel('Entry window')).toHaveValue('240');
+  await page.goto('/admin/admins');
+  await expect(page.getByRole('heading', { name: 'Administrators' })).toBeVisible();
+  await expect(page.getByText('Master Admin').first()).toBeVisible();
 });

@@ -678,7 +678,7 @@ describe('small subscriber settings', () => {
   });
 });
 
-describe('publishing activates at once', () => {
+describe('publishing can activate at once', () => {
   it('makes a published signal active in the same request, with one alert and no fill', async () => {
     const { app } = await appSubscriber();
     const token = expoToken();
@@ -720,11 +720,16 @@ describe('publishing activates at once', () => {
     expect(fills.rows[0].n).toBe(0);
   });
 
-  it('is what happens when the field is left out', async () => {
+  it('left out, follows the platform start mode: awaiting entry, with the default entry window', async () => {
     const { activateOnPublish: _flag, ...body } = await signalBody();
+    const before = Date.now();
     const res = await admin().post('/admin/signals', body);
     expect(res.status).toBe(201);
-    expect(res.body.trade.status).toBe('ACTIVE');
+    expect(res.body.trade.status).toBe('PUBLISHED');
+    const expires = new Date(res.body.trade.entryExpiresAt).getTime();
+    // The default window is four hours.
+    expect(expires - before).toBeGreaterThan(239 * 60_000);
+    expect(expires - before).toBeLessThan(241 * 60_000);
   });
 
   it('activates once, even when the same request arrives twice at the same moment', async () => {
@@ -743,7 +748,7 @@ describe('publishing activates at once', () => {
     ]);
   });
 
-  it('can still be told to wait for entry, the older flow', async () => {
+  it('can be told to wait for entry explicitly', async () => {
     const trade = await publish({ activateOnPublish: false });
     expect(trade.status).toBe('PUBLISHED');
     expect(trade.allowedActions).toContain('ACTIVATE');

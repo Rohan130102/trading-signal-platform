@@ -6,6 +6,7 @@ import {
   loginSchema,
   mfaCodeSchema,
   type MeResponse,
+  screenshotsAllowedFor,
   subscriptionState,
   tokenLoginSchema,
   type TokenLoginResponse,
@@ -114,6 +115,14 @@ export class AuthController {
         serviceName: settings.serviceName,
       },
       onboardedAt: auth.user.onboardedAt?.toISOString() ?? null,
+      isMasterAdmin: auth.user.isMasterAdmin,
+      security: {
+        // Administrators work on their own desk screens; the rule is for subscribers.
+        screenshotsAllowed:
+          auth.user.role === 'ADMIN'
+            ? true
+            : screenshotsAllowedFor(auth.user.screenshotsAllowed, settings.screenshotsAllowedDefault),
+      },
     };
   }
 

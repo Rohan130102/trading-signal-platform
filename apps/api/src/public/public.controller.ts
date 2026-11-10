@@ -28,6 +28,8 @@ export class PublicController {
       privacyNotice: s.privacyNotice,
       supportContact: s.supportContact,
       publicResultsAvailable: gate.enabled,
+      aboutBody: s.aboutBody,
+      dataResetAt: s.dataResetAt?.toISOString() ?? null,
     };
   }
 
@@ -40,6 +42,7 @@ export class PublicController {
     const settings = await this.settings.get();
     return {
       ...results,
+      dataResetAt: settings.dataResetAt?.toISOString() ?? null,
       disclosures: {
         riskDisclosure: settings.riskDisclosure,
         regulatoryStatement: settings.regulatoryStatement,

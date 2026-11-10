@@ -1,9 +1,11 @@
 import { useRouter } from 'expo-router';
+import { useSession } from '@/lib/session';
 import { space } from '@/theme/tokens';
 import { Card, Divider, ListRow, PageTitle, Screen, SectionTitle, T } from '@/ui';
 
 export default function More() {
   const router = useRouter();
+  const master = useSession().me?.isMasterAdmin === true;
   return (
     <Screen testID="more">
       <PageTitle title="More" />
@@ -61,6 +63,28 @@ export default function More() {
           onPress={() => router.push('/admin/health')}
         />
       </Card>
+      <SectionTitle>{master ? 'Master Admin' : 'Platform'}</SectionTitle>
+      <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+        <ListRow
+          testID="more-settings"
+          icon="options-outline"
+          title="Platform settings"
+          subtitle={master ? 'Signal start, entry window, history, screenshots' : 'See the rules in force'}
+          onPress={() => router.push('/admin/settings')}
+        />
+        {master && (
+          <>
+            <Divider />
+            <ListRow
+              testID="more-admins"
+              icon="shield-checkmark-outline"
+              title="Administrators"
+              subtitle="Register, suspend, reset, Master Admin"
+              onPress={() => router.push('/admin/admins')}
+            />
+          </>
+        )}
+      </Card>
       <SectionTitle>You</SectionTitle>
       <Card padded={false} style={{ paddingHorizontal: space.lg }}>
         <ListRow
@@ -73,7 +97,7 @@ export default function More() {
       <SectionTitle>On the web</SectionTitle>
       <Card>
         <T v="small" c="muted">
-          Message templates, service settings, compliance approvals and the audit log are managed in the web admin. They
+          Message templates, service texts, compliance approvals and the audit log are managed in the web admin. They
           are set rarely and are easier to check on a large screen.
         </T>
       </Card>

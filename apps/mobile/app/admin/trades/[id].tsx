@@ -11,13 +11,15 @@ import {
   signedPoints,
   TERMINAL_STATUSES,
 } from '@signaldesk/domain';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { DispatchStatus } from '@/admin/parts';
+import { RemoveTradeSheet } from '@/admin/RemoveTrade';
 import { ActionSheet, type ActionKind } from '@/admin/TradeActions';
 import { api, ApiError } from '@/lib/api';
+import { useSession } from '@/lib/session';
 import { DirectionBadge, Levels, StatusBadge, Timeline } from '@/trade';
 import { useColors } from '@/theme';
 import { radius, space } from '@/theme/tokens';
@@ -29,11 +31,14 @@ import {
   Divider,
   ErrorState,
   type IconName,
+  errorMessage,
   Loading,
+  Notice,
   Screen,
   SectionTitle,
   Stat,
   T,
+  useToast,
 } from '@/ui';
 
 const ACTIONS: { kind: ActionKind; label: string; icon: IconName; tone?: 'primary' | 'danger' }[] = [
@@ -99,6 +104,18 @@ export default function AdminTrade() {
         : 15_000,
   });
   const [action, setAction] = useState<ActionKind | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const master = useSession().me?.isMasterAdmin === true;
+  const client = useQueryClient();
+  const toast = useToast();
+  const restore = useMutation({
+    mutationFn: () => api.post('/admin/trade-removals/restore', { tradeIds: [id] }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['admin'] });
+      toast({ tone: 'success', title: 'Back on subscriber screens' });
+    },
+    onError: (error) => toast({ tone: 'error', title: 'Not restored', body: errorMessage(error) }),
+  });
   const t = trade.data;
   const available = useMemo(() => (t?.allowedActions ?? []) as ActionKind[], [t?.allowedActions]);
   const refresh = useCallback(() => trade.refetch(), [trade]);
@@ -131,6 +148,22 @@ export default function AdminTrade() {
           <T v="small" c="muted" num>
             Published {formatDateTime(t.publishedAt)} · Version {t.version}
           </T>
+          {t.removal && (
+            <View style={{ gap: space.sm }} testID="removed-banner">
+              <Notice tone="stop" icon="eye-off-outline" title="Removed from subscriber screens">
+                {`By ${t.removal.removedBy}, ${formatDateTime(t.removal.removedAt)}: “${t.removal.reason}”. Still counted in performance figures. Nothing can change until it is put back.`}
+              </Notice>
+              {master && (
+                <Button
+                  testID="restore-trade"
+                  label="Put back on screens"
+                  icon="eye-outline"
+                  loading={restore.isPending}
+                  onPress={() => restore.mutate()}
+                />
+              )}
+            </View>
+          )}
           <Card style={{ gap: space.md }}>
             <Levels
               big
@@ -243,6 +276,15 @@ export default function AdminTrade() {
               }}
             />
           </Card>
+          {master && finished && !t.removal && (
+            <Button
+              testID="remove-trade-open"
+              label="Remove from subscriber screens"
+              icon="eye-off-outline"
+              variant="danger"
+              onPress={() => setRemoving(true)}
+            />
+          )}
           <Button
             testID="publish-similar"
             label={`New signal on ${t.symbol}`}
@@ -250,6 +292,7 @@ export default function AdminTrade() {
             onPress={() => router.push({ pathname: '/compose', params: { symbol: t.symbol, direction: t.direction } })}
           />
           {action && <ActionSheet key={action} trade={t} kind={action} onClose={() => setAction(null)} />}
+          {removing && <RemoveTradeSheet trade={t} onClose={() => setRemoving(false)} />}
         </>
       )}
     </Screen>

@@ -11,15 +11,18 @@ import {
   formatPoints,
   formatPrice,
   isDecimalLiteral,
+  type PlatformSettings,
   previewExit,
   remainingFraction,
+  toDec,
   trailStopPrice,
   type InstrumentSpec,
+  type TrailingStopWording,
 } from '@signaldesk/domain';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Button, Dialog, Field, FormError, Input, Select, Textarea } from '@/components/ui';
+import { Button, Dialog, Field, FormError, Input, Segmented, Select, Textarea } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
 import { money, signedPoints } from '@/lib/format';
 
@@ -403,38 +406,83 @@ function BreakevenForm({ trade, run, pending, error }: FormProps) {
 }
 
 function TrailForm({ trade, run, pending, error }: FormProps) {
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<PlatformSettings>('/admin/settings'),
+  });
+  const [by, setBy] = useState<'DISTANCE' | 'PRICE'>('DISTANCE');
   const [reference, setReference] = useState('');
   const [points, setPoints] = useState('');
+  const [price, setPrice] = useState('');
+  const [chosen, setChosen] = useState<TrailingStopWording | null>(null);
   const [comment, setComment] = useState('');
   const spec = specOf(trade);
-  const computed = useMemo(
-    () => trailStopPrice(spec, trade.direction, reference, points),
-    [points, reference, spec, trade.direction],
-  );
+  const wording: TrailingStopWording =
+    by === 'PRICE' ? 'GENERAL' : (chosen ?? settings.data?.trailingStopWording ?? 'GENERAL');
+  const computed = useMemo(() => {
+    if (by === 'PRICE') return isDecimalLiteral(price.trim()) ? toDec(price.trim()) : null;
+    return trailStopPrice(spec, trade.direction, reference, points);
+  }, [by, points, price, reference, spec, trade.direction]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    run({ referencePrice: reference.trim(), trailPoints: points.trim(), comment: optional(comment) });
+    run(
+      by === 'PRICE'
+        ? { price: price.trim(), comment: optional(comment) }
+        : { referencePrice: reference.trim(), trailPoints: points.trim(), wording, comment: optional(comment) },
+    );
   };
+  const next = computed ? formatPrice(trade, computed) : null;
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <p className="text-sm text-muted">
         This platform has no market data. It records the instruction at the price you give, and does not move the stop
         by itself afterwards.
       </p>
-      <div className="grid grid-cols-2 gap-3">
-        <PriceInput label="Current market price" value={reference} onChange={setReference} autoFocus />
-        <PriceInput
-          label="Trail distance (points)"
-          value={points}
-          onChange={setPoints}
-          hint={`1 pt = ${trade.pointSize} ${trade.quoteCurrency}`}
-        />
-      </div>
-      {computed && (
-        <p className="text-sm">
-          New stop-loss: <span className="num font-semibold text-stop">{formatPrice(trade, computed)}</span>{' '}
-          <span className="text-muted">(was {formatPrice(trade, trade.stopLoss)})</span>
-        </p>
+      <Segmented<'DISTANCE' | 'PRICE'>
+        label="Trail by"
+        value={by}
+        onChange={setBy}
+        options={[
+          { value: 'DISTANCE', label: 'Distance from price' },
+          { value: 'PRICE', label: 'New stop-loss' },
+        ]}
+      />
+      {by === 'DISTANCE' ? (
+        <div className="grid grid-cols-2 gap-3">
+          <PriceInput label="Current market price" value={reference} onChange={setReference} autoFocus />
+          <PriceInput
+            label="Trail distance (points)"
+            value={points}
+            onChange={setPoints}
+            hint={`1 pt = ${trade.pointSize} ${trade.quoteCurrency}`}
+          />
+        </div>
+      ) : (
+        <PriceInput label="New stop-loss" value={price} onChange={setPrice} autoFocus />
+      )}
+      {by === 'DISTANCE' && (
+        <Field label="Alert wording">
+          {(c) => (
+            <Select {...c} value={wording} onChange={(e) => setChosen(e.target.value as TrailingStopWording)}>
+              <option value="GENERAL">General: the new stop-loss only</option>
+              <option value="DETAILED">Detailed: also the distance in points</option>
+            </Select>
+          )}
+        </Field>
+      )}
+      {next && (
+        <div className="rounded-lg bg-bg p-3 text-sm">
+          <p>
+            New stop-loss: <span className="num font-semibold text-stop">{next}</span>{' '}
+            <span className="text-muted">(was {formatPrice(trade, trade.stopLoss)})</span>
+          </p>
+          <p className="mt-1 text-[13px] text-muted">
+            Subscribers read:{' '}
+            {wording === 'GENERAL'
+              ? `“Trail the stop-loss on trade ${trade.ref} to ${next}.”`
+              : `“Stop-loss on trade ${trade.ref} trailed from ${formatPrice(trade, trade.stopLoss)} to ${next} (${formatPoints(points.trim() || '0')} pts from ${formatPrice(trade, reference.trim() || '0')}).”`}
+          </p>
+        </div>
       )}
       <CommentField value={comment} onChange={setComment} />
       <Actions pending={pending} error={error} label="Trail and notify" disabled={!computed} />

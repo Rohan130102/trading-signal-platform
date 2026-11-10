@@ -127,6 +127,10 @@ model User {
   lastLoginAt           DateTime?  @map("last_login_at") @db.Timestamptz(3)
   lastReadSeq           BigInt     @default(0) @map("last_read_seq")
   onboardedAt           DateTime?  @map("onboarded_at") @db.Timestamptz(3)
+  /// Registers and manages administrators and changes platform rules. Always an administrator.
+  isMasterAdmin         Boolean    @default(false) @map("is_master_admin")
+  /// Subscribers only. Null follows the platform default.
+  screenshotsAllowed    Boolean?   @map("screenshots_allowed")
   notes                 String?
   createdById           String?    @map("created_by_id") @db.Uuid
   createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -150,6 +154,7 @@ model User {
   deviceBindings    DeviceBinding[]             @relation("DeviceBindingUser")
   devicesReleased   DeviceBinding[]             @relation("DeviceBindingReleasedBy")
   tradesArchived    TradeArchive[]
+  tradesRemoved     TradeRemoval[]
   announcementsMade AnnouncementRecord[]        @relation("AnnouncementCreatedBy")
   announcementsEdit AnnouncementRecord[]        @relation("AnnouncementUpdatedBy")
 
@@ -320,6 +325,7 @@ model Trade {
   closures   TradeClosure[]
   executions TradeExecutionRecord[]
   archive    TradeArchive?
+  removal    TradeRemoval?
 
   @@index([status, publishedAt(sort: Desc)])
   @@index([instrumentId, publishedAt(sort: Desc)])
@@ -520,18 +526,29 @@ model AuditLog {
 }
 
 model AppSettings {
-  id                      Int      @id @default(1)
-  serviceName             String   @default("SignalDesk") @map("service_name")
-  businessTimezone        String   @default("Asia/Kolkata") @map("business_timezone")
-  supportContact          String   @default("") @map("support_contact")
-  renewalInstructions     String   @default("") @map("renewal_instructions")
-  legalEntityName         String   @default("") @map("legal_entity_name")
-  regulatoryStatement     String   @default("") @map("regulatory_statement")
-  riskDisclosure          String   @default("") @map("risk_disclosure")
-  privacyNotice           String   @default("") @map("privacy_notice")
-  serviceDescription      String   @default("") @map("service_description")
-  entryExpiryHoursDefault Int      @default(0) @map("entry_expiry_hours_default")
-  updatedAt               DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                        Int       @id @default(1)
+  serviceName               String    @default("SignalDesk") @map("service_name")
+  businessTimezone          String    @default("Asia/Kolkata") @map("business_timezone")
+  supportContact            String    @default("") @map("support_contact")
+  renewalInstructions       String    @default("") @map("renewal_instructions")
+  legalEntityName           String    @default("") @map("legal_entity_name")
+  regulatoryStatement       String    @default("") @map("regulatory_statement")
+  riskDisclosure            String    @default("") @map("risk_disclosure")
+  privacyNotice             String    @default("") @map("privacy_notice")
+  serviceDescription        String    @default("") @map("service_description")
+  /// AWAITING_ENTRY: a new signal waits until it is activated or its entry window ends. ACTIVE: active at once.
+  signalStartMode           String    @default("AWAITING_ENTRY") @map("signal_start_mode")
+  /// How long a new signal may wait for entry before it is cancelled automatically. 0 means no limit.
+  entryExpiryMinutesDefault Int       @default(240) @map("entry_expiry_minutes_default")
+  /// GENERAL: "trail the stop-loss to X". DETAILED: also states the distance in points.
+  trailingStopWording       String    @default("GENERAL") @map("trailing_stop_wording")
+  screenshotsAllowedDefault Boolean   @default(false) @map("screenshots_allowed_default")
+  /// MEMBERSHIP: a subscriber's lists start when their membership did. ALL: every published trade.
+  historyScope              String    @default("MEMBERSHIP") @map("history_scope")
+  aboutBody                 String    @default("") @map("about_body")
+  /// When demonstration data was last cleared. Shown beside public results.
+  dataResetAt               DateTime? @map("data_reset_at") @db.Timestamptz(3)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("app_settings")
 }
@@ -601,6 +618,20 @@ model TradeArchive {
   archivedBy User  @relation(fields: [archivedById], references: [id], onDelete: Restrict)
 
   @@map("trade_archives")
+}
+
+/// A finished trade the Master Admin took off every subscriber screen. Administrators still see it, and
+/// performance figures still count it.
+model TradeRemoval {
+  tradeId     String   @id @map("trade_id") @db.Uuid
+  removedAt   DateTime @default(now()) @map("removed_at") @db.Timestamptz(3)
+  removedById String   @map("removed_by_id") @db.Uuid
+  reason      String
+
+  trade     Trade @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  removedBy User  @relation(fields: [removedById], references: [id], onDelete: Restrict)
+
+  @@map("trade_removals")
 }
 
 /// Something one subscriber hid from their own lists. Nobody else is affected.

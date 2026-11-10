@@ -118,13 +118,14 @@ describe('public performance gate', () => {
 describe('settings', () => {
   it('rejects an unknown timezone and audits changes', async () => {
     const current = (await admin().get('/admin/settings')).body;
-    const { id: _id, updatedAt: _u, ...fields } = current;
+    const { id: _id, updatedAt: _u, dataResetAt: _r, ...fields } = current;
     const bad = await admin().req('PUT', '/admin/settings', { ...fields, businessTimezone: 'Mars/Olympus' });
     expect(bad.status).toBe(422);
     const ok = await admin().req('PUT', '/admin/settings', { ...fields, supportContact: 'support@example.test' });
     expect(ok.status).toBe(200);
     const log = await admin().get('/admin/audit?action=SETTINGS_UPDATED');
     expect(log.body.entries[0].metadata.changed).toContain('supportContact');
+    expect(log.body.entries[0].metadata.rules).toEqual({});
     const info = await new Client().get('/public/info');
     expect(info.body.supportContact).toBe('support@example.test');
   });

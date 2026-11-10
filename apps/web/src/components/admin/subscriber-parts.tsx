@@ -22,9 +22,17 @@ export function AccessBadge({ row }: { row: Pick<SubscriberRow, 'status' | 'subs
   return <Badge>None</Badge>;
 }
 
-export function CredentialsCard({ loginId, password }: { loginId: string; password: string }) {
+export function CredentialsCard({
+  loginId,
+  password,
+  validFor = '3 days',
+}: {
+  loginId: string;
+  password: string;
+  validFor?: string;
+}) {
   const [copied, setCopied] = useState(false);
-  const message = `Your login ID: ${loginId}\nYour temporary password: ${password}\nIt works for 3 days and you will be asked to change it when you first sign in.`;
+  const message = `Your login ID: ${loginId}\nYour temporary password: ${password}\nIt works for ${validFor} and you will be asked to change it when you first sign in.`;
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-update/40 bg-update-soft p-3 text-sm text-update" role="status">

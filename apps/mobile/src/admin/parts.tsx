@@ -94,10 +94,18 @@ export function AccessBadge({ row }: { row: Pick<SubscriberRow, 'status' | 'subs
 }
 
 /** A temporary password appears once. Sharing it should be one tap, with no retyping. */
-export function CredentialsCard({ loginId, password }: { loginId: string; password: string }) {
+export function CredentialsCard({
+  loginId,
+  password,
+  validFor = '3 days',
+}: {
+  loginId: string;
+  password: string;
+  validFor?: string;
+}) {
   const c = useColors();
   const [copied, setCopied] = useState(false);
-  const message = `Your login ID: ${loginId}\nYour temporary password: ${password}\nIt works for 3 days and you will be asked to change it when you first sign in.`;
+  const message = `Your login ID: ${loginId}\nYour temporary password: ${password}\nIt works for ${validFor} and you will be asked to change it when you first sign in.`;
   return (
     <View style={{ gap: space.md }} testID="credentials">
       <Notice tone="update">Shown only this once. It is not stored in readable form, so send it now.</Notice>
