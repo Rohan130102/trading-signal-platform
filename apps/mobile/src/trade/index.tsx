@@ -209,7 +209,7 @@ function Arrow() {
 }
 
 /** Shows a change as before → after, which is what makes an update readable at a glance. */
-function ChangeLine({ event }: { event: FeedEvent }) {
+export function ChangeLine({ event }: { event: FeedEvent }) {
   const c = useColors();
   const p = event.payload;
   const fmt = (v: string) => formatPrice({ pricePrecision: p.pricePrecision ?? 2 }, v);

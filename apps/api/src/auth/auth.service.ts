@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
-import { evaluateSignalAccess, type AccessDecision } from '@signaldesk/domain';
+import { APP_UPDATE_REQUIRED_MESSAGE, evaluateSignalAccess, type AccessDecision } from '@signaldesk/domain';
 import argon2 from 'argon2';
 import { generateSecret, generateURI, verify } from 'otplib';
 import QRCode from 'qrcode';
@@ -10,6 +10,7 @@ import { env } from '../config/env.js';
 import { CH_ACCESS } from '../db/listener.service.js';
 import { PrismaService, type Tx } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { DevicesService } from '../devices/devices.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { RateLimitService } from './rate-limit.service.js';
 
@@ -47,6 +48,7 @@ export class AuthService {
     private readonly limits: RateLimitService,
     private readonly audit: AuditService,
     private readonly settings: SettingsService,
+    private readonly devices: DevicesService,
   ) {}
 
   hashPassword(password: string): Promise<string> {
@@ -77,6 +79,7 @@ export class AuthService {
       mustChangePassword: user.mustChangePassword,
       mfaEnabledAt: user.mfaEnabledAt,
       lastReadSeq: user.lastReadSeq,
+      onboardedAt: user.onboardedAt,
     };
     const subscription = user.subscription
       ? { startsAt: user.subscription.startsAt, expiresAt: user.subscription.expiresAt }
@@ -88,6 +91,7 @@ export class AuthService {
     else if (!mfaVerified) next = 'MFA_VERIFY';
     return {
       sessionId: row.id,
+      installationId: row.installationId,
       user: authUser,
       subscription,
       access: evaluateSignalAccess(user, subscription, now),
@@ -127,7 +131,17 @@ export class AuthService {
     return out;
   }
 
-  async login(identifier: string, password: string, ip: string, device: string | undefined) {
+  /**
+   * `installation` is present only for the native app. A subscriber must send one: it binds this
+   * installation to their account, and a second account is refused on it (see DevicesService).
+   */
+  async login(
+    identifier: string,
+    password: string,
+    ip: string,
+    device: string | undefined,
+    installation?: { installationId?: string; platform?: string },
+  ) {
     const loginId = identifier.trim().toLowerCase();
     const idKey = `login:id:${fingerprint(loginId)}`;
     const ipKey = `login:ip:${fingerprint(ip)}`;
@@ -155,6 +169,17 @@ export class AuthService {
     }
 
     await this.limits.clear(idKey);
+    if (installation) {
+      if (!installation.installationId) {
+        if (user.role === 'SUBSCRIBER') throw new AppError(426, 'APP_UPDATE_REQUIRED', APP_UPDATE_REQUIRED_MESSAGE);
+      } else {
+        await this.devices.claim(user, {
+          installationId: installation.installationId,
+          platform: installation.platform,
+          deviceLabel: device,
+        });
+      }
+    }
     const token = newSessionToken();
     const ttl = user.role === 'ADMIN' ? env.ADMIN_SESSION_TTL_HOURS * 3_600_000 : env.SESSION_TTL_DAYS * 86_400_000;
     await this.prisma.$transaction(async (tx) => {
@@ -164,6 +189,7 @@ export class AuthService {
           tokenHash: hashToken(token),
           expiresAt: new Date(Date.now() + ttl),
           deviceLabel: device?.slice(0, 120),
+          installationId: installation?.installationId ?? null,
         },
       });
       await tx.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });

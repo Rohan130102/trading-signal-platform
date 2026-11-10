@@ -17,6 +17,22 @@ export interface PushMessage {
   tag: string;
   urgent: boolean;
   androidChannel: string;
+  /** iPhone only. See pushPresentation in the domain package. */
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive';
+  /** iPhone app icon count: this person's unread alerts. Android shows its own. */
+  badge?: number;
+  /** iPhone groups notifications with the same thread, here one per trade. Nothing is replaced. */
+  threadId?: string;
+  /** What the app needs to order and de-duplicate alerts, and to open the right place. */
+  data?: {
+    tradeId: string | null;
+    seq: number;
+    tradeVersion: number | null;
+    category: string;
+    priority: string;
+    /** BUY or SELL for a new signal, so the app colours its banner the same way as the card. */
+    direction: string | null;
+  };
 }
 
 export type PushResult =
@@ -176,7 +192,10 @@ export class PushTransport {
             priority: message.urgent ? 'high' : 'normal',
             channelId: message.androidChannel,
             ttl: PUSH_TTL_SECONDS,
-            data: { path: message.path, eventId: message.tag },
+            ...(message.interruptionLevel ? { interruptionLevel: message.interruptionLevel } : {}),
+            ...(message.badge !== undefined ? { badge: message.badge } : {}),
+            ...(message.threadId ? { threadId: message.threadId } : {}),
+            data: { path: message.path, eventId: message.tag, ...(message.data ?? {}) },
           })),
         ),
       });

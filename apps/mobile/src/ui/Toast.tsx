@@ -13,6 +13,8 @@ interface Toast {
   body?: string;
   tone: 'success' | 'error' | 'info' | 'warning' | 'buy' | 'sell';
   onPress?: () => void;
+  /** One extra choice, such as Undo. It closes the banner. */
+  action?: { label: string; onPress: () => void };
   duration: number;
 }
 
@@ -100,6 +102,21 @@ function ToastView({ toast, onDone }: { toast: Toast; onDone: () => void }) {
             </T>
           )}
         </View>
+        {toast.action && (
+          <Pressable
+            testID="toast-action"
+            accessibilityRole="button"
+            accessibilityLabel={toast.action.label}
+            onPress={() => {
+              toast.action?.onPress();
+              onDone();
+            }}
+            hitSlop={6}
+            style={({ pressed }) => [styles.action, { borderColor: c.lineStrong, opacity: pressed ? 0.7 : 1 }]}
+          >
+            <T v="strong">{toast.action.label}</T>
+          </Pressable>
+        )}
       </Pressable>
     </Animated.View>
   );
@@ -125,4 +142,13 @@ const styles = StyleSheet.create({
   },
   accent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 3 },
   text: { flex: 1, minWidth: 0 },
+  action: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: space.md,
+    borderRadius: radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

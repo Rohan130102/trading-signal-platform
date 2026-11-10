@@ -37,7 +37,7 @@ export function gateRedirect(state: SessionPhase, segments: readonly string[]): 
     return '/dashboard';
   }
   if (!me.access.allowed) return first === 'access-ended' ? null : '/access-ended';
-  if (first === '(subscriber)' || first === 'trades') return null;
+  if (first === '(subscriber)' || first === 'trades' || first === 'onboarding') return null;
   return '/feed';
 }
 

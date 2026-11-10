@@ -172,9 +172,12 @@ const makeSubscriber = async (name, loginId, durationDays = 30) => {
   return { id: made.subscriber.id, loginId, temporaryPassword: made.temporaryPassword };
 };
 const subscriber = await makeSubscriber('Asha Rao', 'asha');
+// Its own installation, as a second phone would be, so the emulator stays free for the journeys.
 const { token: subToken } = await call(null, 'POST', '/auth/token', {
   identifier: 'asha',
   password: subscriber.temporaryPassword,
+  installationId: 'e2e-stack-setup-installation-0001',
+  platform: 'android',
 });
 await call(subToken, 'POST', '/auth/change-password', {
   currentPassword: subscriber.temporaryPassword,

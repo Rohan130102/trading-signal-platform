@@ -9,6 +9,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  Megaphone,
   Menu,
   Plus,
   ScrollText,
@@ -28,6 +29,7 @@ import { signOut } from '@/lib/session';
 const PRIMARY = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/admin/trades', label: 'Trades', icon: Activity },
+  { href: '/admin/announcements', label: 'Announcements', icon: Megaphone },
   { href: '/admin/subscribers', label: 'Subscribers', icon: Users },
   { href: '/admin/performance', label: 'Performance', icon: BarChart3 },
 ];

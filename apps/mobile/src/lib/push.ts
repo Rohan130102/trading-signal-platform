@@ -30,8 +30,15 @@ function notifications(): NotificationsModule | null {
 
 const OPTED_OUT = 'push-opted-out';
 
+/**
+ * The Expo project that issues this app's push tokens, or nothing when this build cannot receive pushes.
+ * On Android that also needs Firebase compiled in (`google-services.json`): without it a token request
+ * fails, so such a build says it is not set up instead of failing when someone taps Turn on.
+ */
 function projectId(): string | undefined {
-  return (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+  const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string }; androidPush?: boolean } | undefined;
+  if (Platform.OS === 'android' && !extra?.androidPush) return undefined;
+  return extra?.eas?.projectId;
 }
 
 export async function setUpAndroidChannels(): Promise<void> {
@@ -123,38 +130,93 @@ export function openSystemSettings(): void {
   void Linking.openSettings();
 }
 
-/** While a live connection is delivering, the feed already shows the event, so skip the system banner. */
-let liveConnected = false;
-export function setLiveConnected(value: boolean): void {
-  liveConnected = value;
+/** What a notification carries for the app, as the server sends it. Every field is checked before use. */
+export interface PushArrival {
+  eventId: string;
+  title: string;
+  body: string;
+  path: string | null;
+  tradeId: string | null;
+  seq: number | null;
+  category: string | null;
+  priority: 'NORMAL' | 'PRIORITY';
+  direction: 'BUY' | 'SELL' | null;
 }
 
-/** Runs once at startup. A tap on a notification may be what launched the app. */
-export function listenForNotifications(open: (path: string) => void): () => void {
+function readArrival(content: {
+  title?: string | null;
+  body?: string | null;
+  data?: Record<string, unknown> | null;
+}): PushArrival | null {
+  const data = content.data ?? {};
+  const eventId = typeof data.eventId === 'string' ? data.eventId : null;
+  if (!eventId) return null;
+  return {
+    eventId,
+    title: content.title ?? '',
+    body: content.body ?? '',
+    path: isSafeDeepLink(data.path) ? data.path : null,
+    tradeId: typeof data.tradeId === 'string' ? data.tradeId : null,
+    seq: typeof data.seq === 'number' ? data.seq : null,
+    category: typeof data.category === 'string' ? data.category : null,
+    priority: data.priority === 'PRIORITY' ? 'PRIORITY' : 'NORMAL',
+    direction: data.direction === 'BUY' || data.direction === 'SELL' ? data.direction : null,
+  };
+}
+
+/** Matches the app icon to the unread count. Does nothing where badges are unavailable. */
+export function setAppBadge(count: number): void {
+  const N = notifications();
+  if (!N) return;
+  void N.setBadgeCountAsync(Math.max(0, Math.min(99, count))).catch(() => undefined);
+}
+
+/**
+ * Runs once at startup. A tap on a notification may be what launched the app, before anything else has
+ * loaded: the path is held until the person is signed in (see the root layout), and the trade is always
+ * fetched fresh on arrival, so an old notification can never show old levels as current.
+ *
+ * While the app is open, the system banner is not shown: the app shows its own, once, whether the
+ * event came over the live connection or as a push (see RealtimeProvider).
+ */
+export function listenForNotifications(
+  open: (path: string) => void,
+  onForeground: (arrival: PushArrival) => void,
+): () => void {
   const N = notifications();
   if (!N) return () => undefined;
   N.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowBanner: !liveConnected,
+      shouldShowBanner: false,
       shouldShowList: true,
-      shouldPlaySound: !liveConnected,
+      shouldPlaySound: false,
       shouldSetBadge: false,
     }),
   });
   void setUpAndroidChannels().catch(() => undefined);
-  const route = (data: Record<string, unknown> | undefined) => {
-    const path = data?.path;
+  const tappedOnce = new Set<string>();
+  const handleTap = (response: { notification: { request: { content: Parameters<typeof readArrival>[0] } } }) => {
+    const arrival = readArrival(response.notification.request.content);
+    const path = arrival?.path ?? response.notification.request.content.data?.path;
     if (isSafeDeepLink(path)) open(path);
+    if (arrival && !tappedOnce.has(arrival.eventId)) {
+      tappedOnce.add(arrival.eventId);
+      // The one delivery signal a phone can give. Fails quietly if the session is not ready yet.
+      void api.post('/push/opened', { eventId: arrival.eventId }).catch(() => undefined);
+    }
   };
   void N.getLastNotificationResponseAsync().then((response) => {
-    if (response) route(response.notification.request.content.data);
+    if (response) handleTap(response);
   });
-  const tapped = N.addNotificationResponseReceivedListener((response) => {
-    route(response.notification.request.content.data);
+  const tapped = N.addNotificationResponseReceivedListener(handleTap);
+  const received = N.addNotificationReceivedListener((notification) => {
+    const arrival = readArrival(notification.request.content);
+    if (arrival) onForeground(arrival);
   });
   const rotated = N.addPushTokenListener(() => void syncPushToken().catch(() => undefined));
   return () => {
     tapped.remove();
+    received.remove();
     rotated.remove();
   };
 }

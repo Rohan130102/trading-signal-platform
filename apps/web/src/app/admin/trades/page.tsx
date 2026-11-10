@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  canArchiveTrade,
   STATUS_LABELS,
   TRADE_STATUSES,
   type TradeAggregate,
@@ -8,12 +9,14 @@ import {
   type TradeSummary,
   formatPrice,
 } from '@signaldesk/domain';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { Activity, Plus, Search } from 'lucide-react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, Archive, Plus, Search } from 'lucide-react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { useState } from 'react';
 import { DirectionBadge, StatusBadge } from '@/components/trade';
 import {
+  Badge,
   Button,
   buttonClass,
   Card,
@@ -30,7 +33,7 @@ import { api, queryString } from '@/lib/api';
 import { formatDateTime, signedPoints } from '@/lib/format';
 
 interface Result {
-  trades: (TradeSummary & { aggregate: TradeAggregate | null })[];
+  trades: (TradeSummary & { aggregate: TradeAggregate | null; archivedAt: string | null })[];
   total: number;
   page: number;
   pageSize: number;
@@ -41,19 +44,60 @@ export default function AdminTradesPage() {
   const [status, setStatus] = useState<TradeStatus | 'LIVE' | ''>('LIVE');
   const [symbol, setSymbol] = useState('');
   const [page, setPage] = useState(1);
+  const [archived, setArchived] = useState<'ANY' | 'ARCHIVED' | 'NOT_ARCHIVED'>('ANY');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const client = useQueryClient();
   const instruments = useQuery({
     queryKey: ['admin', 'instruments'],
     queryFn: () => api.get<{ instruments: { id: string; symbol: string }[] }>('/admin/instruments'),
   });
   const trades = useQuery({
-    queryKey: ['admin', 'trades', q, status, symbol, page],
+    queryKey: ['admin', 'trades', q, status, symbol, page, archived],
     queryFn: () =>
       api.get<Result>(
-        `/admin/trades${queryString({ q, symbol, page, pageSize: 25, live: status === 'LIVE' ? 'true' : undefined, status: status === 'LIVE' ? undefined : status })}`,
+        `/admin/trades${queryString({ q, symbol, page, pageSize: 25, archived, live: status === 'LIVE' ? 'true' : undefined, status: status === 'LIVE' ? undefined : status })}`,
       ),
     placeholderData: keepPreviousData,
   });
   const filtered = Boolean(q || symbol || status !== '');
+  const done = (message: string) => {
+    toast.success(message);
+    setSelected(new Set());
+    void client.invalidateQueries({ queryKey: ['admin', 'trades'] });
+  };
+  const archive = useMutation({
+    mutationFn: (ids: string[]) =>
+      api.post<{ archived: number }>('/admin/trade-archive', { tradeIds: ids, expectedCount: ids.length }),
+    onSuccess: (r) => done(`${r.archived} archived. They stay in History.`),
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const restore = useMutation({
+    mutationFn: (ids: string[]) => api.post<{ restored: number }>('/admin/trade-archive/restore', { tradeIds: ids }),
+    onSuccess: (r) => done(`${r.restored} back in the Signals list`),
+    onError: (error: Error) => toast.error(error.message),
+  });
+  const archiveOlder = async (days: number) => {
+    const d = new Date(Date.now() - days * 86_400_000);
+    const before = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    try {
+      const { count } = await api.get<{ count: number }>(`/admin/trade-archive/preview?before=${before}`);
+      if (count === 0) return toast.info(`Nothing finished before ${before} to archive`);
+      if (
+        !window.confirm(
+          `Archive ${count} finished trades that closed before ${before}? They leave the Signals list and stay in History. You can restore them.`,
+        )
+      )
+        return;
+      const r = await api.post<{ archived: number }>('/admin/trade-archive/before', { before, expectedCount: count });
+      done(`${r.archived} archived`);
+    } catch (error) {
+      toast.error((error as Error).message);
+    }
+  };
+  const rows = trades.data?.trades ?? [];
+  const chosen = rows.filter((t) => selected.has(t.id));
+  const allArchived = chosen.length > 0 && chosen.every((t) => t.archivedAt);
+  const allArchivable = chosen.length > 0 && chosen.every((t) => !t.archivedAt && canArchiveTrade(t.status));
   return (
     <>
       <PageHeader
@@ -64,7 +108,7 @@ export default function AdminTradesPage() {
           </Link>
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr]">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[2fr_1fr_1fr_1fr]">
         <Field label="Search" className="col-span-2 sm:col-span-1">
           {(c) => (
             <div className="relative">
@@ -123,7 +167,67 @@ export default function AdminTradesPage() {
             </Select>
           )}
         </Field>
+        <Field label="Archive">
+          {(c) => (
+            <Select
+              {...c}
+              value={archived}
+              onChange={(e) => {
+                setArchived(e.target.value as typeof archived);
+                setPage(1);
+                setSelected(new Set());
+              }}
+            >
+              <option value="ANY">Archived or not</option>
+              <option value="NOT_ARCHIVED">Not archived</option>
+              <option value="ARCHIVED">Archived</option>
+            </Select>
+          )}
+        </Field>
       </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <Archive className="size-4 text-muted" aria-hidden />
+        <span className="text-muted">Archive finished trades older than</span>
+        {[30, 90, 365].map((days) => (
+          <Button key={days} size="sm" onClick={() => void archiveOlder(days)}>
+            {days === 365 ? '1 year' : `${days} days`}
+          </Button>
+        ))}
+        <span className="text-xs text-subtle">Published trades are never deleted; archived ones stay in History.</span>
+      </div>
+      {chosen.length > 0 && (
+        <div
+          className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2"
+          role="region"
+          aria-label="Selected trades"
+        >
+          <span className="text-sm font-semibold">{chosen.length} selected</span>
+          {allArchivable && (
+            <Button
+              size="sm"
+              variant="primary"
+              loading={archive.isPending}
+              onClick={() =>
+                window.confirm(`Archive ${chosen.length} finished trade${chosen.length === 1 ? '' : 's'}?`) &&
+                archive.mutate(chosen.map((t) => t.id))
+              }
+            >
+              Archive
+            </Button>
+          )}
+          {allArchived && (
+            <Button size="sm" loading={restore.isPending} onClick={() => restore.mutate(chosen.map((t) => t.id))}>
+              Restore
+            </Button>
+          )}
+          {!allArchivable && !allArchived && (
+            <span className="text-sm text-muted">Only finished trades can be archived.</span>
+          )}
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
       {trades.isPending && <Loading rows={5} label="Loading trades" />}
       {trades.isError && <ErrorState error={trades.error} onRetry={() => void trades.refetch()} />}
       {trades.isSuccess && trades.data.trades.length === 0 && (
@@ -152,6 +256,9 @@ export default function AdminTradesPage() {
               <caption className="sr-only">Trades</caption>
               <thead className="text-xs text-muted">
                 <tr>
+                  <th scope="col" className="w-10 px-4 py-2.5">
+                    <span className="sr-only">Select</span>
+                  </th>
                   {['Trade', 'Direction', 'State', 'Entry', 'Stop-loss', 'Result', 'Published'].map((h) => (
                     <th key={h} scope="col" className="px-4 py-2.5 font-medium">
                       {h}
@@ -162,6 +269,22 @@ export default function AdminTradesPage() {
               <tbody>
                 {trades.data.trades.map((t) => (
                   <tr key={t.id} className="border-t border-line transition-colors hover:bg-neutral-soft">
+                    <td className="px-4 py-2.5">
+                      <input
+                        type="checkbox"
+                        className="size-5"
+                        aria-label={`Select ${t.ref}`}
+                        checked={selected.has(t.id)}
+                        onChange={(e) =>
+                          setSelected((s) => {
+                            const next = new Set(s);
+                            if (e.target.checked) next.add(t.id);
+                            else next.delete(t.id);
+                            return next;
+                          })
+                        }
+                      />
+                    </td>
                     <td className="px-4 py-2.5">
                       <Link
                         href={`/admin/trades/${t.id}`}
@@ -175,7 +298,7 @@ export default function AdminTradesPage() {
                       <DirectionBadge direction={t.direction} />
                     </td>
                     <td className="px-4 py-2.5">
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={t.status} /> {t.archivedAt && <Badge>Archived</Badge>}
                     </td>
                     <td className="num px-4 py-2.5">
                       {t.entryType === 'RANGE'

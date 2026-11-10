@@ -744,7 +744,7 @@ const styles = StyleSheet.create({
     paddingVertical: space.sm,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  close: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  close: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   body: { padding: space.lg, gap: space.md, paddingBottom: space.xl },
   directions: { flexDirection: 'row', gap: space.md },
   direction: {

@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { api, ApiError, setApiToken, setSessionEndedHandler } from './api';
+import { installationId } from './installation';
 import { unregisterThisDevice } from './push';
 import type { SessionPhase } from './routing';
 import { secure } from './storage';
@@ -109,6 +110,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       identifier,
       password,
       deviceLabel: deviceLabel(),
+      // Binds this phone to one subscriber on the server. Kept across sign-outs and reinstalls.
+      installationId: await installationId(),
+      platform: Platform.OS === 'ios' ? 'ios' : 'android',
     });
     typedPassword.current = password;
     setApiToken(session.token);

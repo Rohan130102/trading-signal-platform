@@ -57,19 +57,16 @@ test('complete administrator journey', async ({ page, browser }) => {
     await expect(page.getByRole('heading', { name: 'Publish this signal?' })).toBeVisible();
     await page.getByRole('button', { name: 'Publish now' }).click();
     await expect(page.getByRole('heading', { name: /Published as/ })).toBeVisible();
-    await expect(page.getByText(/awaiting entry until you activate/)).toBeVisible();
+    await expect(page.getByText(/active straight away/)).toBeVisible();
     await expect(
       page.getByText('Handed to push services').or(page.getByText('Sending push')).or(page.getByText('Push queued')),
     ).toBeVisible();
     await page.getByRole('link', { name: 'Open trade' }).click();
   });
 
-  await test.step('a published signal is not active until activated', async () => {
-    await expect(page.getByText('Awaiting entry').first()).toBeVisible();
-    await page.getByRole('button', { name: 'Activate trade' }).click();
-    await page.getByRole('button', { name: 'Activate and notify' }).click();
-    await expect(page.getByText('Published to subscribers')).toBeVisible();
+  await test.step('a published signal is active at once, with no separate activation step', async () => {
     await expect(page.getByRole('main').getByText('Active', { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Activate trade' })).toHaveCount(0);
   });
 
   await test.step('move the stop-loss: the original is retained in the timeline', async () => {

@@ -2,22 +2,43 @@
 
 The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The tables below were
 executed on 5 November 2026 on the web platform. The unit, integration and web end-to-end suites were run again on 6 November after
-the mobile work, on one Apple Silicon Mac with 8 GB of memory, Node 22.23.
+the mobile work, and the unit, integration and native app suites again on 8 November after the mobile experience work (grouped
+signals, announcements, device binding, screen protection), on one Apple Silicon Mac with 8 GB of memory, Node 22.23. The web
+end-to-end suite needs ports 3000 and 4000, which a running demo held, so on 8 November it ran in CI only.
 
 ## Results
 
-| Gate                                                            | Result                                                 |
-| --------------------------------------------------------------- | ------------------------------------------------------ |
-| Clean install from lockfile (`npm ci`) and build                | Pass                                                   |
-| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                   |
-| ESLint, zero warnings allowed                                   | Pass                                                   |
-| Prettier                                                        | Pass                                                   |
-| Unit tests                                                      | **154 of 154**                                         |
-| Integration tests                                               | **186 of 186**                                         |
-| End-to-end tests                                                | **77 of 77**                                           |
-| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                  |
-| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship |
-| Tests skipped or weakened to pass                               | None                                                   |
+| Gate                                                            | Result                                                                                               |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Clean install from lockfile (`npm ci`) and build                | Pass                                                                                                 |
+| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                 |
+| ESLint, zero warnings allowed                                   | Pass                                                                                                 |
+| Prettier                                                        | Pass                                                                                                 |
+| Unit tests                                                      | **168 of 168** (154 before, 14 added)                                                                |
+| Integration tests                                               | **219 of 219** (186 before, 33 added)                                                                |
+| Native app unit and component tests (Jest)                      | **85 of 85** (61 before, 24 added)                                                                   |
+| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                 |
+| Native app journeys, Android emulator in Expo Go                | **28 of 28**, including 7 new ones (see below); the live-signal journey checks the new-signal banner |
+| End-to-end tests                                                | **77 of 77**                                                                                         |
+| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                                                                |
+| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship                                               |
+| Tests skipped or weakened to pass                               | None                                                                                                 |
+
+### Native app journeys, 8 November
+
+All 28 journeys in `apps/mobile/e2e/run.mjs` passed on an Android emulator through the throwaway stack, after fixes the
+first runs found (below). New journeys: the first-use tour (and that it does not come back), hiding with Undo and restoring
+from History while alerts continue, instrument and status filters, Alerts and News, one account per phone (refused, released
+by an administrator, then allowed), the administrator's instruments, announcements and history screens, and screen protection.
+The touch-target audit now requires 44 points at six screen sizes.
+
+Screen protection ran with Metro started without the QA switch: a screenshot of a subscriber screen came back empty and the
+window carried `FLAG_SECURE`, while an administrator screen captured normally. This is Android only; no iOS build ran.
+
+Defects found by these runs and fixed: the tour did not appear for a second person signing in on the same phone without a
+restart (it was remembered per app session, now per person); the tour could be replaced by the password screen's own
+navigation; selectable announcement text was reported as a tiny control; the administrator's New signal button was 40
+points tall.
 
 ## How to run
 
@@ -123,7 +144,9 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 | Gap                                                             | Why                                                                                            | What to do                                                                                                        |
 | --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Real push services and real phones                              | Headless browsers cannot subscribe to FCM, Apple or Mozilla, and native push needs credentials | On staging with HTTPS, test Android Chrome and an iPhone installed to the Home Screen, and the native app on both |
-| Tapping a notification opens the trade                          | The handler exists, with no automated test                                                     | Check by hand in the same session                                                                                 |
+| Tapping a notification opens the trade                          | The handler and its open report have unit tests, not a real notification                       | Check by hand in the same session                                                                                 |
+| Closed-app delivery on a real phone                             | Needs an Expo project, Firebase and an Apple account. Expo is replaced by a local stand-in     | Test every state in the notification matrix on a real Android phone and iPhone before launch                      |
+| iPhone screen protection                                        | No iOS build or device here. Android's secure window is checked on the emulator                | Check screenshots, recording and the app switcher on a real iPhone                                                |
 | Real iOS and Android devices                                    | Emulation only                                                                                 | As above                                                                                                          |
 | Firefox                                                         | Browser not included                                                                           | Add to Playwright                                                                                                 |
 | Docker, Compose, Caddy, CI workflow, backup and restore scripts | No Docker daemon or `pg_dump` here. Syntax checked only                                        | First staging deployment, and rehearse a restore                                                                  |

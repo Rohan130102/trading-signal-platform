@@ -61,7 +61,9 @@ DRAFT ──publish──▶ PUBLISHED ──activate──▶ ACTIVE ──part
              CANCELLED  EXPIRED           CLOSED ◀────────────────────┘
 ```
 
-Publication is never a fill: only an explicit `ACTIVATE` moves a signal to `ACTIVE`. Terminal states
+Only an `ACTIVATE` action moves a signal to `ACTIVE`. By the desk's rule, publishing applies it in the same transaction, so a
+new signal is active at once; the activation is still its own event (internal, so subscribers get one alert), and it is never a
+fill: no execution record is created. `activateOnPublish: false` keeps the older wait-for-entry flow. Terminal states
 have no way out. A closed trade's levels cannot change, but an exit can be corrected: a new closure
 supersedes the old one, which is kept and flagged. See `packages/domain/src/status.ts` for the table of
 which action is allowed from which state.

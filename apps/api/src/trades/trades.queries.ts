@@ -5,8 +5,12 @@ import {
   aggregateClosures,
   allowedActions,
   type DispatchSummary,
+  type Direction,
   type FeedPage,
+  type HistoryResponse,
   LIVE_STATUSES,
+  statusesForGroup,
+  type StatusGroup,
   localDateToInstant,
   endOfLocalDateExclusive,
   type TradeDetail,
@@ -26,7 +30,12 @@ const WITH_LAST = {
 export interface HistoryFilter {
   q?: string;
   symbol?: string;
+  symbols?: string[];
+  direction?: Direction;
   status?: TradeStatus;
+  group?: StatusGroup;
+  visibility?: 'ALL' | 'HIDDEN';
+  archived?: 'ANY' | 'ARCHIVED' | 'NOT_ARCHIVED';
   from?: string;
   to?: string;
   page: number;
@@ -63,7 +72,9 @@ export class TradesQueries {
       this.prisma.signalEvent.aggregate({ where: { broadcast: true }, _max: { seq: true } }),
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
     ]);
-    const unread = await this.prisma.signalEvent.count({ where: { broadcast: true, seq: { gt: user.lastReadSeq } } });
+    const unread = await this.prisma.signalEvent.count({
+      where: { broadcast: true, seq: { gt: user.lastReadSeq }, reads: { none: { userId } } },
+    });
     return {
       events: page.map((r) => toFeedEvent(r, r.trade?.status ?? null)),
       headSeq: Number(head._max.seq ?? 0),
@@ -80,7 +91,9 @@ export class TradesQueries {
     await this.prisma
       .$executeRaw`UPDATE users SET last_read_seq = GREATEST(last_read_seq, ${bounded}) WHERE id = ${userId}::uuid`;
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } });
-    return this.prisma.signalEvent.count({ where: { broadcast: true, seq: { gt: user.lastReadSeq } } });
+    return this.prisma.signalEvent.count({
+      where: { broadcast: true, seq: { gt: user.lastReadSeq }, reads: { none: { userId } } },
+    });
   }
 
   async activeTrades(): Promise<TradeSummary[]> {
@@ -92,12 +105,24 @@ export class TradesQueries {
     return rows.map(toTradeSummary);
   }
 
-  private async historyWhere(filter: HistoryFilter): Promise<Prisma.TradeWhereInput> {
+  private async historyWhere(filter: HistoryFilter, hiddenIds?: string[]): Promise<Prisma.TradeWhereInput> {
     const tz = await this.settings.timezone();
     const q = filter.q?.trim();
+    const symbols = [...new Set([...(filter.symbols ?? []), ...(filter.symbol ? [filter.symbol] : [])])];
+    const grouped = filter.group ? statusesForGroup(filter.group) : null;
     return {
-      status: filter.status ?? { not: 'DRAFT' },
-      ...(filter.symbol ? { instrument: { symbol: filter.symbol } } : {}),
+      AND: [
+        { status: filter.status ?? (grouped ? { in: grouped as TradeStatus[] } : { not: 'DRAFT' }) },
+        { status: { not: 'DRAFT' } },
+      ],
+      ...(symbols.length > 0 ? { instrument: { symbol: { in: symbols } } } : {}),
+      ...(filter.direction ? { direction: filter.direction } : {}),
+      ...(filter.visibility === 'HIDDEN' ? { id: { in: hiddenIds ?? [] } } : {}),
+      ...(filter.archived === 'ARCHIVED'
+        ? { archive: { isNot: null } }
+        : filter.archived === 'NOT_ARCHIVED'
+          ? { archive: { is: null } }
+          : {}),
       ...(q
         ? {
             OR: [
@@ -118,15 +143,20 @@ export class TradesQueries {
     };
   }
 
-  async history(filter: HistoryFilter) {
-    const where = await this.historyWhere(filter);
+  /** Every published trade, with whether this subscriber hid it and whether an administrator archived it. */
+  async history(filter: HistoryFilter, userId?: string): Promise<HistoryResponse> {
+    const hiddenRows = userId
+      ? await this.prisma.userHiddenItem.findMany({ where: { userId, itemType: 'TRADE' }, select: { itemId: true } })
+      : [];
+    const hidden = new Set(hiddenRows.map((r) => r.itemId));
+    const where = await this.historyWhere(filter, [...hidden]);
     const [rows, total] = await Promise.all([
       this.prisma.trade.findMany({
         where,
         orderBy: { publishedAt: 'desc' },
         skip: (filter.page - 1) * filter.pageSize,
         take: filter.pageSize,
-        include: { ...WITH_LAST, closures: true },
+        include: { ...WITH_LAST, closures: true, archive: { select: { tradeId: true } } },
       }),
       this.prisma.trade.count({ where }),
     ]);
@@ -134,6 +164,8 @@ export class TradesQueries {
       trades: rows.map((r) => ({
         ...toTradeSummary(r),
         outcome: toPublicOutcome(r.closures, r.status === 'CLOSED'),
+        hidden: hidden.has(r.id),
+        archived: r.archive !== null,
       })),
       total,
       page: filter.page,
@@ -141,20 +173,25 @@ export class TradesQueries {
     };
   }
 
-  async subscriberDetail(id: string): Promise<TradeDetail> {
+  async subscriberDetail(id: string, userId?: string): Promise<TradeDetail> {
     const row = await this.prisma.trade.findFirst({
       where: { id, status: { not: 'DRAFT' } },
-      include: { ...WITH_LAST, closures: true },
+      include: { ...WITH_LAST, closures: true, archive: { select: { tradeId: true } } },
     });
     if (!row) throw notFound('Trade not found');
     const events = await this.prisma.signalEvent.findMany({
       where: { tradeId: id, broadcast: true },
       orderBy: { seq: 'asc' },
     });
+    const hidden = userId
+      ? (await this.prisma.userHiddenItem.count({ where: { userId, itemType: 'TRADE', itemId: id } })) > 0
+      : false;
     return {
       ...toTradeSummary(row),
       events: events.map((e) => toFeedEvent(e, row.status)),
       outcome: toPublicOutcome(row.closures, row.status === 'CLOSED'),
+      hidden,
+      archived: row.archive !== null,
     };
   }
 
@@ -168,7 +205,7 @@ export class TradesQueries {
         orderBy: { publishedAt: 'desc' },
         skip: (filter.page - 1) * filter.pageSize,
         take: filter.pageSize,
-        include: { ...WITH_LAST, closures: true },
+        include: { ...WITH_LAST, closures: true, archive: { select: { archivedAt: true } } },
       }),
       this.prisma.trade.count({ where }),
     ]);
@@ -177,6 +214,7 @@ export class TradesQueries {
         const closures = r.closures.filter((c) => c.supersededByEventId === null);
         return {
           ...toTradeSummary(r),
+          archivedAt: r.archive?.archivedAt.toISOString() ?? null,
           aggregate:
             closures.length > 0 ? aggregateClosures(closures.map(toClosureRecord), r.status === 'CLOSED') : null,
         };

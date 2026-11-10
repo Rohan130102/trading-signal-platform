@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { CALCULATION_BASES } from './pnl.js';
 import { DIRECTIONS, ENTRY_TYPES, MAX_TARGETS } from './signal.js';
 import { CLOSE_REASONS, PRIORITIES, TRADE_STATUSES, EVENT_TYPES } from './status.js';
+import { installationIdSchema } from './devices.js';
+import { STATUS_GROUPS, symbolList } from './signals-feed.js';
 import { MAX_SUBSCRIPTION_DAYS } from './subscription.js';
 import { TEMPLATE_KINDS, TEMPLATE_TONES } from './templates.js';
 
@@ -40,6 +42,9 @@ export const tokenLoginSchema = z.strictObject({
   identifier: z.string().trim().min(1, 'Enter your login ID').max(200),
   password: z.string().min(1, 'Enter your password').max(200),
   deviceLabel: z.string().trim().max(120).optional(),
+  /** Required for subscribers: binds this installation to one account. See devices.ts. */
+  installationId: installationIdSchema.optional(),
+  platform: z.enum(['ios', 'android']).optional(),
 });
 export const changePasswordSchema = z.strictObject({
   currentPassword: z.string().min(1).max(200),
@@ -72,6 +77,8 @@ export const instrumentSchema = z.strictObject({
   unitLabel: z.string().trim().min(1).max(16),
   active: z.boolean().default(true),
   sortOrder: z.number().int().min(0).max(100000).default(100),
+  /** Where it trades, for display only. */
+  exchange: z.string().trim().max(40).nullable().default(null),
 });
 export type InstrumentInput = z.infer<typeof instrumentSchema>;
 
@@ -100,6 +107,12 @@ export const publishSignalSchema = signalFieldsSchema.extend({
   draftVersion: expectedVersionSchema.optional(),
   /** Set after the administrator has seen and accepted a duplicate-signal warning. */
   confirmDuplicate: z.boolean().default(false),
+  /**
+   * The desk's rule: a published signal is active at once. The activation is recorded in the same
+   * transaction as the publication, as its own (internal) event, and is still not a fill. False keeps
+   * the older flow, where a signal waits for entry until an administrator activates it.
+   */
+  activateOnPublish: z.boolean().default(true),
 });
 
 /** Drafts may be incomplete: only publication requires the full signal. */
@@ -236,6 +249,7 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
 ]);
 export type TradeCommand = z.infer<typeof tradeCommandSchema>;
 
+/** The original one-field announcement form. Still accepted, so an older admin app keeps working. */
 export const announcementSchema = z.strictObject({
   title: shortText(120).optional(),
   message: z.string().trim().min(1, 'Write the update').max(2000),
@@ -328,7 +342,15 @@ export const markReadSchema = z.strictObject({ seq: z.number().int().min(0) });
 export const historyQuery = z.object({
   q: z.string().trim().max(60).optional(),
   symbol: z.string().trim().max(24).optional(),
+  /** Several instruments, comma-separated. Combined with `symbol` if both are sent. */
+  symbols: symbolList,
+  direction: z.enum(DIRECTIONS).optional(),
   status: z.enum(TRADE_STATUSES).optional(),
+  group: z.enum(STATUS_GROUPS).default('ALL'),
+  /** HIDDEN: only what this subscriber hid from their Signals list. */
+  visibility: z.enum(['ALL', 'HIDDEN']).default('ALL'),
+  /** Administrators only: ARCHIVED lists what was moved out of the Signals list. */
+  archived: z.enum(['ANY', 'ARCHIVED', 'NOT_ARCHIVED']).default('ANY'),
   from: localDate.optional(),
   to: localDate.optional(),
   page: z.coerce.number().int().min(1).default(1),

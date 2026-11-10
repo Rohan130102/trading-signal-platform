@@ -40,14 +40,33 @@ Expo Go is enough for everything except notifications, which need a real build. 
 
 ## Screens
 
-| Who           | Screens                                                                                                                                                 |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Anyone        | Sign in, first password, two-step setup and verification, recovery codes, risk disclosure and privacy                                                   |
-| Subscriber    | Feed, active trades, history, trade detail, account and notifications, access-ended                                                                     |
-| Administrator | Desk, compose, trades, trade detail with every action, subscribers, subscriber detail, performance, notification health, announcements, drafts, account |
+| Who           | Screens                                                                                                                                                                                                     |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Anyone        | Sign in, first password, two-step setup and verification, recovery codes, risk disclosure and privacy                                                                                                       |
+| Subscriber    | Signals (trades grouped with their updates), Alerts, News, History, trade detail, Account, first-use tour, access-ended                                                                                     |
+| Administrator | Desk, compose, trades, trade detail with every action, subscribers (with registered phones), performance, notification health, announcements and composer, instruments, history management, drafts, account |
 
-Managed on the web only, because they are set rarely and are easier to check on a large screen: instruments, message templates,
-service settings, compliance approvals and the audit log. The exit-time override when closing a trade is also web only: on a phone
+Managed on the web only, because they are set rarely and are easier to check on a large screen: message templates,
+service settings, compliance approvals and the audit log.
+
+### Signals, filters and hiding
+
+- **Signals** shows one card per trade, newest activity first. The levels on the card are the trade's current ones, the
+  latest update is shown prominently, and up to three earlier ones fold away. A new update moves its trade to the top; it
+  never becomes a separate card.
+- **Instruments** opens a searchable, multi-select list; **Filters** holds status and direction, with a count of what is
+  on. Each active filter shows as a chip that removes itself. Choices are saved on the phone and applied by the server.
+- **Hide** (the ⋯ on a card) affects only this subscriber, with Undo. Hidden trades stay in History, where they can be
+  shown again, and their alerts still arrive.
+- **Alerts** lists every notification with read state. Opening the tab clears the badge after a moment; opening a trade
+  marks its alerts read. **News** shows announcements, pinned first.
+
+### First use, haptics and controls
+
+A five-step tour follows the first sign-in: reading a signal, updates, alerts (with the permission prompt only if the
+person chooses), filters and hiding. It can be skipped and replayed from Account, and finishing it is stored on the server.
+Haptics confirm actions and alerts and can be switched off in Account. Every control is at least 44 points, and the
+emulator journeys check this at six sizes. The exit-time override when closing a trade is also web only: on a phone
 an exit is recorded as now.
 
 ## How it connects
@@ -84,10 +103,30 @@ flowchart LR
   alone and cannot hold back everyone else's alert.
 - A device Expo reports as `DeviceNotRegistered`, at send or later in a receipt, is removed. Rate limits and server errors retry
   with backoff. Other rejections fail permanently and show in notification health.
-- Tapping a notification opens the trade. Only known paths are accepted from notification data.
+- Tapping a notification opens the trade, fetched fresh, so an old notification can never show old levels as current. Only
+  known paths are accepted from notification data. A tap that launched the app is held until the person is signed in.
+- **While the app is open** the system banner stays quiet and the app shows its own banner, once per event, whether the
+  event came over the live connection or as a push. A push also triggers catch-up, so lists refresh.
+- Each message carries the trade, its sequence number and version, so the app can order and de-duplicate. iPhone
+  notifications are grouped per trade and carry the subscriber's unread count as the badge.
+- iPhone interruption levels: time-sensitive for actionable events (new signal, stop-loss move, close, cancellation,
+  urgent instruction, priority), active for routine updates and announcements, passive for learning notes. Critical alerts
+  are never used. Time-sensitive delivery needs the capability enabled on the App ID.
+- Opening a notification is reported, which is the only receipt a phone can give. Notification health shows queue,
+  provider-acceptance and open timings at p50, p95 and p99, and raises plain alerts for backlogs and failure rates, which
+  the worker also logs as `notification_backlog`.
 - Android has three channels, so a person can silence routine updates and keep new signals: `signals`, `updates`, `announcements`.
 - Administrators see what the transport did, never who saw it. **A push service accepting a message does not mean it arrived.** The app
   says so to subscribers too, and tells them to check the app before acting.
+
+## One account per phone, and screen protection
+
+See [SECURITY.md](SECURITY.md#one-subscriber-per-phone). In short: a phone is bound to the first subscriber who signs in
+on it, a second account is refused with a message that says to ask the administrator, and the administrator releases it
+from the subscriber's page. Subscriber screens are blank in Android screenshots and recordings; on iPhone protection is
+best effort, with a logged notice. No watermark is drawn over the screens.
+
+For automated screenshots in a development bundle only, start Metro with `EXPO_PUBLIC_E2E_ALLOW_CAPTURE=1`.
 
 ## Builds
 
@@ -136,7 +175,15 @@ This puts your development server on the public internet for as long as it runs.
 | Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Rebuild if the address changes |
 | iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                |
 
-The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. It has no notifications, because it has no Expo project. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
+The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. Until notifications are set up it says "Not set up in this build" under Alerts, and alerts arrive only while the app is open.
+
+To switch notifications on in that APK (all three are needed; nothing secret goes in the repository):
+
+1. Create the Expo project once: `npx eas-cli init` in `apps/mobile`, signed in to your Expo account. Put the project ID it prints in the repository variable `EAS_PROJECT_ID`.
+2. In a Firebase project, add an Android app with the package `com.signaldesk.app.preview`. Store its `google-services.json` as the repository secret `GOOGLE_SERVICES_JSON` (`gh secret set GOOGLE_SERVICES_JSON < google-services.json`). The build writes it to a temporary file and never prints it.
+3. In Firebase, create a service account key (Project settings, Service accounts) and upload it on expo.dev under the project's Credentials, Android, FCM V1 service account key. It stays with Expo: never in the repository, a variable or a chat.
+
+The app checks that the build contains Firebase before it offers to turn alerts on, so a half-configured build says it is not set up rather than failing. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
 
 ## What you need to provide
 

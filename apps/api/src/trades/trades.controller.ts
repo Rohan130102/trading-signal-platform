@@ -1,7 +1,6 @@
 import { Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
 import {
   adminTradesQuery,
-  announcementSchema,
   draftSchema,
   feedQuery,
   historyQuery,
@@ -52,14 +51,15 @@ export class SubscriberTradesController {
 
   @Get('trades/history')
   @Summary('Searchable trade history')
-  history(@ZQuery(historyQuery) query: z.infer<typeof historyQuery>) {
-    return this.queries.history(query);
+  history(@Auth() auth: AuthContext, @ZQuery(historyQuery) query: z.infer<typeof historyQuery>) {
+    // Subscribers never see the archive filter; it is an administrator's tool.
+    return this.queries.history({ ...query, archived: 'ANY' }, auth.user.id);
   }
 
   @Get('trades/:id')
   @Summary('One trade with its full subscriber-visible timeline')
-  detail(@Param('id', ParseUUIDPipe) id: string) {
-    return this.queries.subscriberDetail(id);
+  detail(@Auth() auth: AuthContext, @Param('id', ParseUUIDPipe) id: string) {
+    return this.queries.subscriberDetail(id, auth.user.id);
   }
 }
 
@@ -147,15 +147,5 @@ export class AdminTradesController {
   ) {
     const result = await this.trades.execute(id, body, { id: auth.user.id, requestId });
     return { replayed: result.replayed, trade: await this.queries.adminDetail(id) };
-  }
-
-  @Post('announcements')
-  @Summary('Publish a general update that is not tied to a trade')
-  announce(
-    @Auth() auth: AuthContext,
-    @RequestId() requestId: string,
-    @ZBody(announcementSchema) body: z.infer<typeof announcementSchema>,
-  ) {
-    return this.trades.publishAnnouncement(body, { id: auth.user.id, requestId });
   }
 }
