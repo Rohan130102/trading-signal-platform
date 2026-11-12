@@ -285,7 +285,17 @@ export function PerformanceExplorer({ initial }: { initial: PublicPerformanceRes
             <tbody>
               {rows.slice(0, shown).map((r) => (
                 <tr key={`${r.ref}-${r.publishedAt}`} className="border-t border-line">
-                  <td className="num px-4 py-2">{r.ref}</td>
+                  <td className="num px-4 py-2">
+                    {r.ref}
+                    {r.corrected && (
+                      <span
+                        className="ml-2 rounded bg-bg px-1.5 py-0.5 font-sans text-[11px] font-medium text-muted"
+                        title="Corrected after publication. See Corrected under Definitions."
+                      >
+                        Corrected
+                      </span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 font-medium">{r.symbol}</td>
                   <td className="px-4 py-2">{r.direction === 'SELL' ? 'Sell' : 'Buy'}</td>
                   <td className="px-4 py-2">

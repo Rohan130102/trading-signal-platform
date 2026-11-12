@@ -8,10 +8,12 @@ import {
   CLOSE_REASONS,
   type CloseReason,
   defaultExitBasis,
+  formatDateTime,
   formatPoints,
   formatPrice,
   isDecimalLiteral,
   type PlatformSettings,
+  previewCorrectedExit,
   previewExit,
   remainingFraction,
   toDec,
@@ -775,97 +777,202 @@ function CommentOnlyForm({ run, pending, error, kind }: FormProps & { kind: 'CAN
 }
 
 function CorrectForm({ trade, run, pending, error }: FormProps) {
-  const closed = trade.status === 'CLOSED';
   const currentClosures = trade.closures.filter((c) => !c.superseded);
+  const everActive = trade.activatedAt !== null;
   const [reason, setReason] = useState('');
   const [stop, setStop] = useState('');
   const [low, setLow] = useState('');
   const [high, setHigh] = useState('');
-  const [targets, setTargets] = useState('');
-  const [closureId, setClosureId] = useState(currentClosures[0]?.id ?? '');
+  const [targetPrices, setTargetPrices] = useState<Record<number, string>>({});
+  const [actualEntry, setActualEntry] = useState('');
+  const [activatedAt, setActivatedAt] = useState('');
+  const [closureId, setClosureId] = useState(currentClosures.at(-1)?.id ?? '');
   const [exitPrice, setExitPrice] = useState('');
+  const [exitedAt, setExitedAt] = useState('');
+  const [fees, setFees] = useState('');
+  const [closeReason, setCloseReason] = useState<CloseReason | ''>('');
+  const selected = currentClosures.find((c) => c.id === closureId);
+  const exitTouched = Boolean(exitPrice.trim() || exitedAt || fees.trim() || closeReason);
+  // What each exit's result would become. Only exits this correction changes are listed.
+  const results = currentClosures
+    .map((closure) => {
+      const editing = closure.id === closureId;
+      const next = previewCorrectedExit({
+        trade,
+        closure,
+        actualEntry,
+        exitPrice: editing ? exitPrice : '',
+      });
+      return { closure, next, changed: (editing && exitPrice.trim() !== '') || actualEntry.trim() !== '' };
+    })
+    .filter((r) => r.changed);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const hasExit = exitPrice.trim() !== '';
+    const edits = Object.entries(targetPrices)
+      .filter(([, value]) => value.trim() !== '')
+      .map(([index, value]) => ({ index: Number(index), price: value.trim() }));
     run({
       reason: reason.trim(),
       stopLoss: optional(stop),
       entryLow: optional(low),
       entryHigh: optional(high),
-      targets: targets.trim()
-        ? targets
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : undefined,
-      closureId: hasExit ? closureId : undefined,
-      exitPrice: hasExit ? exitPrice.trim() : undefined,
+      targetPrices: edits.length > 0 ? edits : undefined,
+      actualEntry: optional(actualEntry),
+      activatedAt: activatedAt ? new Date(activatedAt).toISOString() : undefined,
+      closureId: exitTouched ? closureId : undefined,
+      exitPrice: optional(exitPrice),
+      exitedAt: exitedAt ? new Date(exitedAt).toISOString() : undefined,
+      fees: optional(fees),
+      closeReason: closeReason || undefined,
     });
   };
   return (
     <form onSubmit={submit} className="flex flex-col gap-4">
       <p className="text-sm text-muted">
-        Subscribers see what changed, from what, to what, and why. The original record stays visible.
+        Fill in only what is wrong. Subscribers see what changed, from what, to what, and why. The original record stays
+        visible.
       </p>
       <Field label="Why is this being corrected?" required>
         {(c) => <Input {...c} autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />}
       </Field>
-      {!closed && (
-        <div className="grid gap-3 sm:grid-cols-2">
+
+      <CorrectSection title="Published levels">
+        <PriceInput
+          label={trade.entryType === 'RANGE' ? 'Lower entry' : 'Entry'}
+          value={low}
+          onChange={setLow}
+          hint={`Now ${formatPrice(trade, trade.entryLow)}`}
+        />
+        {trade.entryType === 'RANGE' && (
           <PriceInput
-            label={trade.entryType === 'RANGE' ? 'Lower entry' : 'Entry'}
-            value={low}
-            onChange={setLow}
-            hint={`Now ${formatPrice(trade, trade.entryLow)}`}
+            label="Upper entry"
+            value={high}
+            onChange={setHigh}
+            hint={`Now ${formatPrice(trade, trade.entryHigh)}`}
           />
-          {trade.entryType === 'RANGE' && (
-            <PriceInput
-              label="Upper entry"
-              value={high}
-              onChange={setHigh}
-              hint={`Now ${formatPrice(trade, trade.entryHigh)}`}
-            />
-          )}
+        )}
+        <PriceInput
+          label="Stop-loss"
+          value={stop}
+          onChange={setStop}
+          hint={`Now ${formatPrice(trade, trade.stopLoss)}`}
+        />
+        {trade.targets.map((target) => (
           <PriceInput
-            label="Stop-loss"
-            value={stop}
-            onChange={setStop}
-            hint={`Now ${formatPrice(trade, trade.stopLoss)}`}
+            key={target.index}
+            label={`Target ${target.index}${target.status === 'HIT' ? ' (reached)' : ''}`}
+            value={targetPrices[target.index] ?? ''}
+            onChange={(value) => setTargetPrices((prev) => ({ ...prev, [target.index]: value }))}
+            hint={`Now ${formatPrice(trade, target.price)}`}
           />
-          <Field label="Open targets" hint="Comma separated, nearest first.">
+        ))}
+      </CorrectSection>
+
+      {everActive && (
+        <CorrectSection title="Entry">
+          <PriceInput
+            label="Actual entry price"
+            value={actualEntry}
+            onChange={setActualEntry}
+            hint={
+              trade.execution
+                ? `Now ${formatPrice(trade, trade.execution.entryPrice)}`
+                : 'Not recorded. Exits are measured from it once added.'
+            }
+          />
+          <Field label="Activated at" hint={`Now ${formatDateTime(trade.activatedAt as string)}`}>
             {(c) => (
               <Input
                 {...c}
-                className="num"
-                inputMode="decimal"
-                value={targets}
-                placeholder={trade.targets
-                  .filter((t) => t.status === 'OPEN')
-                  .map((t) => t.price)
-                  .join(', ')}
-                onChange={(e) => setTargets(e.target.value)}
+                type="datetime-local"
+                value={activatedAt}
+                onChange={(e) => setActivatedAt(e.target.value)}
               />
             )}
           </Field>
-        </div>
+        </CorrectSection>
       )}
-      {currentClosures.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Exit record">
+
+      {currentClosures.length > 0 && selected && (
+        <CorrectSection title="Exit">
+          {currentClosures.length > 1 && (
+            <Field label="Exit record">
+              {(c) => (
+                <Select {...c} value={closureId} onChange={(e) => setClosureId(e.target.value)}>
+                  {currentClosures.map((closure) => (
+                    <option key={closure.id} value={closure.id}>
+                      {closure.kind === 'FINAL' ? 'Final exit' : 'Partial exit'} at{' '}
+                      {formatPrice(trade, closure.exitPrice)}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          )}
+          <PriceInput
+            label="Exit price"
+            value={exitPrice}
+            onChange={setExitPrice}
+            hint={`Now ${formatPrice(trade, selected.exitPrice)}`}
+          />
+          <Field label="Exit time" hint={`Now ${formatDateTime(selected.exitedAt)}`}>
             {(c) => (
-              <Select {...c} value={closureId} onChange={(e) => setClosureId(e.target.value)}>
-                {currentClosures.map((closure) => (
-                  <option key={closure.id} value={closure.id}>
-                    {closure.kind === 'FINAL' ? 'Final exit' : 'Partial exit'} at{' '}
-                    {formatPrice(trade, closure.exitPrice)}
-                  </option>
-                ))}
-              </Select>
+              <Input {...c} type="datetime-local" value={exitedAt} onChange={(e) => setExitedAt(e.target.value)} />
             )}
           </Field>
-          <PriceInput label="Correct exit price" value={exitPrice} onChange={setExitPrice} />
+          {selected.kind === 'FINAL' && (
+            <Field
+              label="Close reason"
+              hint={`Now ${selected.reason ? CLOSE_REASON_LABELS[selected.reason] : 'not stated'}`}
+            >
+              {(c) => (
+                <Select {...c} value={closeReason} onChange={(e) => setCloseReason(e.target.value as CloseReason | '')}>
+                  <option value="">Keep as it is</option>
+                  {CLOSE_REASONS.map((r) => (
+                    <option key={r} value={r}>
+                      {CLOSE_REASON_LABELS[r]}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          )}
+          {selected.quantity !== null && (
+            <Field label={`Fees (${trade.quoteCurrency})`} hint={`Now ${selected.fees ?? 'none'}`}>
+              {(c) => (
+                <Input
+                  {...c}
+                  className="num"
+                  inputMode="decimal"
+                  value={fees}
+                  onChange={(e) => setFees(e.target.value)}
+                />
+              )}
+            </Field>
+          )}
+        </CorrectSection>
+      )}
+
+      {results.length > 0 && (
+        <div className="rounded-lg bg-bg p-3 text-sm" aria-live="polite">
+          <p className="text-xs font-medium text-muted">Result after this correction</p>
+          {results.map(({ closure, next }) => (
+            <p key={closure.id} className="mt-1">
+              {currentClosures.length > 1 && (
+                <span className="text-muted">
+                  {closure.kind === 'FINAL' ? 'Final' : 'Partial'} exit at {formatPrice(trade, closure.exitPrice)}:{' '}
+                </span>
+              )}
+              <span className="num font-semibold">{next ? signedPoints(next) : 'Not measured'}</span>{' '}
+              <span className="text-muted">(was {closure.points ? signedPoints(closure.points) : 'not measured'})</span>
+            </p>
+          ))}
+          {actualEntry.trim() !== '' && (
+            <p className="mt-1 text-[13px] text-muted">Shown to subscribers as declared by the administrator.</p>
+          )}
         </div>
       )}
+
       <Actions
         pending={pending}
         error={error}
@@ -874,5 +981,14 @@ function CorrectForm({ trade, run, pending, error }: FormProps) {
         note={`Point value on this trade: 1 pt = ${formatPoints(trade.pointSize)} ${trade.quoteCurrency}.`}
       />
     </form>
+  );
+}
+
+function CorrectSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="flex flex-col gap-3">
+      <legend className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">{title}</legend>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </fieldset>
   );
 }

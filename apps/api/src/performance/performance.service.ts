@@ -63,6 +63,11 @@ export const DEFINITIONS = [
     meaning: 'An entry and exit the desk declared. Not independently verified.',
   },
   {
+    term: 'Corrected',
+    meaning:
+      'The record was changed after publication. Every correction was announced to subscribers and is kept in the trade’s history with what changed, from what, to what, and why. An entry declared after the trade closed is shown as declared execution.',
+  },
+  {
     term: 'Expired, no entry',
     meaning: 'A signal whose entry window ended before it became active. It was cancelled automatically.',
   },
@@ -105,7 +110,12 @@ export class PerformanceService {
     // Removed trades are loaded like any other: every figure counts them.
     const rows = await this.prisma.trade.findMany({
       where,
-      include: { closures: { orderBy: { createdAt: 'asc' } }, removal: { select: { tradeId: true } } },
+      include: {
+        closures: { orderBy: { createdAt: 'asc' } },
+        removal: { select: { tradeId: true } },
+        // Any correction at all, to levels, times or exits, is disclosed next to the record.
+        _count: { select: { events: { where: { type: 'CORRECTION' } } } },
+      },
       orderBy: { publishedAt: 'asc' },
       take: MAX_TRADES + 1,
     });
@@ -172,7 +182,7 @@ export class PerformanceService {
       .map(({ row, aggregate }) => ({
         ...toTradeSummary(row),
         aggregate,
-        corrected: row.closures.some((c) => c.supersededByEventId !== null),
+        corrected: row._count.events > 0,
         closures: row.closures.map(toAdminClosure),
       }));
 
@@ -246,6 +256,7 @@ export class PerformanceService {
           basis: aggregate?.basis ?? null,
           weightedPoints: aggregate?.weightedPoints ?? null,
           outcome: aggregate?.outcome ?? null,
+          corrected: row._count.events > 0,
         };
       });
     return {

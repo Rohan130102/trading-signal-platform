@@ -52,8 +52,9 @@ describe('state machine', () => {
   it('every action names at least one source state and drafts allow none', () => {
     for (const action of TRADE_ACTIONS) expect(ACTION_FROM[action].length).toBeGreaterThan(0);
     expect(allowedActions('DRAFT')).toEqual([]);
-    expect(allowedActions('CANCELLED')).toEqual([]);
-    expect(allowedActions('EXPIRED')).toEqual([]);
+    // A finished signal can still be corrected, and nothing else.
+    expect(allowedActions('CANCELLED')).toEqual(['CORRECT']);
+    expect(allowedActions('EXPIRED')).toEqual(['CORRECT']);
   });
 
   it('rejects an action that is not allowed from the current state', () => {
@@ -269,9 +270,13 @@ describe('targets', () => {
   });
 });
 
+/** As the service stores it: new exits added, superseded ones no longer current. */
 const persisted = (s: TradeState, d: ReturnType<typeof decide>, id = 'c1'): TradeState => ({
   ...d.next,
-  closures: d.closure ? [...s.closures, { ...d.closure, id } as ClosureState] : s.closures,
+  closures: [
+    ...s.closures.filter((c) => !d.closures.some((n) => n.supersedesClosureId === c.id)),
+    ...d.closures.map((c, i) => ({ ...c, id: i === 0 ? id : `${id}-${i}` }) as ClosureState),
+  ],
 });
 
 describe('partial and final closure', () => {
@@ -287,7 +292,7 @@ describe('partial and final closure', () => {
     });
     expect(d.next.status).toBe('PARTIALLY_CLOSED');
     expect(d.next.closedFraction).toBe('0.4');
-    expect(d.closure).toMatchObject({
+    expect(d.closures[0]).toMatchObject({
       quantity: '4',
       fraction: '0.4',
       priceMove: '100',
@@ -336,7 +341,7 @@ describe('partial and final closure', () => {
     });
     expect(d.next.status).toBe('CLOSED');
     expect(d.next.closedFraction).toBe('1');
-    expect(d.closure).toMatchObject({ quantity: '4', fraction: '0.4', grossPnl: '600', kind: 'FINAL' });
+    expect(d.closures[0]).toMatchObject({ quantity: '4', fraction: '0.4', grossPnl: '600', kind: 'FINAL' });
   });
 
   it('keeps position, fees and money out of broadcast events', () => {
@@ -399,13 +404,13 @@ describe('partial and final closure', () => {
       reason: 'MANUAL',
       confirm: true,
     });
-    expect(d.closure).toMatchObject({ entryPriceUsed: '3295', priceMove: '155', grossPnl: null });
+    expect(d.closures[0]).toMatchObject({ entryPriceUsed: '3295', priceMove: '155', grossPnl: null });
   });
 
   it('closing with no basis records the exit and produces no figures', () => {
     const d = run(tradeState(), { action: 'CLOSE', exitPrice: '3450', basis: 'NONE', reason: 'MANUAL', confirm: true });
     expect(d.next.status).toBe('CLOSED');
-    expect(d.closure).toMatchObject({ priceMove: null, points: null, grossPnl: null, netPnl: null });
+    expect(d.closures[0]).toMatchObject({ priceMove: null, points: null, grossPnl: null, netPnl: null });
     expect(d.events[0]?.templateContext.movement).toBeNull();
   });
 
@@ -538,7 +543,7 @@ describe('rounding and limits', () => {
       reason: 'MANUAL',
       confirm: true,
     });
-    expect(final.closure).toMatchObject({ quantity: '1', fraction: '0.333333333334', grossPnl: '100' });
+    expect(final.closures[0]).toMatchObject({ quantity: '1', fraction: '0.333333333334', grossPnl: '100' });
     expect(final.next.closedFraction).toBe('1');
   });
 
@@ -551,7 +556,7 @@ describe('rounding and limits', () => {
       reason: 'MANUAL',
       confirm: true,
     });
-    expect(d.closure?.points).toBe('0.33333333');
+    expect(d.closures[0]?.points).toBe('0.33333333');
   });
 
   it('refuses results too large to be real instead of failing at the database', () => {
@@ -601,18 +606,183 @@ describe('corrections', () => {
       run(base, { action: 'CLOSE', exitPrice: '3440', basis: 'HYPOTHETICAL_OUTCOME', reason: 'MANUAL', confirm: true }),
     );
     const d = run(closed, { action: 'CORRECT', reason: 'Exit mistyped', closureId: 'c1', exitPrice: '3450' });
-    expect(d.closure).toMatchObject({ supersedesClosureId: 'c1', exitPrice: '3450', priceMove: '150', kind: 'FINAL' });
+    expect(d.closures[0]).toMatchObject({
+      supersedesClosureId: 'c1',
+      exitPrice: '3450',
+      priceMove: '150',
+      kind: 'FINAL',
+    });
     expect(d.next.status).toBe('CLOSED');
     expect(d.next.closedFraction).toBe('1');
   });
 
-  it('will not rewrite the levels of a closed trade', () => {
-    expect(
-      code(() => run(tradeState({ status: 'CLOSED' }), { action: 'CORRECT', reason: 'nope', stopLoss: '3130' })),
-    ).toBe('CLOSED_LEVELS');
+  const closedWith = (base: TradeState, cmd: Cmd) => persisted(base, run(base, cmd));
+
+  it('records the actual entry after the close and measures the exit from it', () => {
+    // A range signal closed with no recorded entry, as T-0034 was: no points can be stated.
+    const base = tradeState({ entry: { type: 'RANGE', low: '3300', high: '3310' } });
+    const closed = closedWith(base, {
+      action: 'CLOSE',
+      exitPrice: '3460',
+      basis: 'NONE',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    expect(closed.closures[0]?.points).toBeNull();
+
+    const d = run(closed, {
+      action: 'CORRECT',
+      reason: 'Entry was filled at the top of the range',
+      actualEntry: '3310',
+    });
+    expect(d.events.map((e) => [e.type, e.broadcast])).toEqual([
+      ['EXECUTION_RECORDED', false],
+      ['CORRECTION', true],
+    ]);
+    expect(d.closures).toHaveLength(1);
+    expect(d.closures[0]).toMatchObject({
+      supersedesClosureId: 'c1',
+      basis: 'ADMIN_DECLARED_EXECUTION',
+      entryPriceUsed: '3310',
+      exitPrice: '3460',
+      points: '150',
+      kind: 'FINAL',
+    });
+    expect(d.next.execution).toEqual({ basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3310', quantity: null });
+    expect(d.next.closureBasis).toBe('ADMIN_DECLARED_EXECUTION');
+    expect(d.next.status).toBe('CLOSED');
+    expect(d.events[1]?.payload.changes).toEqual([
+      { field: 'Actual entry', from: null, to: '3,310.00' },
+      { field: 'Result', from: null, to: '+150 pts (declared by the administrator, unverified)' },
+    ]);
+
+    // The stored state is still the replay of its events.
+    const replayed = d.events.reduce((state, e) => evolve(state, e.type, e.payload, NOW.toISOString()), closed);
+    expect(replayed).toEqual(d.next);
   });
 
-  it('rejects an empty correction, an unknown exit and cancelled trades', () => {
+  it('changes a recorded entry and recalculates every exit, keeping quantities', () => {
+    const declared = tradeState({
+      execution: { basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3300', quantity: '10' },
+    });
+    const part = persisted(
+      declared,
+      run(declared, { action: 'BOOK_PARTIAL', exitPrice: '3400', percent: '40', basis: 'ADMIN_DECLARED_EXECUTION' }),
+      'p1',
+    );
+    const closed = persisted(
+      part,
+      run(part, {
+        action: 'CLOSE',
+        exitPrice: '3450',
+        basis: 'ADMIN_DECLARED_EXECUTION',
+        reason: 'MANUAL',
+        confirm: true,
+      }),
+      'f1',
+    );
+    const d = run(closed, { action: 'CORRECT', reason: 'Fill was 3310', actualEntry: '3310' });
+    expect(d.closures).toMatchObject([
+      { supersedesClosureId: 'p1', quantity: '4', priceMove: '90', grossPnl: '360' },
+      { supersedesClosureId: 'f1', quantity: '6', priceMove: '140', grossPnl: '840' },
+    ]);
+    expect(d.next.execution).toEqual({ basis: 'ADMIN_DECLARED_EXECUTION', entryPrice: '3310', quantity: '10' });
+    expect(d.events[1]?.payload.changes?.map((c) => c.field)).toEqual([
+      'Actual entry',
+      'Result (partial exit at 3,400.00)',
+      'Result (final exit at 3,450.00)',
+    ]);
+  });
+
+  it('corrects the levels of a closed trade without touching its exit', () => {
+    const closed = closedWith(tradeState(), {
+      action: 'CLOSE',
+      exitPrice: '3440',
+      basis: 'NONE',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    const d = run(closed, {
+      action: 'CORRECT',
+      reason: 'Typo in the published stop',
+      stopLoss: '3130',
+      entryLow: '3305',
+    });
+    expect(d.next).toMatchObject({ status: 'CLOSED', stopLoss: '3130', entry: { low: '3305', high: '3305' } });
+    expect(d.closures).toEqual([]);
+  });
+
+  it('corrects any target by number, reached or not', () => {
+    const two = tradeState({
+      targets: [
+        { index: 1, price: '3350', originalPrice: '3350', status: 'HIT', hitAt: '2026-11-02T10:00:00.000Z' },
+        { index: 2, price: '3400', originalPrice: '3400', status: 'OPEN', hitAt: null },
+      ],
+    });
+    const d = run(two, { action: 'CORRECT', reason: 'Target 1 was 3355', targetPrices: [{ index: 1, price: '3355' }] });
+    expect(d.next.targets).toMatchObject([
+      { index: 1, price: '3355', status: 'HIT', hitAt: '2026-11-02T10:00:00.000Z' },
+      { index: 2, price: '3400', status: 'OPEN' },
+    ]);
+    expect(d.events[0]?.payload.changes).toEqual([{ field: 'Target 1 (reached)', from: '3,350.00', to: '3,355.00' }]);
+    const fix = (targetPrices: { index: number; price: string }[]) => () =>
+      run(two, { action: 'CORRECT', reason: 'targets', targetPrices });
+    expect(code(fix([{ index: 2, price: '3340' }]))).toBe('VALIDATION');
+    expect(code(fix([{ index: 3, price: '3500' }]))).toBe('TARGET_NOT_FOUND');
+    expect(
+      code(() =>
+        run(two, { action: 'CORRECT', reason: 'both', targets: ['3420'], targetPrices: [{ index: 1, price: '3355' }] }),
+      ),
+    ).toBe('VALIDATION');
+  });
+
+  it('corrects the activation time, an exit time and the close reason', () => {
+    const base = tradeState({ publishedAt: '2026-11-01T09:00:00.000Z' });
+    const closed = closedWith(base, {
+      action: 'CLOSE',
+      exitPrice: '3440',
+      exitedAt: '2026-11-03T10:00:00.000Z',
+      basis: 'NONE',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    const d = run(closed, {
+      action: 'CORRECT',
+      reason: 'Times were entered late',
+      activatedAt: '2026-11-01T09:30:00.000Z',
+      closureId: 'c1',
+      exitedAt: '2026-11-02T12:00:00.000Z',
+      closeReason: 'TARGET_ACHIEVED',
+    });
+    expect(d.next.activatedAt).toBe('2026-11-01T09:30:00.000Z');
+    expect(d.closures[0]).toMatchObject({ exitedAt: '2026-11-02T12:00:00.000Z', reason: 'TARGET_ACHIEVED' });
+    expect(d.events[0]?.payload.changes).toEqual([
+      { field: 'Activated', from: '2026-11-01 10:00 UTC', to: '2026-11-01 09:30 UTC' },
+      { field: 'Exit time', from: '2026-11-03 10:00 UTC', to: '2026-11-02 12:00 UTC' },
+      { field: 'Close reason', from: 'Manual close', to: 'Target achieved' },
+    ]);
+    const at = (cmd: Partial<Extract<Cmd, { action: 'CORRECT' }>>) => () =>
+      run(closed, { action: 'CORRECT', reason: 'times', ...cmd });
+    expect(code(at({ activatedAt: '2026-11-06T10:00:00.000Z' }))).toBe('ACTIVATION_IN_FUTURE');
+    expect(code(at({ activatedAt: '2026-11-01T08:00:00.000Z' }))).toBe('ACTIVATION_BEFORE_PUBLICATION');
+    expect(code(at({ activatedAt: '2026-11-03T11:00:00.000Z' }))).toBe('EXIT_BEFORE_ENTRY');
+    expect(code(at({ closureId: 'c1', exitedAt: '2026-10-30T10:00:00.000Z' }))).toBe('EXIT_BEFORE_ENTRY');
+    expect(code(at({ closureId: 'c1' }))).toBe('NO_CHANGE');
+  });
+
+  it('moves a hypothetical outcome with a corrected single entry', () => {
+    const closed = closedWith(tradeState(), {
+      action: 'CLOSE',
+      exitPrice: '3440',
+      basis: 'HYPOTHETICAL_OUTCOME',
+      reason: 'MANUAL',
+      confirm: true,
+    });
+    const d = run(closed, { action: 'CORRECT', reason: 'Entry was 3310', entryLow: '3310' });
+    expect(d.closures[0]).toMatchObject({ entryPriceUsed: '3310', priceMove: '130', basis: 'HYPOTHETICAL_OUTCOME' });
+  });
+
+  it('rejects an empty correction and an unknown exit', () => {
     expect(code(() => run(tradeState(), { action: 'CORRECT', reason: 'nothing', stopLoss: '3120' }))).toBe('NO_CHANGE');
     expect(
       code(() =>
@@ -624,9 +794,15 @@ describe('corrections', () => {
         }),
       ),
     ).toBe('CLOSURE_NOT_FOUND');
-    expect(
-      code(() => run(tradeState({ status: 'CANCELLED' }), { action: 'CORRECT', reason: 'too late', stopLoss: '3130' })),
-    ).toBe('INVALID_TRANSITION');
+  });
+
+  it('corrects a cancelled signal, but records no entry for a trade that never became active', () => {
+    const cancelled = tradeState({ status: 'CANCELLED', activatedAt: null });
+    expect(run(cancelled, { action: 'CORRECT', reason: 'Stop typo', stopLoss: '3130' }).next.stopLoss).toBe('3130');
+    expect(code(() => run(cancelled, { action: 'CORRECT', reason: 'Stop typo', stopLoss: '3310' }))).toBe('STOP_SIDE');
+    expect(code(() => run(cancelled, { action: 'CORRECT', reason: 'never filled', actualEntry: '3300' }))).toBe(
+      'NOT_ACTIVATED',
+    );
   });
 });
 

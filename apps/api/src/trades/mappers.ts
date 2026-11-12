@@ -107,6 +107,7 @@ export function toTradeState(row: TradeRow & { closures: ClosureRow[] }): TradeS
           quantity: str(row.executionQuantity),
         }
       : null,
+    publishedAt: row.publishedAt?.toISOString() ?? null,
     activatedAt: row.activatedAt?.toISOString() ?? null,
     closedAt: row.closedAt?.toISOString() ?? null,
     closures: row.closures.filter((c) => c.supersededByEventId === null).map(toClosureState),
