@@ -237,3 +237,30 @@ export function previewExit(input: ExitPreviewInput): { result: ClosureResult; q
     }),
   };
 }
+
+/**
+ * The points one exit would show after a correction, for the form's preview. A newly stated actual entry
+ * re-measures the exit as declared by the administrator; otherwise its own basis and entry stay. The server
+ * recalculates and has the final say.
+ */
+export function previewCorrectedExit(input: {
+  trade: Pick<AdminTradeDetail, 'direction' | 'pointSize'>;
+  closure: Pick<AdminTradeDetail['closures'][number], 'basis' | 'entryPriceUsed' | 'exitPrice' | 'fraction'>;
+  actualEntry: string;
+  exitPrice: string;
+}): DecimalString | null {
+  const actualEntry = input.actualEntry.trim();
+  const exitPrice = input.exitPrice.trim() || input.closure.exitPrice;
+  if (!isDecimalLiteral(exitPrice) || (actualEntry !== '' && !isDecimalLiteral(actualEntry))) return null;
+  return computeClosureResult({
+    direction: input.trade.direction,
+    basis: actualEntry ? 'ADMIN_DECLARED_EXECUTION' : input.closure.basis,
+    entryPrice: actualEntry || input.closure.entryPriceUsed,
+    exitPrice,
+    fraction: input.closure.fraction,
+    quantity: null,
+    contractMultiplier: null,
+    fees: null,
+    pointSize: input.trade.pointSize,
+  }).points;
+}

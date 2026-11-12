@@ -426,7 +426,7 @@ export class TradesService {
             });
           }
         }
-        if (decision.closure) await this.persistClosure(tx, tradeId, lastEventId, decision.closure);
+        for (const closure of decision.closures) await this.persistClosure(tx, tradeId, lastEventId, closure);
 
         const next = decision.next;
         await tx.trade.update({

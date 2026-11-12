@@ -78,6 +78,8 @@ export interface TradeState {
   closedFraction: DecimalString;
   closureBasis: CalculationBasis | null;
   execution: ExecutionState | null;
+  /** When the signal was published. Optional so that older callers need not supply it. */
+  publishedAt?: string | null;
   activatedAt: string | null;
   closedAt: string | null;
   closures: ClosureState[];
@@ -137,6 +139,11 @@ export interface EventPayload {
   correctedEntry?: { low: DecimalString; high: DecimalString };
   correctedStop?: DecimalString;
   correctedTargets?: DecimalString[];
+  /** Every target's price after the correction, in order. Reached states are unchanged. */
+  correctedTargetPrices?: DecimalString[];
+  correctedActivatedAt?: string;
+  /** Set when recording the actual entry re-measured the exits on a new basis. */
+  correctedBasis?: CalculationBasis;
   correctedClosureId?: string;
 }
 
@@ -155,7 +162,8 @@ export interface NewClosure extends Omit<ClosureState, 'id'> {
 export interface Decision {
   events: DecidedEvent[];
   next: TradeState;
-  closure: NewClosure | null;
+  /** New exit records. A correction can supersede several at once. */
+  closures: NewClosure[];
   execution: ExecutionState | null;
 }
 
@@ -236,6 +244,12 @@ export function evolve(state: TradeState, type: EventType, payload: EventPayload
         next.entry = { type: state.entry.type, ...payload.correctedEntry };
       }
       if (payload.correctedStop) next.stopLoss = payload.correctedStop;
+      if (payload.correctedTargetPrices) {
+        const prices = payload.correctedTargetPrices;
+        next.targets = next.targets.map((t, i) => ({ ...t, price: prices[i] ?? t.price }));
+      }
+      if (payload.correctedActivatedAt) next.activatedAt = payload.correctedActivatedAt;
+      if (payload.correctedBasis) next.closureBasis = payload.correctedBasis;
       if (payload.correctedTargets) {
         const hit = next.targets.filter((t) => t.status === 'HIT');
         next.targets = [
@@ -323,7 +337,8 @@ function assertStopConsistent(s: TradeState, stop: string): void {
       );
     }
   }
-  if (s.status === 'PUBLISHED') {
+  // Before entry: published, or cancelled or expired without ever becoming active.
+  if (s.status === 'PUBLISHED' || s.status === 'CANCELLED' || s.status === 'EXPIRED') {
     const conflict =
       s.direction === 'BUY' ? !price.lessThan(toDec(s.entry.low)) : !price.greaterThan(toDec(s.entry.high));
     if (conflict) {
@@ -405,6 +420,11 @@ function assertExitTime(s: TradeState, exitedAt: string | undefined, now: Date):
     fail('EXIT_BEFORE_ENTRY', 'The exit time cannot be earlier than the activation of this trade.');
   }
   return at.toISOString();
+}
+
+/** A time in a correction notice. UTC, so it reads the same for every subscriber and in the audit log. */
+function utcLabel(iso: string | null): string | null {
+  return iso ? `${iso.slice(0, 16).replace('T', ' ')} UTC` : null;
 }
 
 function movementText(basis: CalculationBasis, points: string | null): string | null {
@@ -495,7 +515,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
   const comment = 'comment' in command ? command.comment || null : null;
   const events: DecidedEvent[] = [];
   let next = s;
-  let closure: NewClosure | null = null;
+  const closures: NewClosure[] = [];
   let execution: ExecutionState | null = null;
 
   const emit = (
@@ -702,7 +722,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         fail('USE_CLOSE', 'That closes everything still open. Use "Close trade" so a final reason is recorded.');
       }
       const exitedAt = assertExitTime(s, command.exitedAt, now);
-      closure = closureFromCommand(s, {
+      const closure = closureFromCommand(s, {
         kind: 'PARTIAL',
         fraction,
         quantity,
@@ -713,6 +733,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         entryPrice: outcome.entryPrice,
         fees: command.fees,
       });
+      closures.push(closure);
       const after = remainingFraction.minus(fraction);
       emit(
         'PARTIAL_BOOKED',
@@ -744,7 +765,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
           ? canon(remainingQuantity(s) as Dec)
           : null;
       const exitedAt = assertExitTime(s, command.exitedAt, now);
-      closure = closureFromCommand(s, {
+      const closure = closureFromCommand(s, {
         kind: 'FINAL',
         fraction,
         quantity,
@@ -755,6 +776,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         entryPrice: outcome.entryPrice,
         fees: command.fees,
       });
+      closures.push(closure);
       if (
         command.reason === 'TARGET_ACHIEVED' &&
         closure.priceMove !== null &&
@@ -809,15 +831,9 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     case 'CORRECT': {
       const changes: NonNullable<EventPayload['changes']> = [];
       const specifics: EventPayload = { correctionReason: command.reason };
-      const editingLevels =
-        command.entryLow !== undefined ||
-        command.entryHigh !== undefined ||
-        command.stopLoss !== undefined ||
-        command.targets !== undefined;
-      if (editingLevels && s.status === 'CLOSED') {
-        fail('CLOSED_LEVELS', 'Levels of a closed trade cannot change. Correct the exit record instead.');
-      }
       let probe: TradeState = s;
+
+      // The published levels. Correctable at any stage; the original publication stays in the history.
       if (command.entryLow !== undefined || command.entryHigh !== undefined) {
         const low = canon(command.entryLow ?? s.entry.low);
         const high = canon(command.entryHigh ?? (s.entry.type === 'SINGLE' ? low : s.entry.high));
@@ -837,8 +853,13 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         specifics.correctedStop = value;
         probe = { ...probe, stopLoss: value };
       }
+      if (command.targets !== undefined && command.targetPrices !== undefined) {
+        fail('VALIDATION', 'Correct targets one way at a time: by number, or by replacing those not yet reached.');
+      }
+      let nextTargets: TargetState[] = s.targets;
       if (command.targets !== undefined) {
         const prices = command.targets.map(canon);
+        const hit = s.targets.filter((t) => t.status === 'HIT');
         const open = s.targets.filter((t) => t.status === 'OPEN').map((t) => t.price);
         if (prices.join() !== open.join()) {
           changes.push({
@@ -847,64 +868,209 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
             to: prices.map((p) => formatPrice(s.spec, p)).join(', '),
           });
           specifics.correctedTargets = prices;
-        }
-      }
-      if (specifics.correctedEntry || specifics.correctedStop || specifics.correctedTargets) {
-        const hit = s.targets.filter((t) => t.status === 'HIT').map((t) => t.price);
-        const targets = specifics.correctedTargets
-          ? [...hit, ...specifics.correctedTargets]
-          : s.targets.map((t) => t.price);
-        const issues = validateEntryAndTargets({ spec: s.spec, direction: s.direction, entry: probe.entry, targets });
-        if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid correction', issues);
-        requirePrice(s.spec, probe.stopLoss, 'stopLoss', 'Stop-loss');
-        assertStopConsistent(
-          {
-            ...probe,
-            targets: targets.map((price, i) => ({
-              index: i + 1,
+          nextTargets = [
+            ...hit,
+            ...prices.map((price, i) => ({
+              index: hit.length + i + 1,
               price,
               originalPrice: null,
-              status: i < hit.length ? ('HIT' as const) : ('OPEN' as const),
+              status: 'OPEN' as const,
               hitAt: null,
             })),
-          },
-          probe.stopLoss,
-        );
-      }
-      if (command.closureId !== undefined) {
-        const original = s.closures.find((c) => c.id === command.closureId);
-        if (!original) fail('CLOSURE_NOT_FOUND', 'That exit record does not belong to this trade.');
-        if (command.exitPrice === undefined && command.fees === undefined) {
-          fail('NO_CHANGE', 'State the corrected exit price or fees.');
+          ];
         }
-        const exitPrice = command.exitPrice === undefined ? original.exitPrice : canon(command.exitPrice);
-        requirePrice(s.spec, exitPrice, 'exitPrice', 'Exit price');
-        const fees = command.fees === undefined ? original.fees : command.fees === null ? null : canon(command.fees);
+      }
+      if (command.targetPrices !== undefined) {
+        const updated = s.targets.map((t) => ({ ...t }));
+        const seen = new Set<number>();
+        for (const { index, price } of command.targetPrices) {
+          if (seen.has(index)) fail('VALIDATION', `Target ${index} is listed twice.`);
+          seen.add(index);
+          const target = updated.find((t) => t.index === index);
+          if (!target) fail('TARGET_NOT_FOUND', `This trade has no target ${index}.`);
+          const value = canon(price);
+          if (value === target.price) continue;
+          changes.push({
+            field: `Target ${index}${target.status === 'HIT' ? ' (reached)' : ''}`,
+            from: formatPrice(s.spec, target.price),
+            to: formatPrice(s.spec, value),
+          });
+          target.price = value;
+        }
+        if (updated.some((t, i) => t.price !== s.targets[i]?.price)) {
+          specifics.correctedTargetPrices = updated.map((t) => t.price);
+          nextTargets = updated;
+        }
+      }
+      if (
+        specifics.correctedEntry ||
+        specifics.correctedStop ||
+        specifics.correctedTargets ||
+        specifics.correctedTargetPrices
+      ) {
+        const issues = validateEntryAndTargets({
+          spec: s.spec,
+          direction: s.direction,
+          entry: probe.entry,
+          targets: nextTargets.map((t) => t.price),
+        });
+        if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid correction', issues);
+        requirePrice(s.spec, probe.stopLoss, 'stopLoss', 'Stop-loss');
+        assertStopConsistent({ ...probe, targets: nextTargets }, probe.stopLoss);
+      }
+
+      // When the trade became active.
+      let activatedAt = s.activatedAt;
+      if (command.activatedAt !== undefined) {
+        if (!s.activatedAt) fail('NOT_ACTIVATED', 'This trade never became active, so it has no activation time.');
+        const when = new Date(command.activatedAt);
+        if (Number.isNaN(when.getTime())) fail('VALIDATION', 'Activation time is not a valid date.');
+        if (when.getTime() > now.getTime() + 60_000) {
+          fail('ACTIVATION_IN_FUTURE', 'The activation time cannot be in the future.');
+        }
+        if (s.publishedAt && when.getTime() < new Date(s.publishedAt).getTime()) {
+          fail('ACTIVATION_BEFORE_PUBLICATION', 'The activation time cannot be earlier than the signal was published.');
+        }
+        const iso = when.toISOString();
+        if (iso !== s.activatedAt) {
+          changes.push({ field: 'Activated', from: utcLabel(s.activatedAt), to: utcLabel(iso) });
+          specifics.correctedActivatedAt = iso;
+          activatedAt = iso;
+        }
+      }
+
+      // The entry actually obtained. Every exit is then measured from it, as declared by the administrator.
+      let declaredEntry: string | null = null;
+      if (command.actualEntry !== undefined) {
+        if (!s.activatedAt)
+          fail('NOT_ACTIVATED', 'An actual entry can be recorded only for a trade that became active.');
+        requirePrice(s.spec, command.actualEntry, 'actualEntry', 'Actual entry');
+        const value = canon(command.actualEntry);
+        if (value !== s.execution?.entryPrice) {
+          changes.push({
+            field: 'Actual entry',
+            from: s.execution ? formatPrice(s.spec, s.execution.entryPrice) : null,
+            to: formatPrice(s.spec, value),
+          });
+          declaredEntry = value;
+        }
+      }
+
+      // Exit records. A changed exit is superseded by a recalculated one; the original stays on file.
+      const exitFields =
+        command.exitPrice !== undefined ||
+        command.fees !== undefined ||
+        command.exitedAt !== undefined ||
+        command.closeReason !== undefined;
+      if (command.closureId !== undefined) {
+        if (!s.closures.some((c) => c.id === command.closureId)) {
+          fail('CLOSURE_NOT_FOUND', 'That exit record does not belong to this trade.');
+        }
+        if (!exitFields) fail('NO_CHANGE', 'State what to correct on this exit: its price, time, fees or reason.');
+        specifics.correctedClosureId = command.closureId;
+      } else if (exitFields) {
+        fail('VALIDATION', 'Select which exit record is being corrected.');
+      }
+      for (const original of s.closures) {
+        const editing = original.id === command.closureId;
+        let { exitPrice, fees, exitedAt, reason, basis, entryPriceUsed: entryPrice } = original;
+        if (editing) {
+          if (command.exitPrice !== undefined) {
+            requirePrice(s.spec, command.exitPrice, 'exitPrice', 'Exit price');
+            exitPrice = canon(command.exitPrice);
+          }
+          if (command.fees !== undefined) fees = command.fees === null ? null : canon(command.fees);
+          if (command.exitedAt !== undefined) {
+            const when = new Date(command.exitedAt);
+            if (Number.isNaN(when.getTime())) fail('VALIDATION', 'Exit time is not a valid date.');
+            if (when.getTime() > now.getTime() + 60_000)
+              fail('EXIT_IN_FUTURE', 'The exit time cannot be in the future.');
+            exitedAt = when.toISOString();
+          }
+          if (command.closeReason !== undefined) {
+            if (original.kind !== 'FINAL') fail('VALIDATION', 'Only the final exit has a close reason.');
+            reason = command.closeReason;
+          }
+        }
+        if (declaredEntry !== null) {
+          basis = 'ADMIN_DECLARED_EXECUTION';
+          entryPrice = declaredEntry;
+        } else if (specifics.correctedEntry && basis === 'HYPOTHETICAL_OUTCOME') {
+          // A hypothetical outcome follows the recommendation it was measured from.
+          if (probe.entry.type === 'SINGLE') {
+            entryPrice = probe.entry.low;
+          } else if (
+            entryPrice !== null &&
+            (toDec(entryPrice).lessThan(toDec(probe.entry.low)) ||
+              toDec(entryPrice).greaterThan(toDec(probe.entry.high)))
+          ) {
+            fail(
+              'HYPOTHETICAL_OUTSIDE_RANGE',
+              `An exit was measured from ${formatPrice(s.spec, entryPrice)}, which is outside the corrected entry. Record the actual entry as well.`,
+            );
+          }
+        }
+        if (activatedAt && new Date(exitedAt).getTime() < new Date(activatedAt).getTime()) {
+          fail('EXIT_BEFORE_ENTRY', 'An exit cannot be earlier than the activation of this trade.');
+        }
+        if (
+          exitPrice === original.exitPrice &&
+          fees === original.fees &&
+          exitedAt === original.exitedAt &&
+          reason === original.reason &&
+          basis === original.basis &&
+          entryPrice === original.entryPriceUsed
+        ) {
+          continue;
+        }
+        const which =
+          s.closures.length > 1
+            ? ` (${original.kind === 'FINAL' ? 'final' : 'partial'} exit at ${formatPrice(s.spec, original.exitPrice)})`
+            : '';
         if (exitPrice !== original.exitPrice) {
           changes.push({
-            field: 'Exit price',
+            field: `Exit price${which}`,
             from: formatPrice(s.spec, original.exitPrice),
             to: formatPrice(s.spec, exitPrice),
           });
         }
-        if (fees !== original.fees) changes.push({ field: 'Fees', from: original.fees, to: fees });
+        if (exitedAt !== original.exitedAt) {
+          changes.push({ field: `Exit time${which}`, from: utcLabel(original.exitedAt), to: utcLabel(exitedAt) });
+        }
+        if (reason !== original.reason) {
+          changes.push({
+            field: 'Close reason',
+            from: original.reason ? CLOSE_REASON_LABELS[original.reason] : null,
+            to: reason ? CLOSE_REASON_LABELS[reason] : null,
+          });
+        }
+        if (fees !== original.fees) changes.push({ field: `Fees${which}`, from: original.fees, to: fees });
         const fresh = closureFromCommand(s, {
           kind: original.kind,
           fraction: toDec(original.fraction),
           quantity: original.quantity,
           exitPrice,
-          exitedAt: original.exitedAt,
-          reason: original.reason,
-          basis: original.basis,
-          entryPrice: original.entryPriceUsed,
+          exitedAt,
+          reason,
+          basis,
+          entryPrice,
           fees: fees ?? undefined,
         });
-        closure = { ...fresh, supersedesClosureId: original.id };
-        specifics.correctedClosureId = original.id;
-      } else if (command.exitPrice !== undefined || command.fees !== undefined) {
-        fail('VALIDATION', 'Select which exit record is being corrected.');
+        if (fresh.points !== original.points) {
+          changes.push({
+            field: `Result${which}`,
+            from: movementText(original.basis, original.points),
+            to: movementText(basis, fresh.points),
+          });
+        }
+        closures.push({ ...fresh, supersedesClosureId: original.id });
       }
+
       if (changes.length === 0) fail('NO_CHANGE', 'Nothing in this correction differs from the current record.');
+      if (declaredEntry !== null) {
+        recordExecution(declaredEntry, s.execution?.quantity ?? undefined);
+        if (s.closures.length > 0) specifics.correctedBasis = 'ADMIN_DECLARED_EXECUTION';
+      }
       specifics.changes = changes;
       emit('CORRECTION', true, 'CORRECTION', specifics, {
         reason: command.reason,
@@ -914,5 +1080,5 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     }
   }
 
-  return { events, next, closure, execution };
+  return { events, next, closures, execution };
 }

@@ -248,6 +248,11 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
     ...commandBase,
     comment,
   }),
+  /**
+   * Fixes any recorded fact about a trade, at any stage, including after it closed. Each correction is a new
+   * event with what changed, from what, to what and why; nothing earlier is overwritten. Instrument and
+   * direction are not correctable: changing them would make it a different trade.
+   */
   z.strictObject({
     action: z.literal('CORRECT'),
     ...commandBase,
@@ -255,9 +260,22 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
     entryLow: priceSchema.optional(),
     entryHigh: priceSchema.optional(),
     stopLoss: priceSchema.optional(),
+    /** Replaces the targets not yet reached. Kept for older admin apps; `targetPrices` covers every target. */
     targets: z.array(priceSchema).min(1).max(MAX_TARGETS).optional(),
+    /** New price for a target by its number, reached or not. Its reached state does not change. */
+    targetPrices: z
+      .array(z.strictObject({ index: z.number().int().min(1).max(MAX_TARGETS), price: priceSchema }))
+      .min(1)
+      .max(MAX_TARGETS)
+      .optional(),
+    /** The entry price actually obtained. Recorded, or changed, and every exit is recalculated from it. */
+    actualEntry: priceSchema.optional(),
+    /** When the trade became active. */
+    activatedAt: instant.optional(),
     closureId: z.uuid().optional(),
     exitPrice: priceSchema.optional(),
+    exitedAt: instant.optional(),
+    closeReason: z.enum(CLOSE_REASONS).optional(),
     fees: priceSchema.nullable().optional(),
   }),
 ]);

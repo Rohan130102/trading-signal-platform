@@ -64,7 +64,8 @@ export const ACTION_FROM: Record<TradeAction, readonly TradeStatus[]> = {
   URGENT: LIVE,
   CANCEL: ['PUBLISHED'],
   EXPIRE: ['PUBLISHED'],
-  CORRECT: ['PUBLISHED', 'ACTIVE', 'PARTIALLY_CLOSED', 'CLOSED'],
+  /** Every published stage: a mistake can be put right at any time, and the correction stays in the history. */
+  CORRECT: ['PUBLISHED', 'ACTIVE', 'PARTIALLY_CLOSED', 'CLOSED', 'CANCELLED', 'EXPIRED'],
 };
 
 export function canTransition(from: TradeStatus, to: TradeStatus): boolean {

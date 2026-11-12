@@ -11,6 +11,7 @@ import {
   isDecimalLiteral,
   money,
   type PlatformSettings,
+  previewCorrectedExit,
   previewExit,
   remainingFraction,
   signedPoints,
@@ -23,6 +24,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import { ApiError, api } from '@/lib/api';
 import { newKey } from '@/lib/ids';
+import { localTimeText, parseLocalTime } from '@/lib/local-time';
 import { useColors } from '@/theme';
 import { radius, space } from '@/theme/tokens';
 import {
@@ -844,31 +846,53 @@ function CommentOnlyForm({ frame, run, pending, error, kind }: Shared & { kind: 
   );
 }
 
+const TIME_FORMAT_ERROR = 'Use the form 2026-11-12 19:22';
+
 function CorrectForm({ frame, trade, run, pending, error }: Shared) {
-  const closed = trade.status === 'CLOSED';
+  const c = useColors();
   const currentClosures = trade.closures.filter((closure) => !closure.superseded);
+  const everActive = trade.activatedAt !== null;
   const [reason, setReason] = useState('');
   const [stop, setStop] = useState('');
   const [low, setLow] = useState('');
   const [high, setHigh] = useState('');
-  const [targets, setTargets] = useState('');
-  const [closureId, setClosureId] = useState(currentClosures[0]?.id ?? '');
+  const [targetPrices, setTargetPrices] = useState<Record<number, string>>({});
+  const [actualEntry, setActualEntry] = useState('');
+  const [activatedAt, setActivatedAt] = useState('');
+  const [closureId, setClosureId] = useState(currentClosures.at(-1)?.id ?? '');
   const [exitPrice, setExitPrice] = useState('');
+  const [exitedAt, setExitedAt] = useState('');
+  const [fees, setFees] = useState('');
+  const [closeReason, setCloseReason] = useState<CloseReason | null>(null);
+  const selected = currentClosures.find((closure) => closure.id === closureId);
+  const activatedIso = activatedAt.trim() ? parseLocalTime(activatedAt) : undefined;
+  const exitedIso = exitedAt.trim() ? parseLocalTime(exitedAt) : undefined;
+  const badTime = activatedIso === null || exitedIso === null;
+  const exitTouched = Boolean(exitPrice.trim() || exitedAt.trim() || fees.trim() || closeReason);
+  const results = currentClosures
+    .map((closure) => {
+      const editing = closure.id === closureId;
+      const next = previewCorrectedExit({ trade, closure, actualEntry, exitPrice: editing ? exitPrice : '' });
+      return { closure, next, changed: (editing && exitPrice.trim() !== '') || actualEntry.trim() !== '' };
+    })
+    .filter((r) => r.changed);
   const send = () => {
-    const hasExit = exitPrice.trim() !== '';
+    const edits = Object.entries(targetPrices)
+      .filter(([, value]) => value.trim() !== '')
+      .map(([index, value]) => ({ index: Number(index), price: value.trim() }));
     run({
       reason: reason.trim(),
       stopLoss: optional(stop),
       entryLow: optional(low),
       entryHigh: optional(high),
-      targets: targets.trim()
-        ? targets
-            .split(/[\s,]+/)
-            .map((t) => t.trim())
-            .filter(Boolean)
-        : undefined,
-      closureId: hasExit ? closureId : undefined,
-      exitPrice: hasExit ? exitPrice.trim() : undefined,
+      targetPrices: edits.length > 0 ? edits : undefined,
+      actualEntry: optional(actualEntry),
+      activatedAt: activatedIso ?? undefined,
+      closureId: exitTouched ? closureId : undefined,
+      exitPrice: optional(exitPrice),
+      exitedAt: exitedIso ?? undefined,
+      fees: optional(fees),
+      closeReason: closeReason ?? undefined,
     });
   };
   return (
@@ -879,13 +903,16 @@ function CorrectForm({ frame, trade, run, pending, error }: Shared) {
           pending={pending}
           error={error}
           label="Publish correction"
-          disabled={reason.trim().length < 3}
+          disabled={reason.trim().length < 3 || badTime}
           note={`Point value on this trade: 1 pt = ${formatPoints(trade.pointSize)} ${trade.quoteCurrency}.`}
           onPress={send}
         />
       }
     >
-      <T c="muted">Subscribers see what changed, from what, to what, and why. The original record stays visible.</T>
+      <T c="muted">
+        Fill in only what is wrong. Subscribers see what changed, from what, to what, and why. The original record stays
+        visible.
+      </T>
       <Field
         testID="correct-reason"
         label="Why is this being corrected?"
@@ -893,72 +920,175 @@ function CorrectForm({ frame, trade, run, pending, error }: Shared) {
         onChangeText={setReason}
         autoFocus
       />
-      {!closed && (
+
+      <SectionTitle>Published levels</SectionTitle>
+      <Row>
+        <Half>
+          <PriceField
+            testID="correct-entry"
+            label={trade.entryType === 'RANGE' ? 'Lower entry' : 'Entry'}
+            value={low}
+            onChange={setLow}
+            hint={`Now ${formatPrice(trade, trade.entryLow)}`}
+          />
+        </Half>
+        {trade.entryType === 'RANGE' && (
+          <Half>
+            <PriceField
+              label="Upper entry"
+              value={high}
+              onChange={setHigh}
+              hint={`Now ${formatPrice(trade, trade.entryHigh)}`}
+            />
+          </Half>
+        )}
+        <Half>
+          <PriceField
+            testID="correct-stop"
+            label="Stop-loss"
+            value={stop}
+            onChange={setStop}
+            hint={`Now ${formatPrice(trade, trade.stopLoss)}`}
+          />
+        </Half>
+        {trade.targets.map((target) => (
+          <Half key={target.index}>
+            <PriceField
+              testID={`correct-target-${target.index}`}
+              label={`Target ${target.index}${target.status === 'HIT' ? ' (reached)' : ''}`}
+              value={targetPrices[target.index] ?? ''}
+              onChange={(value) => setTargetPrices((prev) => ({ ...prev, [target.index]: value }))}
+              hint={`Now ${formatPrice(trade, target.price)}`}
+            />
+          </Half>
+        ))}
+      </Row>
+
+      {everActive && (
         <>
-          <Row>
-            <Half>
-              <PriceField
-                testID="correct-entry"
-                label={trade.entryType === 'RANGE' ? 'Lower entry' : 'Entry'}
-                value={low}
-                onChange={setLow}
-                hint={`Now ${formatPrice(trade, trade.entryLow)}`}
-              />
-            </Half>
-            {trade.entryType === 'RANGE' && (
-              <Half>
-                <PriceField
-                  label="Upper entry"
-                  value={high}
-                  onChange={setHigh}
-                  hint={`Now ${formatPrice(trade, trade.entryHigh)}`}
-                />
-              </Half>
-            )}
-            <Half>
-              <PriceField
-                testID="correct-stop"
-                label="Stop-loss"
-                value={stop}
-                onChange={setStop}
-                hint={`Now ${formatPrice(trade, trade.stopLoss)}`}
-              />
-            </Half>
-          </Row>
+          <SectionTitle>Entry</SectionTitle>
+          <PriceField
+            testID="correct-actual-entry"
+            label="Actual entry price"
+            value={actualEntry}
+            onChange={setActualEntry}
+            hint={
+              trade.execution
+                ? `Now ${formatPrice(trade, trade.execution.entryPrice)}`
+                : 'Not recorded. Exits are measured from it once added.'
+            }
+          />
           <Field
-            testID="correct-targets"
-            label="Open targets"
-            hint="Separated by commas, nearest first."
-            num
+            testID="correct-activated"
+            label="Activated at"
             keyboardType="numbers-and-punctuation"
-            value={targets}
-            placeholder={trade.targets
-              .filter((t) => t.status === 'OPEN')
-              .map((t) => t.price)
-              .join(', ')}
-            onChangeText={setTargets}
+            placeholder={localTimeText(trade.activatedAt as string)}
+            value={activatedAt}
+            onChangeText={setActivatedAt}
+            error={activatedIso === null ? TIME_FORMAT_ERROR : null}
+            hint={`Now ${localTimeText(trade.activatedAt as string)}, your time.`}
           />
         </>
       )}
-      {currentClosures.length > 0 && (
-        <View style={{ gap: space.sm }}>
-          <T v="small" c="muted">
-            Exit record
+
+      {selected && (
+        <>
+          <SectionTitle>Exit</SectionTitle>
+          {currentClosures.length > 1 && (
+            <ChipRow>
+              {currentClosures.map((closure) => (
+                <Chip
+                  key={closure.id}
+                  label={`${closure.kind === 'FINAL' ? 'Final' : 'Partial'} at ${formatPrice(trade, closure.exitPrice)}`}
+                  on={closureId === closure.id}
+                  onPress={() => setClosureId(closure.id)}
+                />
+              ))}
+            </ChipRow>
+          )}
+          <PriceField
+            testID="correct-exit"
+            label="Exit price"
+            value={exitPrice}
+            onChange={setExitPrice}
+            hint={`Now ${formatPrice(trade, selected.exitPrice)}`}
+          />
+          <Field
+            testID="correct-exit-time"
+            label="Exit time"
+            keyboardType="numbers-and-punctuation"
+            placeholder={localTimeText(selected.exitedAt)}
+            value={exitedAt}
+            onChangeText={setExitedAt}
+            error={exitedIso === null ? TIME_FORMAT_ERROR : null}
+            hint={`Now ${localTimeText(selected.exitedAt)}, your time.`}
+          />
+          {selected.kind === 'FINAL' && (
+            <View style={{ gap: space.sm }}>
+              <T v="small" c="muted">
+                Close reason (now {selected.reason ? CLOSE_REASON_LABELS[selected.reason] : 'not stated'})
+              </T>
+              <ChipRow>
+                {CLOSE_REASONS.map((r) => (
+                  <Chip
+                    key={r}
+                    testID={`correct-reason-${r}`}
+                    label={CLOSE_REASON_LABELS[r]}
+                    on={closeReason === r}
+                    onPress={() => setCloseReason(closeReason === r ? null : r)}
+                  />
+                ))}
+              </ChipRow>
+            </View>
+          )}
+          {selected.quantity !== null && (
+            <PriceField
+              label={`Fees (${trade.quoteCurrency})`}
+              value={fees}
+              onChange={setFees}
+              hint={`Now ${selected.fees ?? 'none'}`}
+            />
+          )}
+        </>
+      )}
+
+      {results.length > 0 && (
+        <View
+          style={[styles.preview, { backgroundColor: c.raised }]}
+          accessibilityLiveRegion="polite"
+          testID="correct-preview"
+        >
+          <T v="caption" c="muted" style={{ fontWeight: '600' }}>
+            Result after this correction
           </T>
-          <ChipRow>
-            {currentClosures.map((closure) => (
-              <Chip
-                key={closure.id}
-                label={`${closure.kind === 'FINAL' ? 'Final' : 'Partial'} at ${formatPrice(trade, closure.exitPrice)}`}
-                on={closureId === closure.id}
-                onPress={() => setClosureId(closure.id)}
-              />
-            ))}
-          </ChipRow>
-          <PriceField testID="correct-exit" label="Correct exit price" value={exitPrice} onChange={setExitPrice} />
+          {results.map(({ closure, next }) => (
+            <View key={closure.id} style={styles.previewRow}>
+              <T v="small" c="muted">
+                {currentClosures.length > 1
+                  ? `${closure.kind === 'FINAL' ? 'Final' : 'Partial'} at ${formatPrice(trade, closure.exitPrice)}`
+                  : `Was ${closure.points ? signedPoints(closure.points) : 'not measured'}`}
+              </T>
+              <T v="small" num style={{ fontWeight: '600' }}>
+                {next ? signedPoints(next) : 'Not measured'}
+              </T>
+            </View>
+          ))}
+          {actualEntry.trim() !== '' && (
+            <T v="small" c="muted">
+              Shown to subscribers as declared by the administrator.
+            </T>
+          )}
         </View>
       )}
     </Sheet>
+  );
+}
+
+function SectionTitle({ children }: { children: string }) {
+  return (
+    <T v="caption" c="muted" style={{ fontWeight: '600', textTransform: 'uppercase', marginTop: space.sm }}>
+      {children}
+    </T>
   );
 }
 

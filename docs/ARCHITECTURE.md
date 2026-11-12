@@ -68,9 +68,31 @@ own end time or none). When the window ends first, the worker's sweep (every 15 
 `ENTRY_EXPIRED` event, so subscribers are told not to enter; one key per trade and version keeps several workers from
 expiring it twice. Starting active applies `ACTIVATE` in the publish transaction as its own internal event, so
 subscribers get one alert; it is never a fill and creates no execution record. Terminal states
-have no way out. A closed trade's levels cannot change, but an exit can be corrected: a new closure
-supersedes the old one, which is kept and flagged. See `packages/domain/src/status.ts` for the table of
-which action is allowed from which state.
+have no way out, except for a correction. See `packages/domain/src/status.ts` for the table of which action is
+allowed from which state.
+
+### Corrections
+
+`CORRECT` fixes any recorded fact about a published trade, at any stage, including after it closed, was
+cancelled or expired. It covers:
+
+- the published entry, stop-loss and every target, reached or not
+- the actual entry price
+- the activation time
+- an exit's price, time, fees and close reason
+
+Instrument and direction are not correctable, because changing them makes it a different trade.
+
+Every correction is a new broadcast `CORRECTION` event listing each change from, to, and the reason. Nothing earlier is
+rewritten:
+
+- **Exits:** a changed exit is superseded by a recalculated closure, and the old one is kept and flagged.
+- **Actual entry:** stating it, even after the close, appends an `EXECUTION_RECORDED` event and an execution record. Every
+  current exit is re-measured from it as a declared execution, using the same `computeClosureResult` as a close.
+- **Hypothetical exits:** these follow a corrected single entry.
+
+The same validation as publishing applies, and times can be neither in the future nor before publication or activation.
+Performance records, admin and public, mark any trade that has a correction.
 
 ## Concurrency and idempotency
 
