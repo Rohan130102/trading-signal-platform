@@ -91,6 +91,20 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 `ACTIVATE`, `RECORD_EXECUTION`, `MOVE_STOP`, `MOVE_STOP_BREAKEVEN`, `TRAIL_STOP`, `TARGET_HIT`, `MODIFY_TARGETS`,
 `BOOK_PARTIAL`, `CLOSE`, `URGENT`, `CANCEL`, `EXPIRE`, `CORRECT`.
 
+`CORRECT` takes a `reason` and any of the fields below. It is allowed in every published state, including closed,
+cancelled and expired.
+
+| Field                                                           | What it corrects                                                                  |
+| --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `entryLow`, `entryHigh`, `stopLoss`                             | The published levels                                                              |
+| `targetPrices: [{ index, price }]`                              | Any target's price. Its reached state does not change                             |
+| `targets`                                                       | Replaces the targets not yet reached. Kept for older apps                         |
+| `actualEntry`                                                   | Records or changes the entry actually obtained. Every exit is re-measured from it |
+| `activatedAt`                                                   | When the trade became active                                                      |
+| `closureId` with `exitPrice`, `exitedAt`, `fees`, `closeReason` | One exit record                                                                   |
+
+Instrument and direction cannot be corrected.
+
 ## Live stream
 
 `GET /ws`, upgraded to a WebSocket. Authenticated by the session cookie, with an allowed `Origin`, or by `Authorization: Bearer`, where `Origin` is not checked because native apps send their own and a browser page cannot set this header.

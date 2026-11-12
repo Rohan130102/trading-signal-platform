@@ -200,6 +200,8 @@ export interface PublicTradeRecord {
   basis: CalculationBasis | null;
   weightedPoints: string | null;
   outcome: TradeAggregate['outcome'] | null;
+  /** The record was corrected after publication. The history shows what changed and why. */
+  corrected: boolean;
 }
 
 export interface PublicPerformanceResponse {

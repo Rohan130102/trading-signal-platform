@@ -350,7 +350,8 @@ describe('lifecycle over HTTP', () => {
     expect(cancelled.body.trade.status).toBe('CANCELLED');
     const after = await act(cancelled.body.trade, 'ACTIVATE');
     expect(after.status).toBe(409);
-    expect(cancelled.body.trade.allowedActions).toEqual([]);
+    // Only a correction remains possible.
+    expect(cancelled.body.trade.allowedActions).toEqual(['CORRECT']);
   });
 
   it('runs a full lifecycle with partial exits and aggregates them correctly', async () => {
@@ -479,6 +480,90 @@ describe('lifecycle over HTTP', () => {
     expect(event.type).toBe('CORRECTION');
     expect(event.body).toContain('Exit was mistyped');
     expect(event.payload.changes[0].field).toBe('Exit price');
+  });
+
+  it('records the actual entry after a range signal closed, and measures the exit from it everywhere', async () => {
+    const low = nextEntry();
+    const trade = await activeTrade({
+      entryType: 'RANGE',
+      entryLow: String(low),
+      entryHigh: String(low + 50),
+      targets: [String(low + 250)],
+      stopLoss: String(low - 180),
+    });
+    const closed = (
+      await act(trade, 'CLOSE', { exitPrice: String(low + 200), basis: 'NONE', reason: 'MANUAL', confirm: true })
+    ).body.trade;
+    expect(closed.closures[0].points).toBeNull();
+
+    const fixed = await act(closed, 'CORRECT', {
+      reason: 'Filled at the top of the range',
+      actualEntry: String(low + 50),
+    });
+    expect(fixed.status).toBe(201);
+    const after = fixed.body.trade;
+    expect(after.status).toBe('CLOSED');
+    expect(after.execution).toMatchObject({ entryPrice: String(low + 50), quantity: null });
+    expect(after.closures.map((c: { superseded: boolean; basis: string }) => [c.superseded, c.basis])).toEqual([
+      [true, 'NONE'],
+      [false, 'ADMIN_DECLARED_EXECUTION'],
+    ]);
+    expect(after.aggregate).toMatchObject({ weightedPoints: '150', outcome: 'WIN' });
+    expect(after.events.slice(-2).map((e: { type: string }) => e.type)).toEqual(['EXECUTION_RECORDED', 'CORRECTION']);
+    expect(after.events.at(-1).body).toContain('+150 pts');
+
+    const stored = await withDb(async (db) => ({
+      executions: (
+        await db.query('SELECT entry_price::text AS p FROM trade_execution_records WHERE trade_id = $1', [trade.id])
+      ).rows,
+      trade: (await db.query('SELECT closure_basis, execution_entry::text AS e FROM trades WHERE id = $1', [trade.id]))
+        .rows[0],
+    }));
+    expect(stored.executions.map((r: { p: string }) => Number(r.p))).toEqual([low + 50]);
+    expect(stored.trade).toMatchObject({ closure_basis: 'ADMIN_DECLARED_EXECUTION' });
+    expect(Number(stored.trade.e)).toBe(low + 50);
+
+    const report = (await admin().get('/admin/performance')).body;
+    const record = report.records.find((r: { id: string }) => r.id === trade.id);
+    expect(record.corrected).toBe(true);
+    expect(record.aggregate).toMatchObject({ weightedPoints: '150', outcome: 'WIN' });
+  });
+
+  it('corrects the levels, targets and times of a closed trade', async () => {
+    const entry = nextEntry();
+    const trade = await activeTrade({ entry, targets: [String(entry + 150), String(entry + 300)] });
+    const hit = (await act(trade, 'TARGET_HIT', { targetIndex: 1 })).body.trade;
+    const closed = (
+      await act(hit, 'CLOSE', {
+        exitPrice: String(entry + 150),
+        basis: 'HYPOTHETICAL_OUTCOME',
+        reason: 'MANUAL',
+        confirm: true,
+      })
+    ).body.trade;
+    // The earliest it can be: the moment of publication.
+    const activated = new Date(closed.publishedAt).toISOString();
+    expect(activated).not.toBe(closed.activatedAt);
+    const fixed = await act(closed, 'CORRECT', {
+      reason: 'Published levels had typos',
+      stopLoss: String(entry - 170),
+      targetPrices: [{ index: 1, price: String(entry + 140) }],
+      activatedAt: activated,
+      closureId: closed.closures[0].id,
+      closeReason: 'TARGET_ACHIEVED',
+    });
+    expect(fixed.body.error ?? null).toBeNull();
+    expect(fixed.status).toBe(201);
+    const after = fixed.body.trade;
+    expect(after).toMatchObject({ status: 'CLOSED', stopLoss: String(entry - 170), activatedAt: activated });
+    expect(after.targets[0]).toMatchObject({ index: 1, price: String(entry + 140), status: 'HIT' });
+    expect(after.closures.at(-1)).toMatchObject({ superseded: false, reason: 'TARGET_ACHIEVED' });
+    expect(after.events.at(-1).payload.changes.map((c: { field: string }) => c.field)).toEqual([
+      'Stop-loss',
+      'Target 1 (reached)',
+      'Activated',
+      'Close reason',
+    ]);
   });
 
   it('a trade entry deadline expires it through the sweeper as a visible event', async () => {

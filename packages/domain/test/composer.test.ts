@@ -7,6 +7,7 @@ import {
   type InstrumentSpec,
   isSignalReady,
   isTemplateForDirection,
+  previewCorrectedExit,
   previewExit,
   previewSignalEvent,
   remainingFraction,
@@ -227,5 +228,24 @@ describe('exit preview', () => {
   it('a sell moves the other way', () => {
     const out = previewExit({ ...base, trade: trade({ direction: 'SELL' }), exitPrice: '3250' });
     expect(out?.result.points).toBe('50');
+  });
+});
+
+describe('previewCorrectedExit', () => {
+  const trade = { direction: 'BUY' as const, pointSize: '1' };
+  const unmeasured = { basis: 'NONE' as const, entryPriceUsed: null, exitPrice: '74100', fraction: '1' };
+
+  it('measures an unmeasured exit from a newly stated actual entry', () => {
+    expect(previewCorrectedExit({ trade, closure: unmeasured, actualEntry: '73950', exitPrice: '' })).toBe('150');
+  });
+
+  it('keeps the exit basis when only the exit price changes', () => {
+    const declared = { ...unmeasured, basis: 'ADMIN_DECLARED_EXECUTION' as const, entryPriceUsed: '73950' };
+    expect(previewCorrectedExit({ trade, closure: declared, actualEntry: '', exitPrice: '74120' })).toBe('170');
+    expect(previewCorrectedExit({ trade, closure: unmeasured, actualEntry: '', exitPrice: '74120' })).toBeNull();
+  });
+
+  it('shows nothing for half-typed input', () => {
+    expect(previewCorrectedExit({ trade, closure: unmeasured, actualEntry: '73950.', exitPrice: '' })).toBeNull();
   });
 });
