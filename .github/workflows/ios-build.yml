@@ -11,7 +11,7 @@ permissions:
 jobs:
   simulator:
     name: Compile for the iOS simulator
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       APP_VARIANT: development
@@ -19,7 +19,8 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@v4
-      # Expo SDK 58 needs Swift 6.2, which comes with Xcode 26. The runner defaults to an older Xcode.
+      # Expo SDK 58 needs Xcode 26, and its JSI module does not compile with 26.2 or 26.3
+      # (https://github.com/expo/expo/issues/52754). This picks the newest Xcode 26 on the runner.
       - name: Use Xcode 26
         run: |
           XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
