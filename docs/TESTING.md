@@ -80,7 +80,7 @@ Its first run found 8 failures:
 
 All 78 passed after the fixes.
 
-**Not run:** iOS (no Xcode here; CI builds it), real email delivery (needs SMTP settings), and push to real phones.
+**Not run:** iOS (no Xcode here; CI bundles the iOS JavaScript on every pull request, and the native build runs from the "iOS build" workflow when started by hand), real email delivery (needs SMTP settings), and push to real phones.
 
 ### Native app journeys, 8 November
 

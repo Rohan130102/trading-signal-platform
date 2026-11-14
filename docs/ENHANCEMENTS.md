@@ -97,7 +97,7 @@ The website's screens were checked in a browser, and its end-to-end suite covers
 
 - **Email delivery** needs SMTP settings in the server's `.env` (see `.env.example`). Until then sign-up says email is not
   set up. With the file transport, every email was checked in tests; no real inbox was used.
-- **iOS** was not run: this Mac has no Xcode. The iOS bundle is built by CI.
+- **iOS** was not run: this Mac has no Xcode. CI bundles the iOS JavaScript on every pull request; the native iOS build runs from the "iOS build" workflow when started by hand.
 - **Push for account messages** reaches devices registered for push. A brand-new account registers a device only after
   it can see signals, so its first "Subscription Activated" arrives in the app and by email.
 - **Expiry reminders** ("your trial ends tomorrow") are not built; the brief asked for them only where configured.
