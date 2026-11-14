@@ -15,7 +15,7 @@ import { RealtimeProvider, useRealtime, useStartRealtimeFromHead } from '@/lib/r
 
 const NAV = [
   { href: '/app', label: 'Feed', icon: Rss, exact: true },
-  { href: '/app/active', label: 'Active', icon: Activity },
+  { href: '/app/active', label: 'Signals', icon: Activity },
   { href: '/app/history', label: 'History', icon: HistoryIcon },
   { href: '/app/account', label: 'Account', icon: UserRound },
 ];

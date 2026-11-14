@@ -212,6 +212,22 @@ function SettingsForm({ initial, canEdit }: { initial: SettingsValues; canEdit: 
               {(c) => <Input {...c} {...form.register('supportContact')} />}
             </Field>
           </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field
+              label="Support WhatsApp number"
+              error={e.supportWhatsapp?.message}
+              hint="Subscription enquiries open WhatsApp to this number. Include the country code."
+            >
+              {(c) => <Input {...c} type="tel" inputMode="tel" {...form.register('supportWhatsapp')} />}
+            </Field>
+            <Field
+              label="Support email"
+              error={e.supportEmail?.message}
+              hint="Enquiries sent by email go here, from the server."
+            >
+              {(c) => <Input {...c} type="email" inputMode="email" {...form.register('supportEmail')} />}
+            </Field>
+          </div>
           <Field
             label="Service description"
             error={e.serviceDescription?.message}

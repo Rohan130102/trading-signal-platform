@@ -262,6 +262,9 @@ export default function AdminTradePage() {
                         <Lock className="size-3" aria-hidden /> Internal, not sent
                       </Badge>
                     )}
+                    {e.payload.correctionReason && (
+                      <p className="text-xs text-muted">Reason (administrators only): {e.payload.correctionReason}</p>
+                    )}
                     <p className="text-xs text-subtle">{e.actorName ? `By ${e.actorName}` : 'By the system'}</p>
                   </div>
                 );

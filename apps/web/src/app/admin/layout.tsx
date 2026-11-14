@@ -14,15 +14,20 @@ import {
   Plus,
   ScrollText,
   Settings,
+  KeyRound,
   ShieldCheck,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import type { AdminInbox } from '@signaldesk/domain';
+import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ConnectionBanner, LivePill } from '@/components/shell/connection-banner';
 import { SessionGate } from '@/components/shell/session-gate';
 import { buttonClass, Dialog, Logo } from '@/components/ui';
+import { api } from '@/lib/api';
 import { registerServiceWorker } from '@/lib/push';
 import { RealtimeProvider, useStartRealtimeFromHead } from '@/lib/realtime';
 import { signOut } from '@/lib/session';
@@ -35,6 +40,8 @@ const PRIMARY = [
   { href: '/admin/performance', label: 'Performance', icon: BarChart3 },
 ];
 const SECONDARY = [
+  { href: '/admin/registrations', label: 'New Registrations', icon: UserPlus, badge: 'newRegistrations' as const },
+  { href: '/admin/password-resets', label: 'Password Resets', icon: KeyRound, badge: 'openPasswordResets' as const },
   { href: '/admin/notifications', label: 'Delivery health', icon: Bell },
   { href: '/admin/instruments', label: 'Instruments', icon: CandlestickChart },
   { href: '/admin/templates', label: 'Templates', icon: FileText },
@@ -52,8 +59,16 @@ function Shell({ children, name, master }: { children: ReactNode; name: string; 
   useEffect(() => setMore(false), [pathname]);
   const active = (item: { href: string; exact?: boolean }) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
-  const link = (item: (typeof PRIMARY)[number] & { exact?: boolean }) => {
+  // New registrations and password reset requests, refreshed every half minute.
+  const inbox = useQuery({
+    queryKey: ['admin', 'inbox'],
+    queryFn: () => api.get<AdminInbox>('/admin/inbox'),
+    refetchInterval: 30_000,
+  });
+  const waiting = (inbox.data?.newRegistrations ?? 0) + (inbox.data?.openPasswordResets ?? 0);
+  const link = (item: (typeof PRIMARY)[number] & { exact?: boolean; badge?: keyof AdminInbox }) => {
     const Icon = item.icon;
+    const count = item.badge ? (inbox.data?.[item.badge] ?? 0) : 0;
     return (
       <Link
         key={item.href}
@@ -66,6 +81,12 @@ function Shell({ children, name, master }: { children: ReactNode; name: string; 
       >
         <Icon className="size-4" aria-hidden />
         {item.label}
+        {count > 0 && (
+          <span className="num ml-auto rounded bg-primary px-1.5 text-[11px] font-semibold text-primary-text">
+            {count}
+            <span className="sr-only"> waiting</span>
+          </span>
+        )}
       </Link>
     );
   };
@@ -170,7 +191,12 @@ function Shell({ children, name, master }: { children: ReactNode; name: string; 
               onClick={() => setMore(true)}
               className="flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-muted"
             >
-              <Menu className="size-5" aria-hidden />
+              <span className="relative">
+                <Menu className="size-5" aria-hidden />
+                {waiting > 0 && (
+                  <span className="absolute -right-1 -top-1 size-2 rounded-full bg-primary" aria-label={`${waiting} waiting`} />
+                )}
+              </span>
               More
             </button>
           </li>
