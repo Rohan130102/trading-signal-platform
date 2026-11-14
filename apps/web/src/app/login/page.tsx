@@ -43,7 +43,10 @@ function LoginForm() {
   };
 
   return (
-    <AuthFrame title="Welcome back" description={params.get('expired') ? 'Your session ended. Log in again.' : undefined}>
+    <AuthFrame
+      title="Welcome back"
+      description={params.get('expired') ? 'Your session ended. Log in again.' : undefined}
+    >
       <AuthTabs current="login" />
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
         <Field label="Email or username" error={missing.identifier}>

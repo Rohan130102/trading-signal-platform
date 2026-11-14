@@ -59,7 +59,10 @@ export default function ForgotPasswordPage() {
 
   if (challenge) {
     return (
-      <AuthFrame title={ACTIONS.verifyEmail} description={`If ${maskEmail(challenge.email)} has an account, we sent it a code.`}>
+      <AuthFrame
+        title={ACTIONS.verifyEmail}
+        description={`If ${maskEmail(challenge.email)} has an account, we sent it a code.`}
+      >
         <CodeStep
           challenge={challenge}
           resendPath="/auth/password-reset/resend"
@@ -72,7 +75,10 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <AuthFrame title={ACTIONS.forgotPassword.replace('?', '')} description="Enter the email address you registered with.">
+    <AuthFrame
+      title={ACTIONS.forgotPassword.replace('?', '')}
+      description="Enter the email address you registered with."
+    >
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
         <Field label="Email address" error={fieldError}>
           {(control) => (

@@ -15,6 +15,8 @@ interface SessionValue {
   /** Why someone was returned to the sign-in screen, when it was not their choice. */
   notice: string | null;
   signIn: (identifier: string, password: string) => Promise<void>;
+  /** Finishes sign-up: creates the password and the account, and signs this phone in. */
+  completeSignUp: (setupToken: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   retry: () => void;
@@ -121,6 +123,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setToken(session.token);
   }, []);
 
+  const completeSignUp = useCallback(async (setupToken: string, password: string) => {
+    const session = await api.post<TokenLoginResponse>('/auth/register/complete-token', {
+      setupToken,
+      password,
+      deviceLabel: deviceLabel(),
+      installationId: await installationId(),
+      platform: Platform.OS === 'ios' ? 'ios' : 'android',
+    });
+    setApiToken(session.token);
+    await secure.setToken(session.token);
+    setNotice(null);
+    setToken(session.token);
+  }, []);
+
   const signOut = useCallback(async () => {
     setNotice(null);
     await unregisterThisDevice();
@@ -151,6 +167,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       me: me ?? null,
       notice,
       signIn,
+      completeSignUp,
       signOut,
       refresh,
       retry: () => void refetchMe(),
@@ -158,7 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setHoldRoute,
       signInPassword: () => typedPassword.current,
     }),
-    [holdRoute, me, notice, refetchMe, refresh, signIn, signOut, state],
+    [completeSignUp, holdRoute, me, notice, refetchMe, refresh, signIn, signOut, state],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

@@ -5,40 +5,40 @@ architecture: nothing was rebuilt, and accounts, subscriptions, trades and their
 
 ## What already existed and was reused
 
-| Need | Existing piece reused |
-| --- | --- |
-| Signed-in users without access | `evaluateSignalAccess` (one rule for REST, WebSocket and push). Expired users could already sign in. |
-| Custom subscription length | `durationDays` (1–3660) on create and renew, inclusive calendar days in the business timezone. |
-| Renewal semantics | `computeRenewal`: running subscriptions extend from expiry. Now also takes an activation date for expired ones. |
-| Temporary passwords | `newTemporaryPassword`, `mustChangePassword`, `tempPasswordExpiresAt`, forced change on next sign-in. |
-| Pending trades | `PUBLISHED` ("Awaiting entry") and the separate `ACTIVATE` action. No new lifecycle state was added. |
-| Audit trail | Append-only `audit_logs`, `signal_events`, `subscription_events`. |
-| Push, live updates | The outbox worker, `push_deliveries`, Expo and Web Push transports, `pg_notify` channels. |
-| History | Trades leave the live lists and appear in History as soon as they close. No approval step existed; a test now guards it. The public-performance compliance gate is unchanged. |
+| Need                           | Existing piece reused                                                                                                                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signed-in users without access | `evaluateSignalAccess` (one rule for REST, WebSocket and push). Expired users could already sign in.                                                                          |
+| Custom subscription length     | `durationDays` (1–3660) on create and renew, inclusive calendar days in the business timezone.                                                                                |
+| Renewal semantics              | `computeRenewal`: running subscriptions extend from expiry. Now also takes an activation date for expired ones.                                                               |
+| Temporary passwords            | `newTemporaryPassword`, `mustChangePassword`, `tempPasswordExpiresAt`, forced change on next sign-in.                                                                         |
+| Pending trades                 | `PUBLISHED` ("Awaiting entry") and the separate `ACTIVATE` action. No new lifecycle state was added.                                                                          |
+| Audit trail                    | Append-only `audit_logs`, `signal_events`, `subscription_events`.                                                                                                             |
+| Push, live updates             | The outbox worker, `push_deliveries`, Expo and Web Push transports, `pg_notify` channels.                                                                                     |
+| History                        | Trades leave the live lists and appear in History as soon as they close. No approval step existed; a test now guards it. The public-performance compliance gate is unchanged. |
 
 ## Checklist
 
-| # | Requirement | Where | Tests |
-| --- | --- | --- | --- |
-| 2 | Log In / Sign Up screen, email or username, show/hide password | web `login`, `signup`; mobile `(auth)/login`, `(auth)/signup` | e2e `onboarding.spec`, mobile `auth-copy.test` |
-| 3.1 | Five required fields, phone in E.164 (default +91), age with legal minimum | domain `registration.ts`; API `registration.service` | domain `registration.test`; API `registration.test` |
-| 3.2 | Email code: 6 digits, 5 minutes, 5 tries, 60 s resend, hashed, rate limited | API `email-challenge.service` | API `registration.test` |
-| 3.3 | Create password after verification, account enabled, no access | API `registration.service.complete` | API `registration.test` |
-| 4 | WhatsApp enquiry with email fallback, never claimed as sent | domain `support.ts`; API `enquiries.service`; web/mobile `SubscriptionStatus` | domain `support.test`; API `enquiries.test` |
-| 4.4 | Support WhatsApp and email set by the Master Admin only, audited | API `settings`; web/mobile settings | API `enquiries.test` |
-| 5 | Identity, enquiry and access kept separate | `users.email_verified_at`, `users.enquiry_status`, `subscriptions.kind` | API `registration.test`, `trials.test` |
-| 6 | New Registrations list with badge, filters, detail actions | API `registrations` in `subscribers`; web/mobile admin | API `registration.test` |
-| 7 | Start / renew with any number of days, preview, no shortening | domain `subscription.ts`; API `subscribers.service` | domain `subscription.test`; API `trials.test` |
-| 7.4, 8.4, 18 | Email + in-app + push for start, renewal and trial | API `notices.service`, `email` outbox, worker | API `trials.test` |
-| 8 | Admin-granted free trials, never automatic, one greeting per grant | `trial_grants`; API `trials` in `subscribers.service`; `TrialGreeting` | API `trials.test` |
-| 9 | Expired users sign in, see renewal screen, get no new private data | existing access rule; `SubscriptionStatus` screens | API `trials.test` (expiry and restore) |
-| 10 | Forgot password: email code, then admin-issued temporary password | API `password-reset.service`; web/mobile admin list | API `password-reset.test` |
-| 11 | Range trade published with no target or stop, activated later with levels | domain `lifecycle.ts`, `contracts.ts`; composer; Activate form | domain `lifecycle.test`; API `signals.test` |
-| 12 | Clean correction wording for subscribers, full audit kept | domain `templates.ts`, `lifecycle.ts` | domain `lifecycle.test` |
-| 13, 16 | Minimal copy, "Edit Levels Manually", consistent action names | domain `copy.ts`; all screens | domain `copy.test` |
-| 14 | Signals page: Upcoming, Active, History | web `app/page.tsx`; mobile `feed.tsx` | e2e, mobile tests |
-| 15 | Closed trades in History at once | existing queries | API `signals.test` |
-| 17 | One reversible, additive migration | `20261114000000_onboarding_trials` | migrate from the previous schema |
+| #            | Requirement                                                                 | Where                                                                         | Tests                                               |
+| ------------ | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------- |
+| 2            | Log In / Sign Up screen, email or username, show/hide password              | web `login`, `signup`; mobile `(auth)/login`, `(auth)/signup`                 | e2e `onboarding.spec`, mobile `auth-copy.test`      |
+| 3.1          | Five required fields, phone in E.164 (default +91), age with legal minimum  | domain `registration.ts`; API `registration.service`                          | domain `registration.test`; API `registration.test` |
+| 3.2          | Email code: 6 digits, 5 minutes, 5 tries, 60 s resend, hashed, rate limited | API `email-challenge.service`                                                 | API `registration.test`                             |
+| 3.3          | Create password after verification, account enabled, no access              | API `registration.service.complete`                                           | API `registration.test`                             |
+| 4            | WhatsApp enquiry with email fallback, never claimed as sent                 | domain `support.ts`; API `enquiries.service`; web/mobile `SubscriptionStatus` | domain `support.test`; API `enquiries.test`         |
+| 4.4          | Support WhatsApp and email set by the Master Admin only, audited            | API `settings`; web/mobile settings                                           | API `enquiries.test`                                |
+| 5            | Identity, enquiry and access kept separate                                  | `users.email_verified_at`, `users.enquiry_status`, `subscriptions.kind`       | API `registration.test`, `trials.test`              |
+| 6            | New Registrations list with badge, filters, detail actions                  | API `registrations` in `subscribers`; web/mobile admin                        | API `registration.test`                             |
+| 7            | Start / renew with any number of days, preview, no shortening               | domain `subscription.ts`; API `subscribers.service`                           | domain `subscription.test`; API `trials.test`       |
+| 7.4, 8.4, 18 | Email + in-app + push for start, renewal and trial                          | API `notices.service`, `email` outbox, worker                                 | API `trials.test`                                   |
+| 8            | Admin-granted free trials, never automatic, one greeting per grant          | `trial_grants`; API `trials` in `subscribers.service`; `TrialGreeting`        | API `trials.test`                                   |
+| 9            | Expired users sign in, see renewal screen, get no new private data          | existing access rule; `SubscriptionStatus` screens                            | API `trials.test` (expiry and restore)              |
+| 10           | Forgot password: email code, then admin-issued temporary password           | API `password-reset.service`; web/mobile admin list                           | API `password-reset.test`                           |
+| 11           | Range trade published with no target or stop, activated later with levels   | domain `lifecycle.ts`, `contracts.ts`; composer; Activate form                | domain `lifecycle.test`; API `signals.test`         |
+| 12           | Clean correction wording for subscribers, full audit kept                   | domain `templates.ts`, `lifecycle.ts`                                         | domain `lifecycle.test`                             |
+| 13, 16       | Minimal copy, "Edit Levels Manually", consistent action names               | domain `copy.ts`; all screens                                                 | domain `copy.test`                                  |
+| 14           | Signals page: Upcoming, Active, History                                     | web `app/page.tsx`; mobile `feed.tsx`                                         | e2e, mobile tests                                   |
+| 15           | Closed trades in History at once                                            | existing queries                                                              | API `signals.test`                                  |
+| 17           | One reversible, additive migration                                          | `20261114000000_onboarding_trials`                                            | migrate from the previous schema                    |
 
 ## Decisions
 

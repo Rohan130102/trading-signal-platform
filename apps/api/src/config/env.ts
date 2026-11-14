@@ -99,7 +99,10 @@ const schema = z
       ctx.addIssue({ code: 'custom', message: 'EMAIL_TRANSPORT=file requires EMAIL_FILE_DIR' });
     }
     if (env.NODE_ENV === 'production' && env.EMAIL_TRANSPORT === 'file') {
-      ctx.addIssue({ code: 'custom', message: 'EMAIL_TRANSPORT=file writes codes to disk and is refused in production' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'EMAIL_TRANSPORT=file writes codes to disk and is refused in production',
+      });
     }
     if (env.NODE_ENV === 'production' && env.APP_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', message: 'In production every APP_ORIGINS entry must use https://' });

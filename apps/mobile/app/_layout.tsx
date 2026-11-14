@@ -109,6 +109,9 @@ function App() {
           <Stack.Screen name="(subscriber)" options={{ headerShown: false, animation: 'fade' }} />
           <Stack.Screen name="(admin)" options={{ headerShown: false, animation: 'fade' }} />
           <Stack.Screen name="access-ended" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="welcome" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="admin/registrations" options={{ title: 'New Registrations' }} />
+          <Stack.Screen name="admin/password-resets" options={{ title: 'Password Resets' }} />
           <Stack.Screen name="compose" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="disclosures" options={{ title: 'Risk and privacy' }} />
           <Stack.Screen name="trades/[id]" options={{ title: '' }} />

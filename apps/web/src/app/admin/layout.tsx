@@ -194,7 +194,10 @@ function Shell({ children, name, master }: { children: ReactNode; name: string; 
               <span className="relative">
                 <Menu className="size-5" aria-hidden />
                 {waiting > 0 && (
-                  <span className="absolute -right-1 -top-1 size-2 rounded-full bg-primary" aria-label={`${waiting} waiting`} />
+                  <span
+                    className="absolute -right-1 -top-1 size-2 rounded-full bg-primary"
+                    aria-label={`${waiting} waiting`}
+                  />
                 )}
               </span>
               More

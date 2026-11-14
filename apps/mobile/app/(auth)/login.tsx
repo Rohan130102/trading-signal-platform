@@ -1,10 +1,11 @@
-import { loginSchema, type PublicInfo } from '@signaldesk/domain';
+import { ACTIONS, loginSchema, type PublicInfo } from '@signaldesk/domain';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
+import { AuthTabs } from '@/subscriber/AuthParts';
 import { space } from '@/theme/tokens';
 import { AuthFrame, Button, Field, FormError, type InputHandle, Notice, T } from '@/ui';
 
@@ -26,8 +27,10 @@ export default function Login() {
   const submit = async () => {
     const parsed = loginSchema.safeParse({ identifier, password });
     if (!parsed.success) {
-      const flat = parsed.error.flatten().fieldErrors;
-      setFieldErrors({ identifier: flat.identifier?.[0], password: flat.password?.[0] });
+      setFieldErrors({
+        identifier: identifier.trim() ? undefined : 'Enter your email or username',
+        password: password ? undefined : 'Enter your password',
+      });
       return;
     }
     setFieldErrors({});
@@ -44,18 +47,17 @@ export default function Login() {
   };
 
   return (
-    <AuthFrame
-      title={`Sign in to ${info.data?.serviceName ?? 'SignalDesk'}`}
-      description="Use the login ID and password your administrator gave you."
-    >
+    <AuthFrame title={info.data?.serviceName ?? 'SignalDesk'}>
+      <AuthTabs current="login" />
       {notice && !error && <Notice tone="neutral">{notice}</Notice>}
       <View style={{ gap: space.md }}>
         <Field
           testID="login-id"
-          label="Login ID"
+          label="Email or username"
           value={identifier}
           onChangeText={setIdentifier}
           error={fieldErrors.identifier}
+          keyboardType="email-address"
           autoCapitalize="none"
           autoCorrect={false}
           autoComplete="username"
@@ -79,30 +81,42 @@ export default function Login() {
           returnKeyType="go"
           onSubmitEditing={() => void submit()}
         />
+        <Link href="/forgot-password" asChild>
+          <Pressable accessibilityRole="link" hitSlop={10} style={{ alignSelf: 'flex-end' }} testID="login-forgot">
+            <T v="small" c="muted" style={{ fontWeight: '600' }}>
+              {ACTIONS.forgotPassword}
+            </T>
+          </Pressable>
+        </Link>
         <FormError error={error instanceof ApiError && error.code === 'NOT_CONFIGURED' ? null : error} />
         <Button
           testID="login-submit"
-          label="Sign in"
+          label={ACTIONS.logIn}
           variant="primary"
           large
           full
           loading={busy}
           onPress={() => void submit()}
         />
-      </View>
-      <View style={{ flexGrow: 1 }} />
-      <View style={{ gap: space.sm, alignItems: 'center' }}>
-        <T v="caption" c="subtle" center>
-          Forgot your password? Your administrator can reset it.
-        </T>
-        <Link href="/disclosures" asChild>
-          <Pressable accessibilityRole="link" hitSlop={10} testID="login-disclosures">
-            <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
-              Risk disclosure and privacy
+        <Link href="/signup" asChild>
+          <Pressable accessibilityRole="link" hitSlop={10} style={{ alignSelf: 'center' }} testID="login-create">
+            <T v="small" c="muted">
+              New here?{' '}
+              <T v="small" style={{ fontWeight: '700' }}>
+                {ACTIONS.createAccount}
+              </T>
             </T>
           </Pressable>
         </Link>
       </View>
+      <View style={{ flexGrow: 1 }} />
+      <Link href="/disclosures" asChild>
+        <Pressable accessibilityRole="link" hitSlop={10} testID="login-disclosures" style={{ alignSelf: 'center' }}>
+          <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
+            Risk disclosure and privacy
+          </T>
+        </Pressable>
+      </Link>
     </AuthFrame>
   );
 }

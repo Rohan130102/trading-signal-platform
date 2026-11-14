@@ -55,13 +55,27 @@ describe('subscription enquiries', () => {
     const repeat = await client.post('/me/enquiries', { channel: 'EMAIL', idempotencyKey: randomUUID() });
     expect(repeat.body).toMatchObject({ id: res.body.id, replayed: true });
 
-    const mail = await waitUntil(() => mailbox(support).slice(before).find((m) => m.text.includes(email)));
+    const mail = await waitUntil(() =>
+      mailbox(support)
+        .slice(before)
+        .find((m) => m.text.includes(email)),
+    );
     expect(mail.subject).toBe('SignalDesk — New Subscription Enquiry');
     expect(mail.replyTo).toBe(email);
-    for (const part of ['Name: Asha Rao', `Registered email: ${email}`, 'Registered mobile: +919876543210', 'Enquiry source: Email Fallback', 'Current status: No active subscription']) {
+    for (const part of [
+      'Name: Asha Rao',
+      `Registered email: ${email}`,
+      'Registered mobile: +919876543210',
+      'Enquiry source: Email Fallback',
+      'Current status: No active subscription',
+    ]) {
       expect(mail.text).toContain(part);
     }
-    expect(mailbox(support).slice(before).filter((m) => m.text.includes(email))).toHaveLength(1);
+    expect(
+      mailbox(support)
+        .slice(before)
+        .filter((m) => m.text.includes(email)),
+    ).toHaveLength(1);
     const status = await waitUntil(async () => {
       const s = (await client.get(`/me/enquiries/${res.body.id}`)).body;
       return s.outcome === 'EMAIL_SENT' ? s : null;
@@ -103,7 +117,14 @@ describe('support contact settings', () => {
 
       const invalid = await admin().req('PUT', '/admin/settings/support', { supportWhatsapp: '12', supportEmail: 'x' });
       expect(invalid.status).toBe(422);
-      expect((await client.req('PUT', '/admin/settings/support', { supportWhatsapp: '+919000012345', supportEmail: 'a@b.co' })).status).toBe(403);
+      expect(
+        (
+          await client.req('PUT', '/admin/settings/support', {
+            supportWhatsapp: '+919000012345',
+            supportEmail: 'a@b.co',
+          })
+        ).status,
+      ).toBe(403);
     } finally {
       await admin().req('PUT', '/admin/settings/support', {
         supportWhatsapp: original.supportWhatsapp,
@@ -166,7 +187,10 @@ describe('starting and renewing subscriptions', () => {
     expect((await client.get('/auth/me')).body.access).toEqual({ allowed: false, reason: 'SUBSCRIPTION_EXPIRED' });
     expect((await client.get('/feed')).status).toBe(403);
 
-    const renewed = await admin().post(`/admin/subscribers/${id}/renew`, { durationDays: 30, idempotencyKey: randomUUID() });
+    const renewed = await admin().post(`/admin/subscribers/${id}/renew`, {
+      durationDays: 30,
+      idempotencyKey: randomUUID(),
+    });
     expect(renewed.status).toBe(201);
     expect(renewed.body.subscriber.events[0].mode).toBe('RESTARTED_FROM_NOW');
     expect((await client.get('/auth/me')).body.access.allowed).toBe(true);
@@ -187,7 +211,10 @@ describe('starting and renewing subscriptions', () => {
   it('extends a running subscription from its expiry and never shortens it', async () => {
     const { id } = await signUp();
     const started = (await start(id, { durationDays: 30 })).body.subscriber.subscription;
-    const renewed = await admin().post(`/admin/subscribers/${id}/renew`, { durationDays: 1, idempotencyKey: randomUUID() });
+    const renewed = await admin().post(`/admin/subscribers/${id}/renew`, {
+      durationDays: 1,
+      idempotencyKey: randomUUID(),
+    });
     expect(renewed.body.subscriber.events[0].mode).toBe('EXTENDED_FROM_EXPIRY');
     expect(Date.parse(renewed.body.subscriber.subscription.expiresAt)).toBeGreaterThan(Date.parse(started.expiresAt));
   });
@@ -263,14 +290,21 @@ describe('free trials', () => {
     // A trial is not renewed; and a paid subscription is.
     const { id: other } = await signUp();
     await trial(other, { durationDays: 3 });
-    const renew = await admin().post(`/admin/subscribers/${other}/renew`, { durationDays: 3, idempotencyKey: randomUUID() });
+    const renew = await admin().post(`/admin/subscribers/${other}/renew`, {
+      durationDays: 3,
+      idempotencyKey: randomUUID(),
+    });
     expect(renew.status).toBe(409);
   });
 
   it('are never available to a subscriber themselves', async () => {
     const { client, id } = await signUp();
-    expect((await client.post(`/admin/subscribers/${id}/trial`, { durationDays: 5, idempotencyKey: randomUUID() })).status).toBe(403);
-    expect((await client.post(`/admin/subscribers/${id}/start`, { durationDays: 5, idempotencyKey: randomUUID() })).status).toBe(403);
+    expect(
+      (await client.post(`/admin/subscribers/${id}/trial`, { durationDays: 5, idempotencyKey: randomUUID() })).status,
+    ).toBe(403);
+    expect(
+      (await client.post(`/admin/subscribers/${id}/start`, { durationDays: 5, idempotencyKey: randomUUID() })).status,
+    ).toBe(403);
   });
 });
 
@@ -280,7 +314,9 @@ describe('older accounts', () => {
     const me = (await legacy.client.get('/auth/me')).body;
     expect(me.subscription.kind).toBe('PAID');
     expect(me.access.allowed).toBe(true);
-    expect((await new Client().post('/auth/login', { identifier: legacy.loginId, password: PASSWORD })).status).toBe(200);
+    expect((await new Client().post('/auth/login', { identifier: legacy.loginId, password: PASSWORD })).status).toBe(
+      200,
+    );
     const detail = (await admin().get(`/admin/subscribers/${legacy.id}`)).body;
     expect(detail).toMatchObject({ selfRegistered: false, emailVerifiedAt: null, actions: ['RENEW'] });
     expect(uniqueId()).toBeTruthy();

@@ -58,7 +58,8 @@ export class PasswordResetsService {
     if (!OPEN.includes(request.status as PasswordResetStatus)) {
       throw new AppError(409, 'REQUEST_CLOSED', 'This request is already closed.');
     }
-    if (request.user.role !== 'SUBSCRIBER') throw new AppError(409, 'NOT_A_SUBSCRIBER', 'Only subscriber passwords are reset here.');
+    if (request.user.role !== 'SUBSCRIBER')
+      throw new AppError(409, 'NOT_A_SUBSCRIBER', 'Only subscriber passwords are reset here.');
     const temporaryPassword = newTemporaryPassword();
     const passwordHash = await this.auth.hashPassword(temporaryPassword);
     const expiresAt = new Date(Date.now() + RESET_PASSWORD_HOURS * 3_600_000);
@@ -97,7 +98,9 @@ export class PasswordResetsService {
       });
       if (claim.count !== 1) {
         const exists = await tx.passwordResetRequest.findUnique({ where: { id }, select: { id: true } });
-        throw exists ? new AppError(409, 'REQUEST_CLOSED', 'This request is already closed.') : notFound('Request not found');
+        throw exists
+          ? new AppError(409, 'REQUEST_CLOSED', 'This request is already closed.')
+          : notFound('Request not found');
       }
       await this.audit.record(
         {

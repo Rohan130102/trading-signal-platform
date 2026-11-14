@@ -44,7 +44,9 @@ export function TrialGreeting({ me }: { me: MeResponse }) {
         <p className="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">{copy.eyebrow}</p>
         <div className="trial-days mx-auto mt-4 grid size-24 place-items-center rounded-full bg-primary text-primary-text">
           <span className="num text-4xl font-semibold leading-none">{grant.durationDays}</span>
-          <span className="-mt-3 text-[11px] font-semibold uppercase tracking-wide">{grant.durationDays === 1 ? 'day' : 'days'}</span>
+          <span className="-mt-3 text-[11px] font-semibold uppercase tracking-wide">
+            {grant.durationDays === 1 ? 'day' : 'days'}
+          </span>
         </div>
         <h2 id="trial-title" className="mt-5 text-xl font-semibold tracking-tight">
           {copy.title}
@@ -52,7 +54,14 @@ export function TrialGreeting({ me }: { me: MeResponse }) {
         <p id="trial-body" className="mt-2 text-sm text-muted">
           {copy.body}
         </p>
-        <Button ref={button} variant="primary" size="lg" className="mt-6 w-full" loading={closing} onClick={() => void close()}>
+        <Button
+          ref={button}
+          variant="primary"
+          size="lg"
+          className="mt-6 w-full"
+          loading={closing}
+          onClick={() => void close()}
+        >
           {copy.action}
         </Button>
       </div>

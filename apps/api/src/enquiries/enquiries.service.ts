@@ -79,7 +79,11 @@ export class EnquiriesService {
 
     if (input.channel === 'EMAIL') {
       if (!this.email.available) {
-        throw new AppError(503, 'EMAIL_NOT_CONFIGURED', 'Email is not set up yet. Use WhatsApp or contact support directly.');
+        throw new AppError(
+          503,
+          'EMAIL_NOT_CONFIGURED',
+          'Email is not set up yet. Use WhatsApp or contact support directly.',
+        );
       }
       const recent = await this.prisma.subscriptionEnquiry.findFirst({
         where: { userId, channel: 'EMAIL', createdAt: { gt: new Date(Date.now() - EMAIL_REPEAT_WINDOW_MS) } },
@@ -137,7 +141,11 @@ export class EnquiriesService {
             action: 'SUBSCRIPTION_ENQUIRY',
             targetType: 'user',
             targetId: userId,
-            metadata: { channel: input.channel, purpose: input.purpose, whatsappUnavailable: input.whatsappUnavailable },
+            metadata: {
+              channel: input.channel,
+              purpose: input.purpose,
+              whatsappUnavailable: input.whatsappUnavailable,
+            },
           },
           tx,
         );

@@ -16,7 +16,12 @@ export function SupportContact({ me }: { me: MeResponse }) {
   return (
     <div className="flex flex-col gap-2 text-sm">
       {digits && (
-        <a href={`https://wa.me/${digits}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded hover:underline">
+        <a
+          href={`https://wa.me/${digits}`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 rounded hover:underline"
+        >
           <MessageCircle className="size-4 text-muted" aria-hidden />
           <span className="num">{me.support.whatsapp}</span>
         </a>
@@ -50,7 +55,11 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
         <div
           className={clsx(
             'mb-4 grid size-11 place-items-center rounded-xl',
-            copy.tone === 'ended' ? 'bg-stop-soft text-stop' : copy.tone === 'pending' ? 'bg-update-soft text-update' : 'bg-neutral-soft text-muted',
+            copy.tone === 'ended'
+              ? 'bg-stop-soft text-stop'
+              : copy.tone === 'pending'
+                ? 'bg-update-soft text-update'
+                : 'bg-neutral-soft text-muted',
           )}
         >
           <Icon className="size-5" aria-hidden />
@@ -58,11 +67,15 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
         <h1 className="text-[22px] font-semibold tracking-tight">{copy.title}</h1>
         <p className="mt-2 text-muted">{copy.body}</p>
         <div className="mt-6">
-          {copy.primary && (
-            <EnquiryActions purpose={copy.primary.purpose} primaryLabel={copy.primary.label} />
-          )}
+          {copy.primary && <EnquiryActions purpose={copy.primary.purpose} primaryLabel={copy.primary.label} />}
           {copy.secondary && (
-            <Button variant="ghost" size="lg" className="mt-2 w-full" onClick={() => setShowContact(!showContact)} aria-expanded={showContact}>
+            <Button
+              variant="ghost"
+              size="lg"
+              className="mt-2 w-full"
+              onClick={() => setShowContact(!showContact)}
+              aria-expanded={showContact}
+            >
               {copy.secondary.label}
             </Button>
           )}
@@ -120,4 +133,3 @@ export function Notices() {
     </section>
   );
 }
-

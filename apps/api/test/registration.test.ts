@@ -14,7 +14,10 @@ describe('sign-up', () => {
     const mail = mailbox(email).at(-1);
     expect(mail?.subject).toContain('verification code');
     expect(mail?.text).toContain('expires in 5 minutes');
-    const verified = await client.post('/auth/register/verify', { challengeId: started.body.challengeId, code: codeIn(mail) });
+    const verified = await client.post('/auth/register/verify', {
+      challengeId: started.body.challengeId,
+      code: codeIn(mail),
+    });
     expect(verified.status).toBe(200);
     expect(verified.body.setupToken).toEqual(expect.any(String));
 
@@ -52,9 +55,13 @@ describe('sign-up', () => {
 
   it('signs in with the registered email in any case, and older accounts with their login ID', async () => {
     const { email } = await signUp();
-    expect((await new Client().post('/auth/login', { identifier: email.toUpperCase(), password: NEW_PASSWORD })).status).toBe(200);
+    expect(
+      (await new Client().post('/auth/login', { identifier: email.toUpperCase(), password: NEW_PASSWORD })).status,
+    ).toBe(200);
     const legacy = await newSubscriber(5);
-    expect((await new Client().post('/auth/login', { identifier: legacy.loginId, password: PASSWORD })).status).toBe(200);
+    expect((await new Client().post('/auth/login', { identifier: legacy.loginId, password: PASSWORD })).status).toBe(
+      200,
+    );
   });
 
   it('refuses invalid details with a reason for each field', async () => {
@@ -86,7 +93,10 @@ describe('sign-up', () => {
     const mail = mailbox(email).slice(before).at(-1);
     expect(mail?.subject).toContain('already have an account');
     expect(mail?.text).not.toMatch(/\b\d{6}\b/);
-    const guess = await new Client().post('/auth/register/verify', { challengeId: again.body.challengeId, code: '123456' });
+    const guess = await new Client().post('/auth/register/verify', {
+      challengeId: again.body.challengeId,
+      code: '123456',
+    });
     expect(guess.status).toBe(422);
   });
 
@@ -111,7 +121,9 @@ describe('sign-up', () => {
     const { challengeId } = (await client.post('/auth/register', details(email))).body;
     const code = await latestCode(email);
     await withDb((db) =>
-      db.query("UPDATE email_challenges SET code_expires_at = now() - interval '1 second' WHERE id = $1", [challengeId]),
+      db.query("UPDATE email_challenges SET code_expires_at = now() - interval '1 second' WHERE id = $1", [
+        challengeId,
+      ]),
     );
     const res = await client.post('/auth/register/verify', { challengeId, code });
     expect(res.status).toBe(410);
@@ -167,7 +179,8 @@ describe('sign-up', () => {
     const email = uniqueEmail();
     const client = new Client();
     const { challengeId } = (await client.post('/auth/register', details(email))).body;
-    const { setupToken } = (await client.post('/auth/register/verify', { challengeId, code: await latestCode(email) })).body;
+    const { setupToken } = (await client.post('/auth/register/verify', { challengeId, code: await latestCode(email) }))
+      .body;
     expect((await client.post('/auth/register/complete', { setupToken, password: 'short' })).status).toBe(422);
     expect((await client.post('/auth/register/complete', { setupToken, password: 'password123' })).status).toBe(422);
     expect((await client.post('/auth/register/complete', { setupToken, password: NEW_PASSWORD })).status).toBe(200);
@@ -179,14 +192,16 @@ describe('sign-up', () => {
     const { challengeId } = (await client.post('/auth/register', details(email))).body;
     const code = await latestCode(email);
     const stored = await withDb(
-      async (db) => (await db.query('SELECT code_hash, details FROM email_challenges WHERE id = $1', [challengeId])).rows[0],
+      async (db) =>
+        (await db.query('SELECT code_hash, details FROM email_challenges WHERE id = $1', [challengeId])).rows[0],
     );
     expect(stored.code_hash).not.toContain(code);
     expect(stored.code_hash).toMatch(/^[0-9a-f]{64}$/);
     const { setupToken } = (await client.post('/auth/register/verify', { challengeId, code })).body;
     await client.post('/auth/register/complete', { setupToken, password: NEW_PASSWORD });
     const after = await withDb(
-      async (db) => (await db.query('SELECT code_hash, details FROM email_challenges WHERE id = $1', [challengeId])).rows[0],
+      async (db) =>
+        (await db.query('SELECT code_hash, details FROM email_challenges WHERE id = $1', [challengeId])).rows[0],
     );
     expect(after).toEqual({ code_hash: null, details: null });
   });
@@ -252,7 +267,10 @@ describe('password recovery', () => {
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['challengeId', 'email', 'expiresAt', 'resendAvailableAt']);
     expect(mailbox(email)).toHaveLength(0);
-    const guess = await new Client().post('/auth/password-reset/verify', { challengeId: res.body.challengeId, code: '123456' });
+    const guess = await new Client().post('/auth/password-reset/verify', {
+      challengeId: res.body.challengeId,
+      code: '123456',
+    });
     expect(guess.status).toBe(422);
   });
 
@@ -264,7 +282,10 @@ describe('password recovery', () => {
     const before = mailbox(email).length;
     const started = await startReset(email);
     const code = await latestCode(email, before);
-    const verified = await new Client().post('/auth/password-reset/verify', { challengeId: started.body.challengeId, code });
+    const verified = await new Client().post('/auth/password-reset/verify', {
+      challengeId: started.body.challengeId,
+      code,
+    });
     expect(verified.body).toEqual({ status: 'REQUESTED' });
     // A second request while the first is open is the same request.
     await withDb((db) =>
@@ -292,8 +313,12 @@ describe('password recovery', () => {
     expect(listed).not.toContain(temp);
     const audit = await withDb(
       async (db) =>
-        (await db.query("SELECT metadata::text AS m FROM audit_logs WHERE action = 'PASSWORD_RESET_ISSUED' AND target_id = $1", [id]))
-          .rows,
+        (
+          await db.query(
+            "SELECT metadata::text AS m FROM audit_logs WHERE action = 'PASSWORD_RESET_ISSUED' AND target_id = $1",
+            [id],
+          )
+        ).rows,
     );
     expect(audit.length).toBe(1);
     expect(audit[0].m).not.toContain(temp);
@@ -307,7 +332,8 @@ describe('password recovery', () => {
     expect((await back.get('/auth/me')).body.next).toBe('CHANGE_PASSWORD');
     expect((await back.get('/me/notices')).status).toBe(403);
     expect(
-      (await back.post('/auth/change-password', { currentPassword: temp, newPassword: 'another private phrase' })).status,
+      (await back.post('/auth/change-password', { currentPassword: temp, newPassword: 'another private phrase' }))
+        .status,
     ).toBe(200);
     expect((await back.get('/auth/me')).body.next).toBeNull();
   });
@@ -320,7 +346,9 @@ describe('password recovery', () => {
       challengeId: started.body.challengeId,
       code: await latestCode(email, before),
     });
-    const request = (await admin().get('/admin/password-resets')).body.requests.find((r: { userId: string }) => r.userId === id);
+    const request = (await admin().get('/admin/password-resets')).body.requests.find(
+      (r: { userId: string }) => r.userId === id,
+    );
     const temp = (await admin().post(`/admin/password-resets/${request.id}/issue`)).body.temporaryPassword;
     const client = new Client();
     await client.post('/auth/login', { identifier: email, password: temp });
@@ -337,7 +365,9 @@ describe('password recovery', () => {
       challengeId: started.body.challengeId,
       code: await latestCode(email, before),
     });
-    const request = (await admin().get('/admin/password-resets')).body.requests.find((r: { userId: string }) => r.userId === id);
+    const request = (await admin().get('/admin/password-resets')).body.requests.find(
+      (r: { userId: string }) => r.userId === id,
+    );
     const temp = (await admin().post(`/admin/password-resets/${request.id}/issue`)).body.temporaryPassword;
     await withDb((db) =>
       db.query("UPDATE users SET temp_password_expires_at = now() - interval '1 minute' WHERE id = $1", [id]),

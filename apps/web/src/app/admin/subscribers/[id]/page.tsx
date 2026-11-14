@@ -47,7 +47,11 @@ const EVENT_LABEL = (e: Detail['events'][number]) => {
   if (e.type === 'TRIAL_GRANTED') return `Free trial for ${e.durationDays} days`;
   if (e.type === 'ADJUSTED') return 'Dates adjusted';
   const how =
-    e.mode === 'EXTENDED_FROM_EXPIRY' ? ', extended from expiry' : e.mode === 'RESTARTED_FROM_DATE' ? ', from a set date' : ', started fresh';
+    e.mode === 'EXTENDED_FROM_EXPIRY'
+      ? ', extended from expiry'
+      : e.mode === 'RESTARTED_FROM_DATE'
+        ? ', from a set date'
+        : ', started fresh';
   return `Renewed for ${e.durationDays} days${how}`;
 };
 
@@ -64,7 +68,9 @@ export default function SubscriberPage() {
   const selfRegistered = detail.data?.selfRegistered === true;
   useEffect(() => {
     if (selfRegistered) {
-      void api.post(`/admin/subscribers/${id}/seen`).then(() => client.invalidateQueries({ queryKey: ['admin', 'inbox'] }));
+      void api
+        .post(`/admin/subscribers/${id}/seen`)
+        .then(() => client.invalidateQueries({ queryKey: ['admin', 'inbox'] }));
     }
   }, [client, id, selfRegistered]);
   const act = useMutation({

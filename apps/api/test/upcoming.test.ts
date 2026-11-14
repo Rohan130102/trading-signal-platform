@@ -18,7 +18,13 @@ async function upcoming(direction: 'BUY' | 'SELL' = 'BUY') {
 describe('upcoming range trades', () => {
   it('publish with no target or stop-loss, waiting for activation, and read as an upcoming trade', async () => {
     const { trade, low } = await upcoming();
-    expect(trade).toMatchObject({ status: 'PUBLISHED', entryType: 'RANGE', stopLoss: null, originalStopLoss: null, targets: [] });
+    expect(trade).toMatchObject({
+      status: 'PUBLISHED',
+      entryType: 'RANGE',
+      stopLoss: null,
+      originalStopLoss: null,
+      targets: [],
+    });
     const published = trade.events[0];
     expect(published.title).toBe('Upcoming trade: BUY XAU/USD');
     expect(published.body).toBe(
@@ -29,7 +35,9 @@ describe('upcoming range trades', () => {
     const sub = await newSubscriber(5);
     const seen = (await sub.client.get(`/trades/${trade.id}`)).body;
     expect(seen).toMatchObject({ status: 'PUBLISHED', stopLoss: null, targets: [] });
-    expect((await sub.client.get('/trades/active')).body.trades.some((t: { id: string }) => t.id === trade.id)).toBe(true);
+    expect((await sub.client.get('/trades/active')).body.trades.some((t: { id: string }) => t.id === trade.id)).toBe(
+      true,
+    );
   });
 
   it('is never active at publication, whatever was asked for', async () => {
@@ -127,7 +135,12 @@ describe('upcoming range trades', () => {
     const ranged = nextEntry();
     const half = await admin().post(
       '/admin/signals',
-      await signalBody({ entryType: 'RANGE', entryLow: String(ranged), entryHigh: String(ranged + 20), stopLoss: undefined }),
+      await signalBody({
+        entryType: 'RANGE',
+        entryLow: String(ranged),
+        entryHigh: String(ranged + 20),
+        stopLoss: undefined,
+      }),
     );
     expect(half.status).toBe(422);
   });
@@ -138,7 +151,11 @@ describe('history', () => {
     const sub = await newSubscriber(5);
     const { trade, low } = await upcoming();
     const active = (
-      await act(trade, 'ACTIVATE', { entryPrice: String(low + 10), targets: [String(low + 160)], stopLoss: String(low - 170) })
+      await act(trade, 'ACTIVATE', {
+        entryPrice: String(low + 10),
+        targets: [String(low + 160)],
+        stopLoss: String(low - 170),
+      })
     ).body.trade;
     const closed = await act(active, 'CLOSE', {
       exitPrice: String(low + 110),

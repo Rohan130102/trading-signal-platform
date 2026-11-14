@@ -12,7 +12,10 @@ function Group({ id, title, trades }: { id: string; title: string; trades: Trade
   if (trades.length === 0) return null;
   return (
     <section aria-labelledby={id} className="mb-7">
-      <h2 id={id} className="mb-2.5 flex items-baseline gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted">
+      <h2
+        id={id}
+        className="mb-2.5 flex items-baseline gap-2 text-[13px] font-semibold uppercase tracking-wide text-muted"
+      >
         {title}
         <span className="num font-medium text-subtle">{trades.length}</span>
       </h2>

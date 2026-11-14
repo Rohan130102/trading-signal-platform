@@ -208,7 +208,9 @@ export class RegistrationsAdminController {
   @Summary('Counts for the administrator badges: unseen registrations and open password resets')
   async inbox() {
     const [newRegistrations, openPasswordResets] = await Promise.all([
-      this.prisma.user.count({ where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null } }),
+      this.prisma.user.count({
+        where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null },
+      }),
       this.prisma.passwordResetRequest.count({ where: { status: 'OPEN' } }),
     ]);
     return { newRegistrations, openPasswordResets };

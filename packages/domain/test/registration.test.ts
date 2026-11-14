@@ -107,7 +107,9 @@ describe('subscription enquiries', () => {
       ].join('\n'),
     );
     expect(text).not.toMatch(/age|password|otp/i);
-    expect(enquiryMessage(person, 'Signal Desk', 'RENEWAL')).toContain('I would like to renew my Signal Desk subscription.');
+    expect(enquiryMessage(person, 'Signal Desk', 'RENEWAL')).toContain(
+      'I would like to renew my Signal Desk subscription.',
+    );
   });
 
   it('puts only digits in the wa.me path and encodes the message', () => {
@@ -121,7 +123,9 @@ describe('subscription enquiries', () => {
   });
 
   it('validates the support contact settings', () => {
-    expect(supportSettingsSchema.parse({ supportWhatsapp: '+91-9987255414', supportEmail: ' Help@Example.com ' })).toEqual({
+    expect(
+      supportSettingsSchema.parse({ supportWhatsapp: '+91-9987255414', supportEmail: ' Help@Example.com ' }),
+    ).toEqual({
       supportWhatsapp: '+919987255414',
       supportEmail: 'help@example.com',
     });

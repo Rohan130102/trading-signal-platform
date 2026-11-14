@@ -1,11 +1,15 @@
-import { accessEndedCopy } from '@signaldesk/domain';
-import * as Clipboard from 'expo-clipboard';
-import { View } from 'react-native';
+import { subscriberStatus } from '@signaldesk/domain';
+import { useState } from 'react';
+import { Linking, View } from 'react-native';
 import { useMe, useSession } from '@/lib/session';
-import { space } from '@/theme/tokens';
-import { AuthFrame, Button, Card, T, useToast } from '@/ui';
+import { EnquiryActions } from '@/subscriber/EnquiryActions';
+import { AuthFrame, Button, Card, ListRow } from '@/ui';
 
-/** Nothing private is on this screen, because the server sends nothing private to this account now. */
+/**
+ * What a signed-in person without access sees instead of signals: one short message and one obvious action.
+ * Nothing private is here, because the server sends nothing private to this account now. The account is checked
+ * again every minute, so a subscription or trial granted meanwhile opens the signals by itself.
+ */
 export default function AccessEnded() {
   const { me } = useSession();
   return me ? <Content /> : null;
@@ -13,43 +17,45 @@ export default function AccessEnded() {
 
 function Content() {
   const me = useMe();
-  const { signOut, refresh } = useSession();
-  const toast = useToast();
-  const copy = accessEndedCopy(me);
+  const { signOut } = useSession();
+  const [contact, setContact] = useState(false);
+  const copy = subscriberStatus(me);
+  if (!copy) return null;
+  const digits = me.support.whatsapp.replace(/\D/g, '');
   return (
     <AuthFrame title={copy.title} description={copy.body}>
-      {(me.support.renewalInstructions || me.support.contact) && (
-        <Card testID="renewal" style={{ gap: space.sm }}>
-          {me.support.renewalInstructions ? <T>{me.support.renewalInstructions}</T> : null}
-          {me.support.contact ? (
-            <View style={{ gap: space.sm }}>
-              <T v="small" c="muted">
-                Contact
-              </T>
-              <T v="strong" selectable>
-                {me.support.contact}
-              </T>
-              <Button
-                small
-                label="Copy"
-                icon="copy-outline"
-                style={{ alignSelf: 'flex-start' }}
-                onPress={() => {
-                  void Clipboard.setStringAsync(me.support.contact);
-                  toast({ title: 'Copied', tone: 'success' });
-                }}
-              />
-            </View>
-          ) : null}
+      {copy.primary && <EnquiryActions me={me} purpose={copy.primary.purpose} primaryLabel={copy.primary.label} />}
+      {copy.secondary && (
+        <Button
+          testID="status-contact"
+          label={copy.secondary.label}
+          variant="ghost"
+          full
+          onPress={() => setContact(!contact)}
+        />
+      )}
+      {(contact || !copy.primary) && (
+        <Card padded={false} testID="support-contact">
+          <ListRow
+            icon="logo-whatsapp"
+            title={me.support.whatsapp}
+            onPress={() => void Linking.openURL(`https://wa.me/${digits}`)}
+          />
+          <ListRow
+            icon="mail-outline"
+            title={me.support.email}
+            onPress={() => void Linking.openURL(`mailto:${me.support.email}`)}
+          />
         </Card>
       )}
+      <View style={{ flexGrow: 1 }} />
       <Button
-        testID="access-check"
-        label="I have renewed, check again"
-        variant="primary"
-        onPress={() => void refresh()}
+        testID="sign-out"
+        label="Log out"
+        variant="ghost"
+        style={{ alignSelf: 'center' }}
+        onPress={() => void signOut()}
       />
-      <Button testID="sign-out" label="Sign out" variant="ghost" onPress={() => void signOut()} />
     </AuthFrame>
   );
 }

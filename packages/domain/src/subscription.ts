@@ -176,7 +176,9 @@ export function lastValidLocalDate(expiresAt: Date, tz: string): string {
 
 /** "20 December 2026": the last day of access in the business timezone, as people read it. */
 export function accessUntilLabel(expiresAt: Date, tz: string): string {
-  return DateTime.fromMillis(expiresAt.getTime() - 1, { zone: tz }).setLocale('en-GB').toFormat('d LLLL yyyy');
+  return DateTime.fromMillis(expiresAt.getTime() - 1, { zone: tz })
+    .setLocale('en-GB')
+    .toFormat('d LLLL yyyy');
 }
 
 /** Whole calendar days of access remaining, counting today. Zero once expired. */

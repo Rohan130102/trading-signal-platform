@@ -178,18 +178,18 @@ export function Levels({
         />
       )}
       {stopLoss !== null && (
-      <PriceCell
-        label={moved ? 'Stop-loss (now)' : 'Stop-loss'}
-        value={fmt(stopLoss)}
-        tone="stop"
-        note={
-          moved ? (
-            <>
-              was <span className="num">{fmt(originalStopLoss as string)}</span>
-            </>
-          ) : undefined
-        }
-      />
+        <PriceCell
+          label={moved ? 'Stop-loss (now)' : 'Stop-loss'}
+          value={fmt(stopLoss)}
+          tone="stop"
+          note={
+            moved ? (
+              <>
+                was <span className="num">{fmt(originalStopLoss as string)}</span>
+              </>
+            ) : undefined
+          }
+        />
       )}
       {targets.map((t) => (
         <PriceCell
@@ -425,9 +425,7 @@ export function TradeCard({ trade, href }: { trade: TradeSummary; href: string }
         />
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2.5 text-[13px] text-muted">
-        <span className="min-w-0 truncate">
-          {trade.updatesCount > 0 ? trade.lastEventTitle : 'No updates yet'}
-        </span>
+        <span className="min-w-0 truncate">{trade.updatesCount > 0 ? trade.lastEventTitle : 'No updates yet'}</span>
         {trade.lastEventAt && <Time iso={trade.lastEventAt} />}
       </div>
     </Link>

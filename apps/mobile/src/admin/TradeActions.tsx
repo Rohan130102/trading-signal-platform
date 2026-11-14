@@ -295,13 +295,15 @@ function UpcomingActivateForm({ frame, trade, run, pending, error }: Shared) {
           error={error}
           label="Activate Trade and notify"
           disabled={!wellFormed || issues.length > 0}
-          onPress={() => run({ entryPrice: entry.trim(), targets: filled, stopLoss: stop.trim(), comment: optional(comment) })}
+          onPress={() =>
+            run({ entryPrice: entry.trim(), targets: filled, stopLoss: stop.trim(), comment: optional(comment) })
+          }
         />
       }
     >
       <T c="muted">
-        Published zone {formatPrice(trade, trade.entryLow)} – {formatPrice(trade, trade.entryHigh)}. The same trade becomes
-        active with these levels.
+        Published zone {formatPrice(trade, trade.entryLow)} – {formatPrice(trade, trade.entryHigh)}. The same trade
+        becomes active with these levels.
       </T>
       <Row>
         <Half>
@@ -321,9 +323,7 @@ function UpcomingActivateForm({ frame, trade, run, pending, error }: Shared) {
           </Half>
         ))}
       </Row>
-      {issues.length > 0 && (
-        <Notice tone="stop">{issues.map((issue) => issue.message).join('\n')}</Notice>
-      )}
+      {issues.length > 0 && <Notice tone="stop">{issues.map((issue) => issue.message).join('\n')}</Notice>}
       <Comment value={comment} onChange={setComment} />
     </Sheet>
   );

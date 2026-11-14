@@ -73,7 +73,13 @@ export function canTransition(from: TradeStatus, to: TradeStatus): boolean {
 }
 
 /** Actions that need a stop-loss or targets, which an upcoming trade gets only when it is activated. */
-const NEEDS_LEVELS: readonly TradeAction[] = ['MOVE_STOP', 'MOVE_STOP_BREAKEVEN', 'TRAIL_STOP', 'TARGET_HIT', 'MODIFY_TARGETS'];
+const NEEDS_LEVELS: readonly TradeAction[] = [
+  'MOVE_STOP',
+  'MOVE_STOP_BREAKEVEN',
+  'TRAIL_STOP',
+  'TARGET_HIT',
+  'MODIFY_TARGETS',
+];
 
 export function allowedActions(status: TradeStatus, levelsPending = false): TradeAction[] {
   return TRADE_ACTIONS.filter(

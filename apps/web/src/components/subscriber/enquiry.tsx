@@ -67,7 +67,10 @@ export function EnquiryActions({
   useEffect(() => {
     if (!email || email.outcome !== 'EMAIL_QUEUED') return;
     const timer = setTimeout(() => {
-      void api.get<EnquiryResult>(`/me/enquiries/${email.id}`).then(setEmail).catch(() => undefined);
+      void api
+        .get<EnquiryResult>(`/me/enquiries/${email.id}`)
+        .then(setEmail)
+        .catch(() => undefined);
     }, 2000);
     return () => clearTimeout(timer);
   }, [email]);

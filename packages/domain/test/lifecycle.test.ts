@@ -897,8 +897,13 @@ describe('upcoming range trades', () => {
     expect(previewSignalSchema.safeParse({ ...base, targets: ['3400'] }).success).toBe(false);
     expect(previewSignalSchema.safeParse({ ...base, entryType: 'SINGLE', entryHigh: '3300' }).success).toBe(false);
     expect(
-      previewSignalSchema.safeParse({ ...base, entryType: 'SINGLE', entryHigh: '3300', targets: ['3400'], stopLoss: '3200' })
-        .success,
+      previewSignalSchema.safeParse({
+        ...base,
+        entryType: 'SINGLE',
+        entryHigh: '3300',
+        targets: ['3400'],
+        stopLoss: '3200',
+      }).success,
     ).toBe(true);
   });
 
@@ -920,12 +925,12 @@ describe('upcoming range trades', () => {
       code(() => run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'], stopLoss: '3350' })),
     ).toBe('VALIDATION');
     const sell = upcoming({ direction: 'SELL' });
-    expect(
-      code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3200'], stopLoss: '3350' })),
-    ).toBe('NO_ERROR');
-    expect(
-      code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'], stopLoss: '3350' })),
-    ).toBe('VALIDATION');
+    expect(code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3200'], stopLoss: '3350' }))).toBe(
+      'NO_ERROR',
+    );
+    expect(code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'], stopLoss: '3350' }))).toBe(
+      'VALIDATION',
+    );
   });
 
   it('activates the same trade with its final levels and keeps the published range in the event', () => {
@@ -968,11 +973,11 @@ describe('upcoming range trades', () => {
   });
 
   it('cannot move a stop or targets it does not have, but its range can still be corrected', () => {
-    expect(code(() => run(upcoming(), { action: 'MOVE_STOP', price: '3200', allowWiden: false }))).toBe('LEVELS_PENDING');
-    expect(code(() => run(upcoming(), { action: 'MODIFY_TARGETS', targets: ['3400'] }))).toBe('LEVELS_PENDING');
-    expect(code(() => run(upcoming(), { action: 'CORRECT', reason: 'Typo', stopLoss: '3200' }))).toBe(
+    expect(code(() => run(upcoming(), { action: 'MOVE_STOP', price: '3200', allowWiden: false }))).toBe(
       'LEVELS_PENDING',
     );
+    expect(code(() => run(upcoming(), { action: 'MODIFY_TARGETS', targets: ['3400'] }))).toBe('LEVELS_PENDING');
+    expect(code(() => run(upcoming(), { action: 'CORRECT', reason: 'Typo', stopLoss: '3200' }))).toBe('LEVELS_PENDING');
     const d = run(upcoming(), { action: 'CORRECT', reason: 'Typo', entryLow: '3295', entryHigh: '3310' });
     expect(d.next.entry).toEqual({ type: 'RANGE', low: '3295', high: '3310' });
     expect(d.next.stopLoss).toBeNull();

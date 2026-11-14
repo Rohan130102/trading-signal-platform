@@ -31,7 +31,14 @@ interface Details {
 }
 
 function DetailsStep({ onSent }: { onSent: (challenge: ChallengeResponse) => void }) {
-  const [form, setForm] = useState<Details>({ firstName: '', lastName: '', email: '', mobile: '', age: '', consent: false });
+  const [form, setForm] = useState<Details>({
+    firstName: '',
+    lastName: '',
+    email: '',
+    mobile: '',
+    age: '',
+    consent: false,
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -64,12 +71,23 @@ function DetailsStep({ onSent }: { onSent: (challenge: ChallengeResponse) => voi
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" error={errors.firstName}>
           {(control) => (
-            <Input {...control} autoComplete="given-name" autoFocus value={form.firstName} onChange={(e) => set('firstName')(e.target.value)} />
+            <Input
+              {...control}
+              autoComplete="given-name"
+              autoFocus
+              value={form.firstName}
+              onChange={(e) => set('firstName')(e.target.value)}
+            />
           )}
         </Field>
         <Field label="Last name" error={errors.lastName}>
           {(control) => (
-            <Input {...control} autoComplete="family-name" value={form.lastName} onChange={(e) => set('lastName')(e.target.value)} />
+            <Input
+              {...control}
+              autoComplete="family-name"
+              value={form.lastName}
+              onChange={(e) => set('lastName')(e.target.value)}
+            />
           )}
         </Field>
       </div>
@@ -173,12 +191,23 @@ function PasswordStep({ setupToken, onDone }: { setupToken: string; onDone: () =
     <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
       <Field label="Create password">
         {(control) => (
-          <PasswordInput {...control} autoFocus autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <PasswordInput
+            {...control}
+            autoFocus
+            autoComplete="new-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
         )}
       </Field>
       <Field label="Confirm password">
         {(control) => (
-          <PasswordInput {...control} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <PasswordInput
+            {...control}
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
         )}
       </Field>
       <Hints hints={check.hints} />
@@ -213,7 +242,10 @@ export default function SignupPage() {
 
   const titles: Record<Exclude<Step, 'done'>, { title: string; description?: string }> = {
     details: { title: 'Create your account' },
-    code: { title: ACTIONS.verifyEmail, description: `Enter the code we sent to ${maskEmail(challenge?.email ?? '')}.` },
+    code: {
+      title: ACTIONS.verifyEmail,
+      description: `Enter the code we sent to ${maskEmail(challenge?.email ?? '')}.`,
+    },
     password: { title: ACTIONS.createPassword },
   };
 

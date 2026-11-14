@@ -505,7 +505,12 @@ export class WorkerService implements OnModuleDestroy {
     const target: PushTarget =
       device.channel === 'EXPO'
         ? { channel: 'EXPO', endpoint: device.endpoint }
-        : { channel: 'WEB_PUSH', endpoint: device.endpoint, p256dh: device.p256dh as string, auth: device.auth as string };
+        : {
+            channel: 'WEB_PUSH',
+            endpoint: device.endpoint,
+            p256dh: device.p256dh as string,
+            auth: device.auth as string,
+          };
     return { delivery, target, message };
   }
 

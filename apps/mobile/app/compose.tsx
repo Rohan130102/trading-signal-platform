@@ -466,90 +466,90 @@ function Compose() {
             )}
             {computed.upcoming ? (
               <T c="muted" testID="compose-upcoming">
-                Subscribers see an upcoming trade with this entry zone. Enter the final entry, targets and stop-loss when
-                you activate it.
+                Subscribers see an upcoming trade with this entry zone. Enter the final entry, targets and stop-loss
+                when you activate it.
               </T>
             ) : (
-            <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <T v="label" c="muted" style={{ textTransform: 'uppercase' }}>
-                {form.custom ? 'Your levels' : 'Calculated levels'}
-              </T>
-              {spec && !form.custom && (
-                <T v="caption" c="subtle" num>
-                  {`${formatPoints(spec.defaultTargetPoints)} / ${formatPoints(spec.defaultStopPoints)} pts`}
-                </T>
-              )}
-            </View>
-            {form.custom ? (
-              <View style={{ gap: space.md }}>
-                {form.targets.map((value, i) => (
-                  <PriceField
-                    key={i}
-                    testID={`custom-target-${i + 1}`}
-                    label={i === 0 ? 'Target 1' : `Target ${i + 1} (optional)`}
-                    value={value}
-                    onChange={(next) => {
-                      const targets = [...form.targets] as FormState['targets'];
-                      targets[i] = next;
-                      set('targets', targets);
-                    }}
-                  />
-                ))}
-                <PriceField
-                  testID="custom-stop"
-                  label="Stop-loss"
-                  value={form.stopLoss}
-                  onChange={(value) => set('stopLoss', value)}
-                />
-              </View>
-            ) : spec && form.direction && computed.entry && computed.targets.length > 0 ? (
-              <Levels
-                big
-                precision={spec.pricePrecision}
-                targets={computed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const }))}
-                stopLoss={computed.stopLoss}
-              />
-            ) : (
-              <T c="muted">
-                {form.direction
-                  ? 'Enter an entry price and the target and stop-loss appear here.'
-                  : 'Choose BUY or SELL, then enter a price.'}
-              </T>
-            )}
-            {computed.risk && (
               <>
-                <Divider />
-                <T v="small" c="muted" num testID="compose-risk">
-                  {`Stop ${formatPoints(computed.risk.stopPoints)} pts`}
-                  {computed.risk.targets
-                    .map(
-                      (t) =>
-                        ` · Target ${t.index} ${formatPoints(t.points)} pts${t.rewardToRisk ? ` (1:${t.rewardToRisk})` : ''}`,
-                    )
-                    .join('')}
-                </T>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <T v="label" c="muted" style={{ textTransform: 'uppercase' }}>
+                    {form.custom ? 'Your levels' : 'Calculated levels'}
+                  </T>
+                  {spec && !form.custom && (
+                    <T v="caption" c="subtle" num>
+                      {`${formatPoints(spec.defaultTargetPoints)} / ${formatPoints(spec.defaultStopPoints)} pts`}
+                    </T>
+                  )}
+                </View>
+                {form.custom ? (
+                  <View style={{ gap: space.md }}>
+                    {form.targets.map((value, i) => (
+                      <PriceField
+                        key={i}
+                        testID={`custom-target-${i + 1}`}
+                        label={i === 0 ? 'Target 1' : `Target ${i + 1} (optional)`}
+                        value={value}
+                        onChange={(next) => {
+                          const targets = [...form.targets] as FormState['targets'];
+                          targets[i] = next;
+                          set('targets', targets);
+                        }}
+                      />
+                    ))}
+                    <PriceField
+                      testID="custom-stop"
+                      label="Stop-loss"
+                      value={form.stopLoss}
+                      onChange={(value) => set('stopLoss', value)}
+                    />
+                  </View>
+                ) : spec && form.direction && computed.entry && computed.targets.length > 0 ? (
+                  <Levels
+                    big
+                    precision={spec.pricePrecision}
+                    targets={computed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const }))}
+                    stopLoss={computed.stopLoss}
+                  />
+                ) : (
+                  <T c="muted">
+                    {form.direction
+                      ? 'Enter an entry price and the target and stop-loss appear here.'
+                      : 'Choose BUY or SELL, then enter a price.'}
+                  </T>
+                )}
+                {computed.risk && (
+                  <>
+                    <Divider />
+                    <T v="small" c="muted" num testID="compose-risk">
+                      {`Stop ${formatPoints(computed.risk.stopPoints)} pts`}
+                      {computed.risk.targets
+                        .map(
+                          (t) =>
+                            ` · Target ${t.index} ${formatPoints(t.points)} pts${t.rewardToRisk ? ` (1:${t.rewardToRisk})` : ''}`,
+                        )
+                        .join('')}
+                    </T>
+                  </>
+                )}
+                {issue && issue.field !== 'entryLow' && issue.field !== 'entryHigh' && (
+                  <T v="small" c="stop" testID="compose-issue">
+                    {issue.message}
+                  </T>
+                )}
+                <ToggleRow
+                  testID="compose-custom"
+                  label={ACTIONS.editLevelsManually}
+                  value={form.custom}
+                  onChange={(value) => {
+                    if (value && computed.auto) {
+                      const targets = [...computed.auto.targets, '', '', ''].slice(0, 3) as FormState['targets'];
+                      setForm((f) => ({ ...f, custom: true, targets, stopLoss: computed.auto?.stopLoss ?? '' }));
+                    } else {
+                      set('custom', value);
+                    }
+                  }}
+                />
               </>
-            )}
-            {issue && issue.field !== 'entryLow' && issue.field !== 'entryHigh' && (
-              <T v="small" c="stop" testID="compose-issue">
-                {issue.message}
-              </T>
-            )}
-            <ToggleRow
-              testID="compose-custom"
-              label={ACTIONS.editLevelsManually}
-              value={form.custom}
-              onChange={(value) => {
-                if (value && computed.auto) {
-                  const targets = [...computed.auto.targets, '', '', ''].slice(0, 3) as FormState['targets'];
-                  setForm((f) => ({ ...f, custom: true, targets, stopLoss: computed.auto?.stopLoss ?? '' }));
-                } else {
-                  set('custom', value);
-                }
-              }}
-            />
-            </>
             )}
           </Card>
           <Card style={{ gap: space.md }}>

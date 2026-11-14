@@ -7,7 +7,18 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { CredentialsCard } from '@/components/admin/subscriber-parts';
-import { Badge, Button, Card, Dialog, EmptyState, ErrorState, FormError, Loading, PageHeader, Segmented } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Dialog,
+  EmptyState,
+  ErrorState,
+  FormError,
+  Loading,
+  PageHeader,
+  Segmented,
+} from '@/components/ui';
 import { api } from '@/lib/api';
 import { formatDateTime } from '@/lib/format';
 

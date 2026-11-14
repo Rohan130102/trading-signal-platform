@@ -424,8 +424,8 @@ function MoveStopForm({ trade, run, pending, error, confirmWiden }: FormProps) {
     <div role="alert" className="rounded-lg bg-update-soft p-3 text-sm text-update">
       <p className="font-semibold">This increases risk</p>
       <p>
-        The new stop-loss is further from the trade than the current one ({stopText(trade)}). Press
-        the button again to confirm.
+        The new stop-loss is further from the trade than the current one ({stopText(trade)}). Press the button again to
+        confirm.
       </p>
     </div>
   );
@@ -438,8 +438,7 @@ function MoveStopForm({ trade, run, pending, error, confirmWiden }: FormProps) {
         autoFocus
         hint={
           <>
-            Currently <span className="num">{stopText(trade)}</span>. The original stays in the
-            history.
+            Currently <span className="num">{stopText(trade)}</span>. The original stays in the history.
           </>
         }
       />

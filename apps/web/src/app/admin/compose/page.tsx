@@ -623,10 +623,10 @@ function Composer() {
                 computed.upcoming
                   ? 'Set when you activate the trade.'
                   : form.custom
-                  ? 'Using your own prices.'
-                  : spec
-                    ? `Automatic: ${formatPoints(spec.defaultTargetPoints)} pts target, ${formatPoints(spec.defaultStopPoints)} pts stop. 1 pt = ${spec.pointSize} ${spec.quoteCurrency} on ${spec.symbol}.`
-                    : undefined
+                    ? 'Using your own prices.'
+                    : spec
+                      ? `Automatic: ${formatPoints(spec.defaultTargetPoints)} pts target, ${formatPoints(spec.defaultStopPoints)} pts stop. 1 pt = ${spec.pointSize} ${spec.quoteCurrency} on ${spec.symbol}.`
+                      : undefined
               }
               action={
                 mode === 'advanced' && !computed.upcoming ? (
@@ -748,27 +748,27 @@ function Composer() {
 
           <Card className="flex flex-col gap-4 p-4 sm:p-5">
             {!computed.upcoming && (
-            <Labeled
-              label="Starts as"
-              hint={
-                startsActive
-                  ? 'Active as soon as it is published. That is not a fill.'
-                  : 'Waits for entry. Activate it from the trade page when the entry is reached.'
-              }
-            >
-              <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
+              <Labeled
                 label="Starts as"
-                value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
-                onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
-                options={[
-                  {
-                    value: 'AWAITING_ENTRY',
-                    label: `Awaiting entry${defaultMode === 'AWAITING_ENTRY' ? ' (default)' : ''}`,
-                  },
-                  { value: 'ACTIVE', label: `Active now${defaultMode === 'ACTIVE' ? ' (default)' : ''}` },
-                ]}
-              />
-            </Labeled>
+                hint={
+                  startsActive
+                    ? 'Active as soon as it is published. That is not a fill.'
+                    : 'Waits for entry. Activate it from the trade page when the entry is reached.'
+                }
+              >
+                <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
+                  label="Starts as"
+                  value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
+                  onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
+                  options={[
+                    {
+                      value: 'AWAITING_ENTRY',
+                      label: `Awaiting entry${defaultMode === 'AWAITING_ENTRY' ? ' (default)' : ''}`,
+                    },
+                    { value: 'ACTIVE', label: `Active now${defaultMode === 'ACTIVE' ? ' (default)' : ''}` },
+                  ]}
+                />
+              </Labeled>
             )}
             {!startsActive && (
               <div className={clsx('grid gap-4', form.window === 'CUSTOM' && 'sm:grid-cols-2')}>
@@ -982,10 +982,10 @@ function Published({ trade, onAnother }: { trade: AdminTradeDetail; onAnother: (
           {live.data.status === 'PUBLISHED' && live.data.stopLoss === null
             ? 'Subscribers see it as an upcoming trade. Activate it from the trade page with its final entry, targets and stop-loss.'
             : live.data.status === 'PUBLISHED'
-            ? live.data.entryExpiresAt
-              ? `It is in every active subscriber’s feed, awaiting entry. If it is not activated by ${formatDateTime(live.data.entryExpiresAt)}, it is cancelled automatically.`
-              : 'It is in every active subscriber’s feed, awaiting entry. Activate it from the trade page when the entry is reached.'
-            : 'It is now in every active subscriber’s feed, and the trade is active straight away.'}
+              ? live.data.entryExpiresAt
+                ? `It is in every active subscriber’s feed, awaiting entry. If it is not activated by ${formatDateTime(live.data.entryExpiresAt)}, it is cancelled automatically.`
+                : 'It is in every active subscriber’s feed, awaiting entry. Activate it from the trade page when the entry is reached.'
+              : 'It is now in every active subscriber’s feed, and the trade is active straight away.'}
         </p>
       </div>
       <Card className="mt-4 p-4">

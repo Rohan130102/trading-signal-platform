@@ -67,7 +67,14 @@ export class EmailService {
   async processBatch(): Promise<number> {
     if (!this.transport.available) return 0;
     const claimed = await this.prisma.$queryRaw<
-      { id: bigint; to_address: string; reply_to: string | null; subject: string; body_text: string; attempts: number }[]
+      {
+        id: bigint;
+        to_address: string;
+        reply_to: string | null;
+        subject: string;
+        body_text: string;
+        attempts: number;
+      }[]
     >`
       UPDATE email_outbox SET status = 'SENDING', locked_at = now(), attempts = attempts + 1
       WHERE id IN (
@@ -98,7 +105,10 @@ export class EmailService {
       } catch (error) {
         const message = (error as Error).message.slice(0, 500);
         const dead = row.attempts >= MAX_ATTEMPTS;
-        log(dead ? 'error' : 'warn', dead ? 'email_dead_letter' : 'email_retry', { id: String(row.id), error: message });
+        log(dead ? 'error' : 'warn', dead ? 'email_dead_letter' : 'email_retry', {
+          id: String(row.id),
+          error: message,
+        });
         await this.prisma.emailOutbox.update({
           where: { id: row.id },
           data: {

@@ -60,9 +60,15 @@ export class RegistrationController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { email } = await this.registration.complete(body, ip);
+    const { email } = await this.registration.complete(body);
     const { token, ttlMs } = await this.auth.login(email, body.password, ip, req.headers['user-agent']?.slice(0, 120));
-    res.cookie(SESSION_COOKIE, token, { httpOnly: true, secure: isProduction, sameSite: 'lax', path: '/', maxAge: ttlMs });
+    res.cookie(SESSION_COOKIE, token, {
+      httpOnly: true,
+      secure: isProduction,
+      sameSite: 'lax',
+      path: '/',
+      maxAge: ttlMs,
+    });
     return { ok: true };
   }
 
@@ -74,7 +80,7 @@ export class RegistrationController {
     @ZBody(completeRegistrationSchema) body: z.output<typeof completeRegistrationSchema>,
     @ClientIp() ip: string,
   ): Promise<TokenLoginResponse> {
-    const { email } = await this.registration.complete(body, ip);
+    const { email } = await this.registration.complete(body);
     const { token, ttlMs } = await this.auth.login(email, body.password, ip, body.deviceLabel, {
       installationId: body.installationId,
       platform: body.platform,

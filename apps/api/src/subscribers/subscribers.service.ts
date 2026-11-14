@@ -779,7 +779,9 @@ export class SubscribersService {
         take: query.pageSize,
       }),
       this.prisma.user.count({ where }),
-      this.prisma.user.count({ where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null } }),
+      this.prisma.user.count({
+        where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null },
+      }),
     ]);
     const registrations: RegistrationRow[] = rows.map((r) => {
       const view = this.present(r, tz, false, now);

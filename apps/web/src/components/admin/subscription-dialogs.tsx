@@ -51,7 +51,11 @@ function DaysField({
 }) {
   const n = Number(value);
   const error =
-    value.trim() === '' ? null : !Number.isInteger(n) || n < 1 || n > max ? `Use a whole number from 1 to ${max}` : null;
+    value.trim() === ''
+      ? null
+      : !Number.isInteger(n) || n < 1 || n > max
+        ? `Use a whole number from 1 to ${max}`
+        : null;
   return (
     <div className="flex flex-col gap-2">
       <Field label="Duration (days)" error={error}>
@@ -143,7 +147,9 @@ export function StartDialog({ detail, onClose, onDone }: { detail: Detail; onClo
       }),
     onSuccess: (r) => {
       onDone();
-      toast.success(`Subscription active through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`);
+      toast.success(
+        `Subscription active through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`,
+      );
       onClose();
     },
   });
@@ -162,7 +168,16 @@ export function StartDialog({ detail, onClose, onDone }: { detail: Detail; onClo
       <form onSubmit={submit} className="flex flex-col gap-4">
         <DaysField value={days} onChange={setDays} shortcuts={SUBSCRIPTION_DAY_SHORTCUTS} max={MAX_SUBSCRIPTION_DAYS} />
         <Field label="Starts on">
-          {(c) => <Input {...c} type="date" min={todayIn(tz)} className="max-w-48" value={date} onChange={(e) => setDate(e.target.value)} />}
+          {(c) => (
+            <Input
+              {...c}
+              type="date"
+              min={todayIn(tz)}
+              className="max-w-48"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          )}
         </Field>
         <DatesPreview
           before={trial ? detail.subscription.lastValidDate : null}
@@ -171,7 +186,12 @@ export function StartDialog({ detail, onClose, onDone }: { detail: Detail; onClo
         />
         {preview?.shortensAccess && (
           <label className="flex items-start gap-2 rounded-lg bg-update-soft p-3 text-sm text-update">
-            <input type="checkbox" className="mt-0.5" checked={confirmShorter} onChange={(e) => setConfirmShorter(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={confirmShorter}
+              onChange={(e) => setConfirmShorter(e.target.checked)}
+            />
             This ends before the access they already have. Shorten it anyway.
           </label>
         )}
@@ -239,12 +259,30 @@ export function TrialDialog({ detail, onClose, onDone }: { detail: Detail; onClo
       <form onSubmit={submit} className="flex flex-col gap-4">
         <DaysField value={days} onChange={setDays} shortcuts={TRIAL_DAY_SHORTCUTS} max={MAX_TRIAL_DAYS} />
         <Field label="Starts on">
-          {(c) => <Input {...c} type="date" min={todayIn(tz)} className="max-w-48" value={date} onChange={(e) => setDate(e.target.value)} />}
+          {(c) => (
+            <Input
+              {...c}
+              type="date"
+              min={todayIn(tz)}
+              className="max-w-48"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          )}
         </Field>
-        <DatesPreview before={null} after={trialWindow ? lastValidLocalDate(trialWindow.expiresAt, tz) : null} tz={tz} />
+        <DatesPreview
+          before={null}
+          after={trialWindow ? lastValidLocalDate(trialWindow.expiresAt, tz) : null}
+          tz={tz}
+        />
         {hadTrial && (
           <label className="flex items-start gap-2 rounded-lg bg-update-soft p-3 text-sm text-update">
-            <input type="checkbox" className="mt-0.5" checked={allowRepeat} onChange={(e) => setAllowRepeat(e.target.checked)} />
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={allowRepeat}
+              onChange={(e) => setAllowRepeat(e.target.checked)}
+            />
             They already had a free trial. Grant another.
           </label>
         )}
@@ -252,7 +290,13 @@ export function TrialDialog({ detail, onClose, onDone }: { detail: Detail; onClo
           {(c) => <Input {...c} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
         </Field>
         <FormError error={grant.error} />
-        <Button type="submit" variant="primary" size="lg" loading={grant.isPending} disabled={!trialWindow || (hadTrial && !allowRepeat)}>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          loading={grant.isPending}
+          disabled={!trialWindow || (hadTrial && !allowRepeat)}
+        >
           {ACTIONS.grantFreeTrial}
         </Button>
       </form>
@@ -301,13 +345,24 @@ export function RenewDialog({ detail, onClose, onDone }: { detail: Detail; onClo
       open
       onOpenChange={(o) => !o && onClose()}
       title={ACTIONS.renewSubscription}
-      description={running ? 'Still running, so the new days are added after its last day.' : 'Expired, so a new period starts.'}
+      description={
+        running ? 'Still running, so the new days are added after its last day.' : 'Expired, so a new period starts.'
+      }
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <DaysField value={days} onChange={setDays} shortcuts={SUBSCRIPTION_DAY_SHORTCUTS} max={MAX_SUBSCRIPTION_DAYS} />
         {!running && (
           <Field label="Starts on">
-            {(c) => <Input {...c} type="date" min={todayIn(tz)} className="max-w-48" value={date} onChange={(e) => setDate(e.target.value)} />}
+            {(c) => (
+              <Input
+                {...c}
+                type="date"
+                min={todayIn(tz)}
+                className="max-w-48"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            )}
           </Field>
         )}
         <DatesPreview

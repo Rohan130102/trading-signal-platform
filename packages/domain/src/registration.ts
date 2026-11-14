@@ -79,16 +79,14 @@ export function callingCode(country: CountryCode = DEFAULT_PHONE_COUNTRY): strin
   return `+${getCountryCallingCode(country)}`;
 }
 
-export const mobileField = z
-  .string()
-  .transform((value, ctx) => {
-    const phone = parseMobileNumber(value);
-    if (!phone) {
-      ctx.addIssue({ code: 'custom', message: 'Enter a valid mobile number' });
-      return z.NEVER;
-    }
-    return phone.e164;
-  });
+export const mobileField = z.string().transform((value, ctx) => {
+  const phone = parseMobileNumber(value);
+  if (!phone) {
+    ctx.addIssue({ code: 'custom', message: 'Enter a valid mobile number' });
+    return z.NEVER;
+  }
+  return phone.e164;
+});
 
 export const ageField = z
   .number({ error: 'Enter your age' })

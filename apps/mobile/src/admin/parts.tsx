@@ -82,7 +82,8 @@ export function DispatchStatus({ dispatch }: { dispatch: DispatchSummary | null 
 export function AccessBadge({ row }: { row: Pick<SubscriberRow, 'status' | 'subscription'> }) {
   if (row.status !== 'ACTIVE')
     return <Badge tone="stop">{row.status === 'SUSPENDED' ? 'Suspended' : 'Disabled'}</Badge>;
-  const { state, daysRemaining } = row.subscription;
+  const { state, daysRemaining, kind } = row.subscription;
+  if (state === 'ACTIVE' && kind === 'TRIAL') return <Badge tone="buy">{`Trial · ${daysRemaining}d left`}</Badge>;
   if (state === 'ACTIVE') {
     return (
       <Badge tone={daysRemaining <= 7 ? 'update' : 'success'}>

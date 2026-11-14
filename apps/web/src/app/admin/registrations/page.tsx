@@ -38,7 +38,10 @@ export default function RegistrationsPage() {
       />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative min-w-56 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle" aria-hidden />
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle"
+            aria-hidden
+          />
           <Input
             aria-label="Search by name, email or mobile"
             placeholder="Name, email or mobile"
@@ -48,23 +51,23 @@ export default function RegistrationsPage() {
           />
         </div>
         <div className="w-full sm:w-44">
-        <Select aria-label="Enquiry" value={enquiry} onChange={(e) => reset(() => setEnquiry(e.target.value))}>
-          <option value="">Any enquiry</option>
-          {ENQUIRY_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {ENQUIRY_STATUS_LABELS[s]}
-            </option>
-          ))}
-        </Select>
+          <Select aria-label="Enquiry" value={enquiry} onChange={(e) => reset(() => setEnquiry(e.target.value))}>
+            <option value="">Any enquiry</option>
+            {ENQUIRY_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {ENQUIRY_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </Select>
         </div>
         <div className="w-full sm:w-40">
-        <Select aria-label="Access" value={access} onChange={(e) => reset(() => setAccess(e.target.value))}>
-          <option value="">Any access</option>
-          <option value="NONE">No subscription</option>
-          <option value="TRIAL">Free trial</option>
-          <option value="ACTIVE">Subscribed</option>
-          <option value="EXPIRED">Expired</option>
-        </Select>
+          <Select aria-label="Access" value={access} onChange={(e) => reset(() => setAccess(e.target.value))}>
+            <option value="">Any access</option>
+            <option value="NONE">No subscription</option>
+            <option value="TRIAL">Free trial</option>
+            <option value="ACTIVE">Subscribed</option>
+            <option value="EXPIRED">Expired</option>
+          </Select>
         </div>
         <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm">
           <input type="checkbox" checked={unseen} onChange={(e) => reset(() => setUnseen(e.target.checked))} />
@@ -102,7 +105,11 @@ export default function RegistrationsPage() {
                     onClick={() => router.push(`/admin/subscribers/${r.id}`)}
                   >
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      <a href={`/admin/subscribers/${r.id}`} className="font-medium" onClick={(e) => e.stopPropagation()}>
+                      <a
+                        href={`/admin/subscribers/${r.id}`}
+                        className="font-medium"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {r.name}
                       </a>
                       {r.isNew && (
@@ -114,7 +121,9 @@ export default function RegistrationsPage() {
                     <td className="px-4 py-2.5">
                       <span className="flex items-center gap-1">
                         {r.email}
-                        {r.emailVerified && <BadgeCheck className="size-3.5 text-success" aria-label="Email verified" />}
+                        {r.emailVerified && (
+                          <BadgeCheck className="size-3.5 text-success" aria-label="Email verified" />
+                        )}
                       </span>
                     </td>
                     <td className="num px-4 py-2.5">{r.mobile}</td>

@@ -145,12 +145,14 @@ export class AuthController {
         renewalInstructions: settings.renewalInstructions,
       },
       enquiryStatus: row.enquiryStatus as EnquiryStatus,
-      profile: subscriber
-        ? { ...splitName(row), email: row.email ?? row.loginId, mobile: row.phone ?? '' }
-        : null,
+      profile: subscriber ? { ...splitName(row), email: row.email ?? row.loginId, mobile: row.phone ?? '' } : null,
       trialGreeting:
         subscriber && grant
-          ? { grantId: grant.id, durationDays: grant.durationDays, lastValidDate: lastValidLocalDate(grant.expiresAt, tz) }
+          ? {
+              grantId: grant.id,
+              durationDays: grant.durationDays,
+              lastValidDate: lastValidLocalDate(grant.expiresAt, tz),
+            }
           : null,
       onboardedAt: auth.user.onboardedAt?.toISOString() ?? null,
       isMasterAdmin: auth.user.isMasterAdmin,

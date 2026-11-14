@@ -1,23 +1,26 @@
 import {
   ENTRY_WINDOW_CHOICES,
   entryWindowLabel,
+  supportSettingsSchema,
   type HistoryScope,
   type PlatformSettings,
   type SignalStartMode,
   type TrailingStopWording,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
 import { useSession } from '@/lib/session';
 import { space } from '@/theme/tokens';
 import {
+  Button,
   Card,
   Chip,
   ChipRow,
   ErrorState,
+  Field,
   errorMessage,
   Loading,
   Notice,
@@ -156,11 +159,94 @@ export default function PlatformSettingsScreen() {
               sees. Web browsers cannot block them.
             </T>
           </Card>
+          <SupportContact
+            canEdit={canEdit}
+            whatsapp={String(s.supportWhatsapp ?? '')}
+            email={String(s.supportEmail ?? '')}
+            onSaved={(next) => client.setQueryData(['admin', 'settings'], next)}
+          />
           <T v="caption" c="subtle">
             Service texts, legal disclosures and public-results approvals are edited in the web admin.
           </T>
         </>
       )}
     </Screen>
+  );
+}
+
+/** Where subscription enquiries go. Master Admin only; the change is audited and applies to every screen at once. */
+function SupportContact({
+  canEdit,
+  whatsapp,
+  email,
+  onSaved,
+}: {
+  canEdit: boolean;
+  whatsapp: string;
+  email: string;
+  onSaved: (next: Settings) => void;
+}) {
+  const toast = useToast();
+  const [form, setForm] = useState({ supportWhatsapp: whatsapp, supportEmail: email });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  useEffect(() => setForm({ supportWhatsapp: whatsapp, supportEmail: email }), [whatsapp, email]);
+  const save = useMutation({
+    mutationFn: (body: { supportWhatsapp: string; supportEmail: string }) =>
+      api.put<Settings>('/admin/settings/support', body),
+    onSuccess: (next) => {
+      onSaved(next);
+      toast({ tone: 'success', title: 'Support contact saved' });
+    },
+    onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
+  });
+  const submit = () => {
+    const parsed = supportSettingsSchema.safeParse(form);
+    if (!parsed.success) {
+      const next: Record<string, string> = {};
+      for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
+      setErrors(next);
+      return;
+    }
+    setErrors({});
+    save.mutate(parsed.data);
+  };
+  const changed = form.supportWhatsapp !== whatsapp || form.supportEmail !== email;
+  return (
+    <>
+      <SectionTitle>Support contact</SectionTitle>
+      <Card style={{ gap: space.md }} testID="support-contact-settings">
+        <Field
+          testID="support-whatsapp"
+          label="WhatsApp number"
+          hint="Subscription enquiries open WhatsApp to this number."
+          value={form.supportWhatsapp}
+          error={errors.supportWhatsapp}
+          editable={canEdit}
+          keyboardType="phone-pad"
+          onChangeText={(v) => setForm((f) => ({ ...f, supportWhatsapp: v }))}
+        />
+        <Field
+          testID="support-email"
+          label="Support email"
+          hint="Enquiries sent by email go here, from the server."
+          value={form.supportEmail}
+          error={errors.supportEmail}
+          editable={canEdit}
+          keyboardType="email-address"
+          autoCapitalize="none"
+          onChangeText={(v) => setForm((f) => ({ ...f, supportEmail: v }))}
+        />
+        {canEdit && (
+          <Button
+            testID="support-save"
+            label="Save"
+            variant="primary"
+            disabled={!changed}
+            loading={save.isPending}
+            onPress={submit}
+          />
+        )}
+      </Card>
+    </>
   );
 }

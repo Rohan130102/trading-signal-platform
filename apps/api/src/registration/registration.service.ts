@@ -84,7 +84,9 @@ export class RegistrationService {
       challengeId,
       'REGISTRATION',
       ip,
-      row?.userId ? { fixed: accountExistsEmail(email, serviceName) } : (code) => codeEmail(email, serviceName, code, 'REGISTRATION'),
+      row?.userId
+        ? { fixed: accountExistsEmail(email, serviceName) }
+        : (code) => codeEmail(email, serviceName, code, 'REGISTRATION'),
     );
   }
 
@@ -94,7 +96,7 @@ export class RegistrationService {
   }
 
   /** Creates the account. A setup token works once; a repeat is told the account already exists. */
-  async complete(input: Completion, ip: string) {
+  async complete(input: Completion) {
     const challenge = await this.challenges.findBySetupToken(input.setupToken);
     if (!challenge || challenge.userId || !challenge.details) {
       throw new AppError(410, 'SETUP_EXPIRED', 'This sign-up has expired or was already completed. Start again.');
@@ -109,7 +111,8 @@ export class RegistrationService {
           where: { id: challenge.id, consumedAt: null },
           data: { consumedAt: new Date() },
         });
-        if (claim.count !== 1) throw new AppError(409, 'ALREADY_REGISTERED', 'This account was already created. Log in.');
+        if (claim.count !== 1)
+          throw new AppError(409, 'ALREADY_REGISTERED', 'This account was already created. Log in.');
         const now = new Date();
         const user = await tx.user.create({
           data: {
@@ -131,7 +134,10 @@ export class RegistrationService {
           },
         });
         // What was typed at sign-up now lives on the account only.
-        await tx.emailChallenge.update({ where: { id: challenge.id }, data: { details: Prisma.DbNull, userId: user.id } });
+        await tx.emailChallenge.update({
+          where: { id: challenge.id },
+          data: { details: Prisma.DbNull, userId: user.id },
+        });
         await this.audit.record(
           {
             actorId: user.id,

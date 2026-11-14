@@ -131,19 +131,21 @@ export function isUpcomingSignal(value: { entryType: string; targets: readonly s
   return value.entryType === 'RANGE' && value.targets.length === 0 && !value.stopLoss;
 }
 
-export const publishSignalSchema = signalFieldsSchema.extend({
-  idempotencyKey: idempotencyKeySchema,
-  draftId: z.uuid().nullable().optional(),
-  draftVersion: expectedVersionSchema.optional(),
-  /** Set after the administrator has seen and accepted a duplicate-signal warning. */
-  confirmDuplicate: z.boolean().default(false),
-  /**
-   * True: the signal is active at once. The activation is recorded in the same transaction as the
-   * publication, as its own (internal) event, and is still not a fill. False: it waits for entry until an
-   * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
-   */
-  activateOnPublish: z.boolean().optional(),
-}).superRefine(requireLevels);
+export const publishSignalSchema = signalFieldsSchema
+  .extend({
+    idempotencyKey: idempotencyKeySchema,
+    draftId: z.uuid().nullable().optional(),
+    draftVersion: expectedVersionSchema.optional(),
+    /** Set after the administrator has seen and accepted a duplicate-signal warning. */
+    confirmDuplicate: z.boolean().default(false),
+    /**
+     * True: the signal is active at once. The activation is recorded in the same transaction as the
+     * publication, as its own (internal) event, and is still not a fill. False: it waits for entry until an
+     * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
+     */
+    activateOnPublish: z.boolean().optional(),
+  })
+  .superRefine(requireLevels);
 
 /** Drafts may be incomplete: only publication requires the full signal. */
 export const draftSchema = z.strictObject({
