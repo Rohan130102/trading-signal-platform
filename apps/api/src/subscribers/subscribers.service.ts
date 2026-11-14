@@ -1,16 +1,26 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import {
+  accessUntilLabel,
   adjustSubscriptionSchema,
   computeInitialWindow,
   computeRenewal,
   createSubscriberSchema,
   daysRemaining,
   endOfLocalDateExclusive,
+  type EnquiryStatus,
+  type grantTrialSchema,
   lastValidLocalDate,
+  listRegistrationsQuery,
   listSubscribersQuery,
   localDateToInstant,
+  previewStart,
+  type RegistrationRow,
   renewSubscriptionSchema,
   screenshotsAllowedFor,
+  type startSubscriptionSchema,
+  subscriberActions,
+  type SubscriptionKind,
   subscriptionState,
   updateSubscriberSchema,
 } from '@signaldesk/domain';
@@ -21,8 +31,12 @@ import { notifyRefresh } from '../db/listener.service.js';
 import { isUniqueViolation, Prisma, PrismaService, TX_OPTIONS } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { AuthService } from '../auth/auth.service.js';
+import { enquiryOutcome } from '../enquiries/enquiries.service.js';
+import { NoticesService } from '../notices/notices.service.js';
+import { RESET_PASSWORD_HOURS } from '../registration/password-resets.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import type { Actor } from '../trades/trades.service.js';
+import type { Tx } from '../db/prisma.service.js';
 
 const TEMP_PASSWORD_HOURS = 72;
 const EXPIRING_DAYS = 7;
@@ -40,6 +54,7 @@ export class SubscribersService {
     private readonly auth: AuthService,
     private readonly audit: AuditService,
     private readonly settings: SettingsService,
+    private readonly notices: NoticesService,
   ) {}
 
   private present(row: Row, tz: string, screenshotsDefault: boolean, now = new Date()) {
@@ -47,6 +62,12 @@ export class SubscribersService {
     return {
       id: row.id,
       name: row.name,
+      firstName: row.firstName,
+      lastName: row.lastName,
+      age: row.age,
+      emailVerifiedAt: row.emailVerifiedAt?.toISOString() ?? null,
+      selfRegistered: row.selfRegisteredAt !== null,
+      enquiryStatus: row.enquiryStatus as EnquiryStatus,
       email: row.email,
       phone: row.phone,
       loginId: row.loginId,
@@ -57,6 +78,7 @@ export class SubscribersService {
       createdAt: row.createdAt.toISOString(),
       subscription: {
         state: subscriptionState(sub, now),
+        kind: (sub?.kind as SubscriptionKind | undefined) ?? null,
         startsAt: sub?.startsAt.toISOString() ?? null,
         expiresAt: sub?.expiresAt.toISOString() ?? null,
         lastValidDate: sub ? lastValidLocalDate(sub.expiresAt, tz) : null,
@@ -152,11 +174,31 @@ export class SubscribersService {
           select: { id: true, deviceLabel: true, lastSeenAt: true },
           orderBy: { lastSeenAt: 'desc' },
         },
+        trialGrants: { orderBy: { createdAt: 'desc' } },
+        enquiries: { orderBy: { createdAt: 'desc' }, take: 20, include: { email: { select: { status: true } } } },
       },
     });
     if (!row) throw notFound('Subscriber not found');
+    const now = new Date();
     return {
-      ...this.present(row, tz, platform.screenshotsAllowedDefault),
+      ...this.present(row, tz, platform.screenshotsAllowedDefault, now),
+      actions: subscriberActions(
+        row.subscription ? { ...row.subscription, kind: row.subscription.kind as SubscriptionKind } : null,
+        now,
+      ),
+      trials: row.trialGrants.map((t) => ({
+        id: t.id,
+        durationDays: t.durationDays,
+        lastValidDate: lastValidLocalDate(t.expiresAt, tz),
+        note: t.note,
+        createdAt: t.createdAt.toISOString(),
+      })),
+      enquiries: row.enquiries.map((e) => ({
+        id: e.id,
+        channel: e.channel as 'WHATSAPP' | 'EMAIL',
+        outcome: enquiryOutcome(e.channel, e.email?.status),
+        createdAt: e.createdAt.toISOString(),
+      })),
       events:
         row.subscription?.events.map((e) => ({
           id: e.id,
@@ -242,6 +284,7 @@ export class SubscribersService {
           },
           tx,
         );
+        await this.announceStart(tx, user.id, input.durationDays, window.expiresAt, tz, input.idempotencyKey);
         return user.id;
       }, TX_OPTIONS);
       return { subscriber: await this.detail(userId), temporaryPassword, replayed: false };
@@ -314,7 +357,12 @@ export class SubscribersService {
           WHERE s.user_id = ${id}::uuid AND u.role = 'SUBSCRIBER' FOR UPDATE OF s`;
         if (locked.length === 0) throw notFound('Subscriber not found');
         const current = await tx.subscription.findUniqueOrThrow({ where: { userId: id } });
-        const renewal = computeRenewal(current, input.durationDays, new Date(), tz);
+        if (current.kind === 'TRIAL') {
+          throw new AppError(409, 'TRIAL_NOT_RENEWABLE', 'A trial is not renewed. Start a subscription instead.');
+        }
+        const now = new Date();
+        const restartFrom = input.activationDate ? this.activationInstant(input.activationDate, tz, now) : undefined;
+        const renewal = computeRenewal(current, input.durationDays, now, tz, restartFrom);
         await tx.subscription.update({
           where: { id: current.id },
           data: { startsAt: renewal.startsAt, expiresAt: renewal.expiresAt },
@@ -349,6 +397,18 @@ export class SubscribersService {
             requestId: actor.requestId,
           },
           tx,
+        );
+        const { serviceName } = await this.settings.get();
+        await this.notices.notify(
+          tx,
+          {
+            userId: id,
+            kind: 'SUBSCRIPTION_RENEWED',
+            title: 'Subscription Renewed',
+            body: `Your subscription has been extended until ${accessUntilLabel(renewal.expiresAt, tz)}.`,
+            dedupeKey: `renew:${input.idempotencyKey}`,
+          },
+          serviceName,
         );
         await this.auth.notifyAccessChange(tx, id);
       }, TX_OPTIONS);
@@ -454,8 +514,13 @@ export class SubscribersService {
         data: {
           passwordHash,
           mustChangePassword: true,
-          tempPasswordExpiresAt: new Date(Date.now() + TEMP_PASSWORD_HOURS * 3_600_000),
+          tempPasswordExpiresAt: new Date(Date.now() + RESET_PASSWORD_HOURS * 3_600_000),
         },
+      });
+      // Any recovery request this person has open is answered by this password.
+      await tx.passwordResetRequest.updateMany({
+        where: { userId: id, status: 'OPEN' },
+        data: { status: 'PASSWORD_ISSUED', issuedAt: new Date(), issuedById: actor.id },
       });
       await this.auth.revokeAllSessions(id, tx);
       await this.audit.record(
@@ -470,6 +535,277 @@ export class SubscribersService {
       );
     });
     return { loginId: row.loginId, temporaryPassword };
+  }
+
+  /** "Subscription Activated", in the app, by push and by email. Once per start, however often it is retried. */
+  private async announceStart(tx: Tx, userId: string, days: number, expiresAt: Date, tz: string, key: string) {
+    const { serviceName } = await this.settings.get();
+    await this.notices.notify(
+      tx,
+      {
+        userId,
+        kind: 'SUBSCRIPTION_STARTED',
+        title: 'Subscription Activated',
+        body: `Your ${serviceName} subscription is active for ${days} ${days === 1 ? 'day' : 'days'}.\nValid until: ${accessUntilLabel(expiresAt, tz)}`,
+        dedupeKey: `start:${key}`,
+      },
+      serviceName,
+    );
+  }
+
+  /**
+   * A paid window for someone with no access, an expired one, or a running trial. A running paid subscription is
+   * renewed instead, and a start that would cut access short needs explicit confirmation.
+   */
+  async start(id: string, input: z.output<typeof startSubscriptionSchema>, actor: Actor) {
+    const replay = await this.prisma.subscriptionEvent.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+    if (replay) return { subscriber: await this.detail(id), replayed: true };
+    const tz = await this.settings.timezone();
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const user = await this.lockSubscriber(tx, id);
+        const now = new Date();
+        const current = user.subscription;
+        if (current && current.kind === 'PAID' && current.expiresAt.getTime() > now.getTime()) {
+          throw new AppError(409, 'SUBSCRIPTION_RUNNING', 'This subscription is still running. Renew it instead.');
+        }
+        const startsAt = input.activationDate ? this.activationInstant(input.activationDate, tz, now) : now;
+        const window = previewStart(current, startsAt, input.durationDays, now, tz);
+        if (window.shortensAccess && !input.confirmShorter) {
+          throw new AppError(
+            409,
+            'SHORTENS_ACCESS',
+            `This ends on ${accessUntilLabel(window.expiresAt, tz)}, before the access they already have. Confirm to continue.`,
+          );
+        }
+        const subscription = current
+          ? await tx.subscription.update({
+              where: { id: current.id },
+              data: { startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'PAID' },
+            })
+          : await tx.subscription.create({
+              data: { userId: id, startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'PAID' },
+            });
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: subscription.id,
+            type: current ? 'STARTED' : 'CREATED',
+            durationDays: input.durationDays,
+            previousStartsAt: current?.startsAt ?? null,
+            previousExpiresAt: current?.expiresAt ?? null,
+            newStartsAt: window.startsAt,
+            newExpiresAt: window.expiresAt,
+            note: input.note,
+            actorId: requireActor(actor),
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        await tx.user.updateMany({
+          where: { id, enquiryStatus: { in: ['INITIATED', 'UNDER_DISCUSSION'] } },
+          data: { enquiryStatus: 'RESOLVED', enquiryUpdatedAt: now },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'SUBSCRIPTION_STARTED',
+            targetType: 'user',
+            targetId: id,
+            metadata: {
+              durationDays: input.durationDays,
+              replacedKind: current?.kind ?? null,
+              from: current?.expiresAt.toISOString() ?? null,
+              to: window.expiresAt.toISOString(),
+            },
+            requestId: actor.requestId,
+          },
+          tx,
+        );
+        await this.announceStart(tx, id, input.durationDays, window.expiresAt, tz, input.idempotencyKey);
+        await this.auth.notifyAccessChange(tx, id);
+      }, TX_OPTIONS);
+    } catch (error) {
+      if (error instanceof RangeError) throw new AppError(422, 'VALIDATION', error.message);
+      if (!isUniqueViolation(error, 'idempotency_key')) throw error;
+      return { subscriber: await this.detail(id), replayed: true };
+    }
+    return { subscriber: await this.detail(id), replayed: false };
+  }
+
+  /**
+   * A free trial: never automatic, never on top of running paid access, and a second one only on purpose. It gives
+   * the same access as a subscription and is also kept as its own record for reporting and the one-time welcome.
+   */
+  async grantTrial(id: string, input: z.output<typeof grantTrialSchema>, actor: Actor) {
+    const replay = await this.prisma.trialGrant.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
+    if (replay) return { subscriber: await this.detail(id), replayed: true };
+    const tz = await this.settings.timezone();
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const user = await this.lockSubscriber(tx, id);
+        const now = new Date();
+        const current = user.subscription;
+        if (current && current.expiresAt.getTime() > now.getTime()) {
+          throw new AppError(
+            409,
+            current.kind === 'TRIAL' ? 'TRIAL_RUNNING' : 'SUBSCRIPTION_RUNNING',
+            current.kind === 'TRIAL'
+              ? 'A trial is already running. It can be replaced by a subscription.'
+              : 'They already have a running subscription.',
+          );
+        }
+        const earlier = await tx.trialGrant.count({ where: { userId: id } });
+        if (earlier > 0 && !input.allowRepeat) {
+          throw new AppError(409, 'TRIAL_ALREADY_USED', 'They already had a free trial. Confirm to grant another.');
+        }
+        const startsAt = input.activationDate ? this.activationInstant(input.activationDate, tz, now) : now;
+        const window = computeInitialWindow(startsAt, input.durationDays, tz);
+        const subscription = current
+          ? await tx.subscription.update({
+              where: { id: current.id },
+              data: { startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'TRIAL' },
+            })
+          : await tx.subscription.create({
+              data: { userId: id, startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'TRIAL' },
+            });
+        const grant = await tx.trialGrant.create({
+          data: {
+            id: randomUUID(),
+            userId: id,
+            durationDays: input.durationDays,
+            startsAt: window.startsAt,
+            expiresAt: window.expiresAt,
+            note: input.note,
+            actorId: requireActor(actor),
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        await tx.subscriptionEvent.create({
+          data: {
+            subscriptionId: subscription.id,
+            type: 'TRIAL_GRANTED',
+            durationDays: input.durationDays,
+            previousStartsAt: current?.startsAt ?? null,
+            previousExpiresAt: current?.expiresAt ?? null,
+            newStartsAt: window.startsAt,
+            newExpiresAt: window.expiresAt,
+            note: input.note,
+            actorId: requireActor(actor),
+            idempotencyKey: `trial:${input.idempotencyKey}`,
+          },
+        });
+        await tx.user.updateMany({
+          where: { id, enquiryStatus: { in: ['INITIATED', 'UNDER_DISCUSSION'] } },
+          data: { enquiryStatus: 'RESOLVED', enquiryUpdatedAt: now },
+        });
+        await this.audit.record(
+          {
+            actorId: actor.id,
+            action: 'TRIAL_GRANTED',
+            targetType: 'user',
+            targetId: id,
+            metadata: {
+              grantId: grant.id,
+              durationDays: input.durationDays,
+              repeat: earlier > 0,
+              to: window.expiresAt.toISOString(),
+            },
+            requestId: actor.requestId,
+          },
+          tx,
+        );
+        const { serviceName } = await this.settings.get();
+        await this.notices.notify(
+          tx,
+          {
+            userId: id,
+            kind: 'TRIAL_GRANTED',
+            title: 'Your Free Trial Is Ready!',
+            body: `You've received ${input.durationDays} ${input.durationDays === 1 ? 'day' : 'days'} of access to ${serviceName}, until ${accessUntilLabel(window.expiresAt, tz)}.\nEnjoy exploring your signals.`,
+            dedupeKey: `trial:${grant.id}`,
+          },
+          serviceName,
+        );
+        await this.auth.notifyAccessChange(tx, id);
+      }, TX_OPTIONS);
+    } catch (error) {
+      if (error instanceof RangeError) throw new AppError(422, 'VALIDATION', error.message);
+      if (!isUniqueViolation(error, 'idempotency_key')) throw error;
+      return { subscriber: await this.detail(id), replayed: true };
+    }
+    return { subscriber: await this.detail(id), replayed: false };
+  }
+
+  /** Serialises subscription changes for one person, so two administrators cannot both start one. */
+  private async lockSubscriber(tx: Tx, id: string) {
+    const locked = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM users WHERE id = ${id}::uuid AND role = 'SUBSCRIBER' FOR UPDATE`;
+    if (locked.length === 0) throw notFound('Subscriber not found');
+    return tx.user.findUniqueOrThrow({ where: { id }, include: { subscription: true } });
+  }
+
+  /** People who signed themselves up, newest first. */
+  async registrations(query: z.output<typeof listRegistrationsQuery>) {
+    const tz = await this.settings.timezone();
+    const now = new Date();
+    const q = query.q?.trim();
+    const accessFilter: Record<string, Prisma.UserWhereInput> = {
+      NONE: { subscription: { is: null } },
+      TRIAL: { subscription: { kind: 'TRIAL', startsAt: { lte: now }, expiresAt: { gt: now } } },
+      ACTIVE: { subscription: { kind: 'PAID', startsAt: { lte: now }, expiresAt: { gt: now } } },
+      EXPIRED: { subscription: { expiresAt: { lte: now } } },
+    };
+    const where: Prisma.UserWhereInput = {
+      role: 'SUBSCRIBER',
+      selfRegisteredAt: { not: null },
+      ...(query.enquiry ? { enquiryStatus: query.enquiry } : {}),
+      ...(query.unseen === 'true' ? { registrationSeenAt: null } : {}),
+      ...(query.access ? accessFilter[query.access] : {}),
+      ...(q
+        ? {
+            OR: [
+              { name: { contains: q, mode: 'insensitive' } },
+              { email: { contains: q, mode: 'insensitive' } },
+              { phone: { contains: q } },
+            ],
+          }
+        : {}),
+    };
+    const [rows, total, unseen] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: { subscription: true },
+        orderBy: { selfRegisteredAt: 'desc' },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
+      }),
+      this.prisma.user.count({ where }),
+      this.prisma.user.count({ where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null } }),
+    ]);
+    const registrations: RegistrationRow[] = rows.map((r) => {
+      const view = this.present(r, tz, false, now);
+      return {
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        mobile: r.phone,
+        age: r.age,
+        registeredAt: (r.selfRegisteredAt as Date).toISOString(),
+        emailVerified: r.emailVerifiedAt !== null,
+        enquiryStatus: r.enquiryStatus as EnquiryStatus,
+        subscription: view.subscription,
+        isNew: r.registrationSeenAt === null,
+      };
+    });
+    return { registrations, total, unseen, page: query.page, pageSize: query.pageSize };
+  }
+
+  /** Opening a registration takes it off the badge for every administrator. */
+  async markSeen(id: string) {
+    const result = await this.prisma.user.updateMany({
+      where: { id, role: 'SUBSCRIBER', registrationSeenAt: null },
+      data: { registrationSeenAt: new Date() },
+    });
+    return { ok: true, marked: result.count > 0 };
   }
 
   async revokeSessions(id: string, actor: Actor) {

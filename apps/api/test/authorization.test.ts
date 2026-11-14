@@ -46,7 +46,21 @@ describe('every route enforces its access level', () => {
   it('the route table is substantial and has no accidental public write routes', () => {
     expect(all.length).toBeGreaterThan(50);
     const publicWrites = all.filter((r) => r.access === 'public' && r.method !== 'GET');
-    expect(publicWrites.map((r) => r.path)).toEqual(['/auth/login', '/auth/token']);
+    // Signing in, and the sign-up and recovery steps a person takes before they have an account or session.
+    expect(publicWrites.map((r) => r.path).sort()).toEqual(
+      [
+        '/auth/login',
+        '/auth/token',
+        '/auth/register',
+        '/auth/register/resend',
+        '/auth/register/verify',
+        '/auth/register/complete',
+        '/auth/register/complete-token',
+        '/auth/password-reset',
+        '/auth/password-reset/resend',
+        '/auth/password-reset/verify',
+      ].sort(),
+    );
   });
 
   it('anonymous visitors get 401 on everything private', async () => {

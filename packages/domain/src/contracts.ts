@@ -11,7 +11,8 @@ import { DIRECTIONS, ENTRY_TYPES, MAX_TARGETS } from './signal.js';
 import { CLOSE_REASONS, PRIORITIES, TRADE_STATUSES, EVENT_TYPES } from './status.js';
 import { installationIdSchema } from './devices.js';
 import { STATUS_GROUPS, symbolList } from './signals-feed.js';
-import { MAX_SUBSCRIPTION_DAYS } from './subscription.js';
+import { MAX_SUBSCRIPTION_DAYS, MAX_TRIAL_DAYS } from './subscription.js';
+import { ENQUIRY_STATUSES, supportEmailField, supportWhatsappField } from './support.js';
 import { TEMPLATE_KINDS, TEMPLATE_TONES } from './templates.js';
 
 /**
@@ -357,11 +358,50 @@ export const updateSubscriberSchema = z.strictObject({
   phone: contactPhone,
   notes: shortText(2000).nullable().optional(),
 });
+const subscriptionDays = z
+  .number({ error: 'Enter the number of days' })
+  .int('Use a whole number of days')
+  .min(1, 'Use at least 1 day')
+  .max(MAX_SUBSCRIPTION_DAYS, `Use at most ${MAX_SUBSCRIPTION_DAYS} days`);
+
 export const renewSubscriptionSchema = z.strictObject({
-  durationDays: z.number().int().min(1).max(MAX_SUBSCRIPTION_DAYS),
+  durationDays: subscriptionDays,
+  /** Used only when the subscription has already expired: the new window starts on this local date. */
+  activationDate: localDate.optional(),
   idempotencyKey: idempotencyKeySchema,
   note: shortText(500).optional(),
 });
+/** A paid window for someone with no access, an expired one, or a running trial. */
+export const startSubscriptionSchema = z.strictObject({
+  durationDays: subscriptionDays,
+  activationDate: localDate.optional(),
+  note: shortText(500).optional(),
+  /** Required when the new window would end before access the person already has. */
+  confirmShorter: z.boolean().default(false),
+  idempotencyKey: idempotencyKeySchema,
+});
+export const grantTrialSchema = z.strictObject({
+  durationDays: z
+    .number({ error: 'Enter the number of days' })
+    .int('Use a whole number of days')
+    .min(1, 'Use at least 1 day')
+    .max(MAX_TRIAL_DAYS, `A trial can last at most ${MAX_TRIAL_DAYS} days`),
+  activationDate: localDate.optional(),
+  note: shortText(500).optional(),
+  /** Required to give a second trial to someone who already had one. */
+  allowRepeat: z.boolean().default(false),
+  idempotencyKey: idempotencyKeySchema,
+});
+export const enquiryStatusSchema = z.strictObject({ status: z.enum(ENQUIRY_STATUSES) });
+export const listRegistrationsQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  enquiry: z.enum(ENQUIRY_STATUSES).optional(),
+  access: z.enum(['NONE', 'TRIAL', 'ACTIVE', 'EXPIRED']).optional(),
+  unseen: z.enum(['true', 'false']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export const passwordResetsQuery = z.object({ status: z.enum(['OPEN', 'ALL']).default('OPEN') });
 export const adjustSubscriptionSchema = z.strictObject({
   /** Last local calendar date of access, inclusive. */
   lastValidDate: localDate.optional(),
@@ -478,8 +518,11 @@ export const settingsSchema = z.strictObject({
   trailingStopWording: z.enum(TRAILING_STOP_WORDINGS),
   screenshotsAllowedDefault: z.boolean(),
   historyScope: z.enum(HISTORY_SCOPES),
+  /** Where enquiries go. Optional here, so older clients that do not send them leave them unchanged. */
+  supportWhatsapp: supportWhatsappField.optional(),
+  supportEmail: supportEmailField.optional(),
 });
-export type SettingsInput = z.infer<typeof settingsSchema>;
+export type SettingsInput = z.output<typeof settingsSchema>;
 
 export const approvalSchema = z.strictObject({
   jurisdiction: z.string().trim().min(2).max(120),

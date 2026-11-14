@@ -478,7 +478,10 @@ describe('lifecycle over HTTP', () => {
     expect(after.aggregate.weightedPoints).toBe('100');
     const event = after.events.at(-1);
     expect(event.type).toBe('CORRECTION');
-    expect(event.body).toContain('Exit was mistyped');
+    // Subscribers see the new value and the old one; the reason is kept for administrators only.
+    expect(event.body).toContain(`Exit price updated: ${(entry + 100).toLocaleString('en-US')}.00`);
+    expect(event.body).not.toContain('Exit was mistyped');
+    expect(event.payload.correctionReason).toBe('Exit was mistyped');
     expect(event.payload.changes[0].field).toBe('Exit price');
   });
 

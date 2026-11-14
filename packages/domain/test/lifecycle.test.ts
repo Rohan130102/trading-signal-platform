@@ -968,7 +968,7 @@ describe('upcoming range trades', () => {
   });
 
   it('cannot move a stop or targets it does not have, but its range can still be corrected', () => {
-    expect(code(() => run(upcoming(), { action: 'MOVE_STOP', price: '3200' }))).toBe('LEVELS_PENDING');
+    expect(code(() => run(upcoming(), { action: 'MOVE_STOP', price: '3200', allowWiden: false }))).toBe('LEVELS_PENDING');
     expect(code(() => run(upcoming(), { action: 'MODIFY_TARGETS', targets: ['3400'] }))).toBe('LEVELS_PENDING');
     expect(code(() => run(upcoming(), { action: 'CORRECT', reason: 'Typo', stopLoss: '3200' }))).toBe(
       'LEVELS_PENDING',

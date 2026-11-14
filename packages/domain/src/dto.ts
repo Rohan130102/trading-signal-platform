@@ -205,6 +205,8 @@ export interface PublicInfo {
   riskDisclosure: string;
   privacyNotice: string;
   supportContact: string;
+  supportWhatsapp: string;
+  supportEmail: string;
   publicResultsAvailable: boolean;
   /** The About section of the public page. */
   aboutBody: string;

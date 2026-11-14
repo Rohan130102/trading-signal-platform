@@ -29,7 +29,15 @@ import { PerformanceService } from './performance/performance.service.js';
 import { PublicController } from './public/public.controller.js';
 import { RealtimeGateway } from './realtime/realtime.gateway.js';
 import { SettingsService } from './settings/settings.service.js';
-import { SubscribersController } from './subscribers/subscribers.controller.js';
+import { RegistrationsAdminController, SubscribersController } from './subscribers/subscribers.controller.js';
+import { EmailService } from './email/email.service.js';
+import { EmailTransport } from './email/email-transport.js';
+import { EnquiriesService } from './enquiries/enquiries.service.js';
+import { NoticesService } from './notices/notices.service.js';
+import { EmailChallengeService } from './registration/email-challenge.service.js';
+import { PasswordResetsService } from './registration/password-resets.service.js';
+import { RegistrationController } from './registration/registration.controller.js';
+import { RegistrationService } from './registration/registration.service.js';
 import { SubscribersService } from './subscribers/subscribers.service.js';
 import { TemplatesController } from './templates/templates.controller.js';
 import { TemplatesService } from './templates/templates.service.js';
@@ -44,6 +52,7 @@ import { TradesService } from './trades/trades.service.js';
 
 export const CONTROLLERS = [
   AuthController,
+  RegistrationController,
   MeController,
   FeedController,
   SubscriberTradesController,
@@ -56,6 +65,7 @@ export const CONTROLLERS = [
   InstrumentsController,
   TemplatesController,
   SubscribersController,
+  RegistrationsAdminController,
   NotificationsController,
   AdminController,
   PublicController,
@@ -80,6 +90,13 @@ const SERVICES = [
   TemplatesService,
   TradesService,
   TradesQueries,
+  EmailTransport,
+  EmailService,
+  NoticesService,
+  EmailChallengeService,
+  RegistrationService,
+  PasswordResetsService,
+  EnquiriesService,
   SubscribersService,
   PushTransport,
   NotificationsService,

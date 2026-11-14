@@ -76,7 +76,12 @@ export class AdminTradesController {
   @Summary('Server-side validation and risk geometry for the composer')
   async preview(@ZBody(previewSignalSchema) body: z.infer<typeof previewSignalSchema>) {
     const { spec, entry, targets, stopLoss } = await this.trades.validateSignal(body);
-    return { valid: true, risk: riskSummary({ spec, direction: body.direction, entry, targets, stopLoss }) };
+    // An upcoming trade has no levels yet, so there is no risk geometry to show.
+    return {
+      valid: true,
+      upcoming: stopLoss === null,
+      risk: stopLoss === null ? null : riskSummary({ spec, direction: body.direction, entry, targets, stopLoss }),
+    };
   }
 
   @Post('signals')
