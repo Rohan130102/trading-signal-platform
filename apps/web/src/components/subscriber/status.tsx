@@ -3,7 +3,7 @@
 import { type MeResponse, subscriberStatus, type UserNotice, whatsappDigits } from '@signaldesk/domain';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
-import { Clock, LogOut, Mail, MessageCircle, Sparkles } from 'lucide-react';
+import { CalendarX2, Clock, LogOut, Mail, MessageCircle, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button, Logo } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -42,7 +42,7 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
     return () => clearInterval(timer);
   }, [client]);
   if (!copy) return null;
-  const Icon = copy.tone === 'pending' ? Clock : Sparkles;
+  const Icon = copy.tone === 'pending' ? Clock : copy.tone === 'ended' ? CalendarX2 : Sparkles;
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-sm">
@@ -72,7 +72,6 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
             </div>
           )}
         </div>
-        <Notices compact />
         <button
           type="button"
           onClick={() => void signOut()}
@@ -86,8 +85,11 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
   );
 }
 
-/** Messages about the person's own account. Shown until dismissed; nothing about signals. */
-export function Notices({ compact = false }: { compact?: boolean }) {
+/**
+ * Messages about the person's own account, shown inside the app until dismissed. Not on the status screen: a
+ * message about access that has since ended would only mislead.
+ */
+export function Notices() {
   const client = useQueryClient();
   const notices = useQuery({
     queryKey: ['notices'],
@@ -101,7 +103,7 @@ export function Notices({ compact = false }: { compact?: boolean }) {
     void client.invalidateQueries({ queryKey: ['notices'] });
   };
   return (
-    <section aria-label="Account messages" className={clsx('flex flex-col gap-2', compact ? 'mt-8' : 'mb-5')}>
+    <section aria-label="Account messages" className="mb-5 flex flex-col gap-2">
       {unread.map((notice) => (
         <div key={notice.id} className="rounded-xl border border-line bg-surface px-4 py-3">
           <div className="flex items-start justify-between gap-3">

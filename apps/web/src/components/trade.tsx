@@ -426,7 +426,7 @@ export function TradeCard({ trade, href }: { trade: TradeSummary; href: string }
       </div>
       <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2.5 text-[13px] text-muted">
         <span className="min-w-0 truncate">
-          {trade.updatesCount > 0 ? `Latest: ${trade.lastEventTitle}` : 'No updates yet'}
+          {trade.updatesCount > 0 ? trade.lastEventTitle : 'No updates yet'}
         </span>
         {trade.lastEventAt && <Time iso={trade.lastEventAt} />}
       </div>

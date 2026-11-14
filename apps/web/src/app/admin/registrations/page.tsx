@@ -47,7 +47,8 @@ export default function RegistrationsPage() {
             onChange={(e) => reset(() => setQ(e.target.value))}
           />
         </div>
-        <Select aria-label="Enquiry" className="w-auto" value={enquiry} onChange={(e) => reset(() => setEnquiry(e.target.value))}>
+        <div className="w-full sm:w-44">
+        <Select aria-label="Enquiry" value={enquiry} onChange={(e) => reset(() => setEnquiry(e.target.value))}>
           <option value="">Any enquiry</option>
           {ENQUIRY_STATUSES.map((s) => (
             <option key={s} value={s}>
@@ -55,13 +56,16 @@ export default function RegistrationsPage() {
             </option>
           ))}
         </Select>
-        <Select aria-label="Access" className="w-auto" value={access} onChange={(e) => reset(() => setAccess(e.target.value))}>
+        </div>
+        <div className="w-full sm:w-40">
+        <Select aria-label="Access" value={access} onChange={(e) => reset(() => setAccess(e.target.value))}>
           <option value="">Any access</option>
           <option value="NONE">No subscription</option>
           <option value="TRIAL">Free trial</option>
           <option value="ACTIVE">Subscribed</option>
           <option value="EXPIRED">Expired</option>
         </Select>
+        </div>
         <label className="flex h-10 items-center gap-2 rounded-lg border border-line px-3 text-sm">
           <input type="checkbox" checked={unseen} onChange={(e) => reset(() => setUnseen(e.target.checked))} />
           New only
@@ -97,7 +101,7 @@ export default function RegistrationsPage() {
                     className="cursor-pointer border-t border-line hover:bg-raised"
                     onClick={() => router.push(`/admin/subscribers/${r.id}`)}
                   >
-                    <td className="px-4 py-2.5">
+                    <td className="whitespace-nowrap px-4 py-2.5">
                       <a href={`/admin/subscribers/${r.id}`} className="font-medium" onClick={(e) => e.stopPropagation()}>
                         {r.name}
                       </a>
@@ -115,8 +119,8 @@ export default function RegistrationsPage() {
                     </td>
                     <td className="num px-4 py-2.5">{r.mobile}</td>
                     <td className="num px-4 py-2.5">{r.age}</td>
-                    <td className="px-4 py-2.5 text-muted">{formatDateTime(r.registeredAt)}</td>
-                    <td className="px-4 py-2.5">{ENQUIRY_STATUS_LABELS[r.enquiryStatus]}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 text-muted">{formatDateTime(r.registeredAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5">{ENQUIRY_STATUS_LABELS[r.enquiryStatus]}</td>
                     <td className="px-4 py-2.5">
                       <AccessBadge row={{ status: 'ACTIVE', subscription: r.subscription }} />
                     </td>
