@@ -16,7 +16,7 @@ export function TradeRow({ trade }: { trade: TradeSummary }) {
     <Pressable
       testID={`trade-${trade.ref}`}
       accessibilityRole="button"
-      accessibilityLabel={`${trade.direction} ${trade.symbol}, reference ${trade.ref}, stop-loss ${formatPrice(trade, trade.stopLoss)}`}
+      accessibilityLabel={`${trade.direction} ${trade.symbol}, reference ${trade.ref}, ${trade.stopLoss === null ? 'upcoming' : `stop-loss ${formatPrice(trade, trade.stopLoss)}`}`}
       onPress={() => router.push(`/admin/trades/${trade.id}`)}
       style={({ pressed }) => [
         styles.tradeRow,
@@ -35,11 +35,13 @@ export function TradeRow({ trade }: { trade: TradeSummary }) {
       </View>
       <View style={styles.tradeTop}>
         <T v="small" c="muted">
-          Stop-loss
+          {trade.stopLoss === null ? 'Upcoming, levels at activation' : 'Stop-loss'}
         </T>
-        <T v="small" c="stop" num style={{ fontWeight: '600' }}>
-          {formatPrice(trade, trade.stopLoss)}
-        </T>
+        {trade.stopLoss !== null && (
+          <T v="small" c="stop" num style={{ fontWeight: '600' }}>
+            {formatPrice(trade, trade.stopLoss)}
+          </T>
+        )}
         <View style={{ flexGrow: 1 }} />
         <Ionicons name="chevron-forward" size={14} color={c.subtle} />
       </View>

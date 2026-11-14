@@ -156,30 +156,33 @@ export function Levels({
   entryHigh?: string;
   entryType?: 'SINGLE' | 'RANGE';
   targets: Pick<TargetState, 'index' | 'price' | 'status'>[];
-  stopLoss: string;
-  originalStopLoss?: string;
+  /** Null for an upcoming trade: it has no stop-loss or target until it is activated. */
+  stopLoss: string | null;
+  originalStopLoss?: string | null;
   big?: boolean;
 }) {
   const fmt = (v: string) => formatPrice({ pricePrecision: precision }, v);
-  const moved = originalStopLoss !== undefined && originalStopLoss !== stopLoss;
+  const moved = originalStopLoss != null && stopLoss !== null && originalStopLoss !== stopLoss;
   return (
     <View style={styles.levels}>
       {entryLow !== undefined && (
         <PriceCell
           big={big}
           testID="level-entry"
-          label={entryType === 'RANGE' ? 'Entry range' : 'Entry'}
+          label={stopLoss === null ? 'Entry zone' : entryType === 'RANGE' ? 'Entry range' : 'Entry'}
           value={entryType === 'RANGE' ? `${fmt(entryLow)} – ${fmt(entryHigh as string)}` : fmt(entryLow)}
         />
       )}
-      <PriceCell
-        big={big}
-        testID="level-stop"
-        label={moved ? 'Stop-loss (now)' : 'Stop-loss'}
-        value={fmt(stopLoss)}
-        tone="stop"
-        note={moved ? `was ${fmt(originalStopLoss)}` : undefined}
-      />
+      {stopLoss !== null && (
+        <PriceCell
+          big={big}
+          testID="level-stop"
+          label={moved ? 'Stop-loss (now)' : 'Stop-loss'}
+          value={fmt(stopLoss)}
+          tone="stop"
+          note={moved ? `was ${fmt(originalStopLoss as string)}` : undefined}
+        />
+      )}
       {targets.map((t) => (
         <PriceCell
           key={t.index}
@@ -265,27 +268,38 @@ export function ChangeLine({ event }: { event: FeedEvent }) {
       </View>
     );
   }
+  if (event.type === 'ENTRY_ACTIVATED' && p.finalEntry && p.activatedStop && p.activatedTargets) {
+    return (
+      <Levels
+        precision={p.pricePrecision ?? 2}
+        entryLow={p.finalEntry}
+        entryType="SINGLE"
+        targets={p.activatedTargets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const }))}
+        stopLoss={p.activatedStop}
+      />
+    );
+  }
   if (event.type === 'URGENT_INSTRUCTION' || event.type === 'ANNOUNCEMENT') {
     return <T>{p.message}</T>;
   }
+  // An updated level reads as the new value beside the old one. Who changed it, and why, is for administrators.
   if (event.type === 'CORRECTION' && p.changes) {
     return (
       <View style={{ gap: 4 }}>
         {p.changes.map((change) => (
           <View key={change.field} style={styles.change}>
-            <T c="muted">{change.field}</T>
-            <Before>{change.from ?? 'none'}</Before>
-            <Arrow />
+            <T c="muted">{change.field} updated</T>
+            {change.from ? (
+              <>
+                <Before>{change.from}</Before>
+                <Arrow />
+              </>
+            ) : null}
             <T v="strong" num>
-              {change.to ?? 'none'}
+              {change.to ?? 'removed'}
             </T>
           </View>
         ))}
-        {p.correctionReason && (
-          <T v="small" c="muted">
-            Reason: {p.correctionReason}
-          </T>
-        )}
       </View>
     );
   }
@@ -320,6 +334,7 @@ export function FeedCard({ event, fresh, adminLink }: { event: FeedEvent; fresh?
   const router = useRouter();
   const p = event.payload;
   const isNew = event.category === 'NEW_SIGNAL';
+  const upcoming = isNew && p.after?.stopLoss === null;
   const direction = p.direction;
   const tone: TemplateTone = isNew && direction ? (direction === 'BUY' ? 'BUY' : 'SELL') : event.tone;
   const urgent = event.priority === 'PRIORITY';
@@ -335,7 +350,7 @@ export function FeedCard({ event, fresh, adminLink }: { event: FeedEvent; fresh?
       <View style={[styles.accent, { backgroundColor: toneColor(c, tone) }]} />
       <View style={styles.heading}>
         <T v="label" c={toneText(tone)} style={{ textTransform: 'uppercase', flexShrink: 1 }} numberOfLines={1}>
-          {eventHeading(event.type, event.category, p.ref)}
+          {upcoming ? 'Upcoming trade' : eventHeading(event.type, event.category, p.ref)}
         </T>
         {urgent && (
           <Badge tone="update" icon="warning">
@@ -363,7 +378,9 @@ export function FeedCard({ event, fresh, adminLink }: { event: FeedEvent; fresh?
           {isNew && event.tradeStatus && event.tradeStatus !== 'PUBLISHED' && (
             <StatusBadge status={event.tradeStatus} />
           )}
-          {isNew && event.tradeStatus === 'PUBLISHED' && <Badge tone="update">Awaiting entry</Badge>}
+          {isNew && event.tradeStatus === 'PUBLISHED' && (
+            <Badge tone="update">{upcoming ? 'Awaiting activation' : 'Awaiting entry'}</Badge>
+          )}
         </View>
       )}
       {isNew && p.after && (
@@ -437,7 +454,11 @@ export function TradeCard({ trade, href }: { trade: TradeSummary; href: string }
         <T v="heading" style={{ fontWeight: '700' }}>
           {trade.symbol}
         </T>
-        <StatusBadge status={trade.status} />
+        {trade.stopLoss === null && trade.status === 'PUBLISHED' ? (
+          <Badge tone="update">Awaiting activation</Badge>
+        ) : (
+          <StatusBadge status={trade.status} />
+        )}
         {trade.priority === 'PRIORITY' && <Badge tone="update">Priority</Badge>}
         <View style={styles.spacer} />
         <T v="caption" c="subtle" num>
@@ -455,7 +476,7 @@ export function TradeCard({ trade, href }: { trade: TradeSummary; href: string }
       />
       <View style={[styles.latest, { borderTopColor: c.line }]}>
         <T v="small" c="muted" numberOfLines={1} style={{ flex: 1 }}>
-          {trade.updatesCount > 0 ? `Latest: ${trade.lastEventTitle}` : 'No updates yet'}
+          {trade.updatesCount > 0 ? trade.lastEventTitle : 'No updates yet'}
         </T>
         {trade.lastEventAt && <Time iso={trade.lastEventAt} />}
       </View>

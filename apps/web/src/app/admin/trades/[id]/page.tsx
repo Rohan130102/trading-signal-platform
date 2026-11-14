@@ -38,19 +38,19 @@ import { useMe } from '@/lib/session';
 
 const PRIMARY: { kind: ActionKind; label: string; icon: typeof Play; key?: string; variant?: 'primary' | 'danger' }[] =
   [
-    { kind: 'ACTIVATE', label: 'Activate trade', icon: Play, key: 'A', variant: 'primary' },
-    { kind: 'MOVE_STOP', label: 'Move stop-loss', icon: ShieldCheck, key: 'M' },
-    { kind: 'MOVE_STOP_BREAKEVEN', label: 'Stop to breakeven', icon: Flag, key: 'E' },
-    { kind: 'TRAIL_STOP', label: 'Trail stop', icon: TrendingUp, key: 'T' },
-    { kind: 'TARGET_HIT', label: 'Target reached', icon: Target, key: 'H' },
-    { kind: 'BOOK_PARTIAL', label: 'Book partial', icon: BookCheck, key: 'P' },
-    { kind: 'CLOSE', label: 'Close trade', icon: CircleCheck, key: 'C', variant: 'primary' },
-    { kind: 'URGENT', label: 'Urgent instruction', icon: Siren, key: 'U' },
-    { kind: 'MODIFY_TARGETS', label: 'Change targets', icon: PencilLine },
-    { kind: 'RECORD_EXECUTION', label: 'Record my execution', icon: Lock },
-    { kind: 'CANCEL', label: 'Cancel signal', icon: Ban, variant: 'danger' },
-    { kind: 'EXPIRE', label: 'Expired, no entry', icon: OctagonX },
-    { kind: 'CORRECT', label: 'Correct an error', icon: PencilLine },
+    { kind: 'ACTIVATE', label: 'Activate Trade', icon: Play, key: 'A', variant: 'primary' },
+    { kind: 'MOVE_STOP', label: 'Update Stop-Loss', icon: ShieldCheck, key: 'M' },
+    { kind: 'MOVE_STOP_BREAKEVEN', label: 'Stop to Breakeven', icon: Flag, key: 'E' },
+    { kind: 'TRAIL_STOP', label: 'Trail Stop', icon: TrendingUp, key: 'T' },
+    { kind: 'TARGET_HIT', label: 'Target Reached', icon: Target, key: 'H' },
+    { kind: 'BOOK_PARTIAL', label: 'Book Partial', icon: BookCheck, key: 'P' },
+    { kind: 'CLOSE', label: 'Close Trade', icon: CircleCheck, key: 'C', variant: 'primary' },
+    { kind: 'URGENT', label: 'Urgent Instruction', icon: Siren, key: 'U' },
+    { kind: 'MODIFY_TARGETS', label: 'Change Targets', icon: PencilLine },
+    { kind: 'RECORD_EXECUTION', label: 'Record Execution', icon: Lock },
+    { kind: 'CANCEL', label: 'Cancel Signal', icon: Ban, variant: 'danger' },
+    { kind: 'EXPIRE', label: 'Expired, No Entry', icon: OctagonX },
+    { kind: 'CORRECT', label: 'Correct Trade', icon: PencilLine },
   ];
 
 export default function AdminTradePage() {

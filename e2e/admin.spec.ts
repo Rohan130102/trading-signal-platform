@@ -71,11 +71,11 @@ test('complete administrator journey', async ({ page, browser }) => {
 
   await test.step('a signal published as active needs no separate activation step', async () => {
     await expect(page.getByRole('main').getByText('Active', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Activate trade' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Activate Trade' })).toHaveCount(0);
   });
 
   await test.step('move the stop-loss: the original is retained in the timeline', async () => {
-    await page.getByRole('button', { name: 'Move stop-loss' }).click();
+    await page.getByRole('button', { name: 'Update Stop-Loss' }).click();
     await page.getByLabel('New stop-loss').fill(String(entry + 50));
     await page.getByRole('button', { name: 'Move and notify' }).click();
     await expect(page.getByText('Stop-loss (now)')).toBeVisible();
@@ -85,7 +85,7 @@ test('complete administrator journey', async ({ page, browser }) => {
   });
 
   await test.step('widening risk needs a second, explicit confirmation', async () => {
-    await page.getByRole('button', { name: 'Move stop-loss' }).click();
+    await page.getByRole('button', { name: 'Update Stop-Loss' }).click();
     await page.getByLabel('New stop-loss').fill(String(entry + 10));
     await page.getByRole('button', { name: 'Move and notify' }).click();
     await expect(page.getByText('This increases risk')).toBeVisible();
@@ -93,7 +93,7 @@ test('complete administrator journey', async ({ page, browser }) => {
   });
 
   await test.step('close the trade and see the recorded result, labelled by its basis', async () => {
-    await page.getByRole('button', { name: 'Close trade' }).click();
+    await page.getByRole('button', { name: 'Close Trade' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: /At target 1/ }).click();
     await expect(dialog.getByLabel('What is this result based on?')).toHaveValue('HYPOTHETICAL_OUTCOME');
@@ -268,7 +268,7 @@ test('financial integrity: closing a range signal with no data invents no result
   });
   await actViaApi(api, trade, 'ACTIVATE');
   await page.goto(`/admin/trades/${trade.id}`);
-  await page.getByRole('button', { name: 'Close trade' }).click();
+  await page.getByRole('button', { name: 'Close Trade' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('What is this result based on?')).toHaveValue('NONE');
   await expect(dialog.getByRole('option', { name: /record your execution first/ })).toBeDisabled();
@@ -301,7 +301,7 @@ test('declared execution shows money, privately, and only with full data', async
   await expect(dialog.getByText('100.00 USD')).toBeVisible();
   await dialog.getByRole('button', { name: 'Book partial and notify' }).click();
   await expect(page.getByText('Partly closed').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Close trade' }).click();
+  await page.getByRole('button', { name: 'Close Trade' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('Exit price').fill(String(entry + 200));
   await dialog.getByLabel(/Fees/).fill('10');
@@ -322,7 +322,7 @@ test('trade actions work from the keyboard, and shortcuts stay out of the way wh
   // M, type the price, Enter: three inputs to move a stop.
   await page.keyboard.press('m');
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: 'Move stop-loss' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Update Stop-Loss' })).toBeVisible();
   await expect(dialog.getByLabel('New stop-loss')).toBeFocused();
   await page.keyboard.type(String(entry - 100));
   await page.keyboard.press('Enter');
