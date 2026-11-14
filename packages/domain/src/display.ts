@@ -24,9 +24,12 @@ export function percent(fraction: string, decimals = 1): string {
   return `${toDec(fraction).times(100).toDecimalPlaces(decimals).toFixed()}%`;
 }
 
-/** A figure is never shown without saying what it rests on. */
+/**
+ * A figure is never shown without saying what it rests on: the signal's own entry, or an entry the administrator
+ * recorded. Neither is any subscriber's own profit.
+ */
 export function basisShort(basis: CalculationBasis | undefined): string {
-  return basis === 'ADMIN_DECLARED_EXECUTION' ? 'declared by the administrator, unverified' : 'hypothetical';
+  return basis === 'ADMIN_DECLARED_EXECUTION' ? 'recorded entry' : 'signal result';
 }
 
 export function relativeTime(iso: string, now = Date.now()): string | null {

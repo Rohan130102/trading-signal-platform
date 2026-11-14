@@ -98,8 +98,9 @@ export const signalFieldsSchema = z.strictObject({
   entryLow: priceSchema,
   /** For a single entry this equals entryLow. */
   entryHigh: priceSchema,
-  targets: z.array(priceSchema).min(1).max(MAX_TARGETS),
-  stopLoss: priceSchema,
+  /** Empty only for an upcoming range trade, which gets its levels when it is activated. */
+  targets: z.array(priceSchema).max(MAX_TARGETS).default([]),
+  stopLoss: priceSchema.optional(),
   priority: z.enum(PRIORITIES).default('NORMAL'),
   templateId: z.uuid().nullable().optional(),
   commentary: comment,
@@ -110,6 +111,24 @@ export const signalFieldsSchema = z.strictObject({
   entryExpiresAt: instant.nullable().optional(),
 });
 export type SignalFields = z.infer<typeof signalFieldsSchema>;
+
+/**
+ * A single-price signal always carries its target and stop-loss. A range signal either carries both, or neither:
+ * then it is an upcoming trade, announced ahead and activated later with its final levels.
+ */
+function requireLevels(value: { entryType: string; targets: string[]; stopLoss?: string }, ctx: z.RefinementCtx) {
+  const hasTargets = value.targets.length > 0;
+  const hasStop = value.stopLoss !== undefined;
+  if (value.entryType === 'SINGLE' || hasTargets || hasStop) {
+    if (!hasTargets) ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Enter at least one target' });
+    if (!hasStop) ctx.addIssue({ code: 'custom', path: ['stopLoss'], message: 'Enter the stop-loss' });
+  }
+}
+
+/** True for a range signal published without a target or stop-loss. */
+export function isUpcomingSignal(value: { entryType: string; targets: readonly string[]; stopLoss?: string | null }) {
+  return value.entryType === 'RANGE' && value.targets.length === 0 && !value.stopLoss;
+}
 
 export const publishSignalSchema = signalFieldsSchema.extend({
   idempotencyKey: idempotencyKeySchema,
@@ -123,7 +142,7 @@ export const publishSignalSchema = signalFieldsSchema.extend({
    * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
    */
   activateOnPublish: z.boolean().optional(),
-});
+}).superRefine(requireLevels);
 
 /** Drafts may be incomplete: only publication requires the full signal. */
 export const draftSchema = z.strictObject({
@@ -140,7 +159,7 @@ export const draftSchema = z.strictObject({
 });
 export type DraftInput = z.infer<typeof draftSchema>;
 
-export const previewSignalSchema = signalFieldsSchema;
+export const previewSignalSchema = signalFieldsSchema.superRefine(requireLevels);
 
 /* ---------- Trade commands ---------- */
 
@@ -167,6 +186,10 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
     /** Optional administrator-declared fill. Without it the trade is active but has no execution record. */
     actualEntry: priceSchema.optional(),
     quantity: priceSchema.optional(),
+    /** Required to activate an upcoming trade, and refused for any other: its final entry and levels. */
+    entryPrice: priceSchema.optional(),
+    targets: z.array(priceSchema).min(1).max(MAX_TARGETS).optional(),
+    stopLoss: priceSchema.optional(),
     comment,
   }),
   z.strictObject({
