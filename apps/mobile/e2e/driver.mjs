@@ -149,7 +149,8 @@ export class Device {
     for (let i = 0; i <= maxSwipes; i += 1) {
       const node = await this.query(sel);
       const size = await this.size();
-      if (node && node.y2 > 0 && node.y1 < size.height - 160) return node;
+      // A node under a sticky footer is reported with an empty visible area (its bottom above its top).
+      if (node && node.y2 - node.y1 > 20 && node.y2 > 0 && node.y1 < size.height - 160) return node;
       await this.swipe(up);
       await delay(350);
     }
@@ -187,8 +188,17 @@ export class Device {
   }
 
   async type(sel, text, { clear = true } = {}) {
-    const node = await this.tap(sel);
+    let node = await this.tap(sel);
     await delay(250);
+    // A tap while a list is still settling after a swipe only stops the scroll. Tap again until this field has
+    // focus, so the keys never go to the field that had it before.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const now = await this.query(sel);
+      if (!now || now.focused || !/EditText/.test(now.cls)) break;
+      await delay(400);
+      node = await this.tap(sel);
+      await delay(250);
+    }
     if (clear) {
       await this.adb('shell', 'input', 'keyevent', 'KEYCODE_MOVE_END');
       const length = (await this.query(sel))?.text?.length ?? node.text.length;

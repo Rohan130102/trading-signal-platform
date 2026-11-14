@@ -105,7 +105,7 @@ describe('a feed card', () => {
       />,
     );
     expect(screen.getByText('Closed: T-1')).toBeTruthy();
-    expect(screen.getByText(/\+150 pts \(hypothetical\)/)).toBeTruthy();
+    expect(screen.getByText(/\+150 pts \(signal result\)/)).toBeTruthy();
   });
 
   it('shows an announcement without inventing a trade', async () => {

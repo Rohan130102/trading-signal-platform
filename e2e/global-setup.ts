@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import EmbeddedPostgres from 'embedded-postgres';
 import webpush from 'web-push';
+import { API_ORIGIN, API_PORT, WEB_ORIGIN, WEB_PORT } from './ports.js';
 
 const root = resolve(import.meta.dirname, '..');
 const apiDir = resolve(root, 'apps/api');
@@ -44,8 +45,8 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
     ...process.env,
     NODE_ENV: 'test',
     DATABASE_URL: databaseUrl,
-    PORT: '4000',
-    APP_ORIGINS: 'http://localhost:3000',
+    PORT: String(API_PORT),
+    APP_ORIGINS: WEB_ORIGIN,
     TRUST_PROXY_HOPS: '1',
     APP_ENCRYPTION_KEY: randomBytes(32).toString('base64'),
     PUSH_TRANSPORT: 'webpush',
@@ -79,16 +80,16 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
       env: {
         ...process.env,
         NODE_ENV: 'production',
-        PORT: '3000',
+        PORT: String(WEB_PORT),
         HOSTNAME: 'localhost',
-        API_ORIGIN: 'http://localhost:4000',
-        NEXT_PUBLIC_WS_URL: 'ws://localhost:4000/ws',
+        API_ORIGIN,
+        NEXT_PUBLIC_WS_URL: `ws://localhost:${API_PORT}/ws`,
       },
       stdio: 'ignore',
     }),
   ];
-  await ready('http://localhost:4000/health/ready', 'API');
-  await ready('http://localhost:3000/login', 'Web');
+  await ready(`${API_ORIGIN}/health/ready`, 'API');
+  await ready(`${WEB_ORIGIN}/login`, 'Web');
 
   return async () => {
     for (const child of children) child.kill('SIGTERM');

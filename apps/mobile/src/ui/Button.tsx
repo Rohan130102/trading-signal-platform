@@ -65,6 +65,8 @@ export function Button({
           backgroundColor: look.bg,
           borderColor: look.border,
           minHeight: large ? 54 : small ? 44 : TOUCH,
+          // A short label such as "OK" still leaves a target as wide as it is tall.
+          minWidth: large ? 54 : small ? 44 : TOUCH,
           paddingHorizontal: small ? space.md : space.lg,
           opacity: off && !loading ? 0.45 : pressed ? 0.8 : 1,
           transform: [{ scale: pressed ? 0.985 : 1 }],

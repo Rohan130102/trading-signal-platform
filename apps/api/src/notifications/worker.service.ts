@@ -14,6 +14,8 @@ import { CH_EVENTS, CH_PUSH, ListenerService } from '../db/listener.service.js';
 import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { AudienceService } from '../feed/audience.service.js';
 import { TradesService } from '../trades/trades.service.js';
+import { CH_EMAIL, EmailService } from '../email/email.service.js';
+import { EmailChallengeService } from '../registration/email-challenge.service.js';
 import { NotificationsService } from './notifications.service.js';
 import {
   EXPO_BATCH_LIMIT,
@@ -45,6 +47,7 @@ const DELIVERY_INCLUDE = {
       payload: true,
     },
   },
+  notice: { select: { id: true, kind: true, title: true, body: true, createdAt: true } },
   pushSubscription: {
     include: {
       session: true,
@@ -85,6 +88,9 @@ export class WorkerService implements OnModuleDestroy {
   private outboxAgain = false;
   private pushBusy = false;
   private pushAgain = false;
+  private emailBusy = false;
+  private emailAgain = false;
+  private lastPurge = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -94,6 +100,8 @@ export class WorkerService implements OnModuleDestroy {
     private readonly announcements: AnnouncementsService,
     private readonly notifications: NotificationsService,
     private readonly audience: AudienceService,
+    private readonly email: EmailService,
+    private readonly challenges: EmailChallengeService,
   ) {}
 
   private lastBacklogAlert = { at: 0, text: '' };
@@ -104,6 +112,7 @@ export class WorkerService implements OnModuleDestroy {
     const startedAt = new Date();
     this.listener.on(CH_EVENTS, () => void this.runOutbox());
     this.listener.on(CH_PUSH, () => void this.runPush());
+    this.listener.on(CH_EMAIL, () => void this.runEmail());
     await this.listener.start();
 
     const beat = async () => {
@@ -121,6 +130,7 @@ export class WorkerService implements OnModuleDestroy {
       setInterval(guarded('heartbeat', beat), 5000),
       setInterval(() => void this.runOutbox(), env.WORKER_POLL_MS),
       setInterval(() => void this.runPush(), env.WORKER_POLL_MS),
+      setInterval(() => void this.runEmail(), env.WORKER_POLL_MS),
       setInterval(
         guarded('expo_receipts', () => this.checkExpoReceipts()),
         env.EXPO_RECEIPT_POLL_SECONDS * 1000,
@@ -242,6 +252,25 @@ export class WorkerService implements OnModuleDestroy {
         AND (u.role = 'ADMIN' OR (sub.starts_at <= now() AND sub.expires_at > now()))
       ON CONFLICT (event_id, push_subscription_id) DO NOTHING`;
     if (inserted > 0) void this.runPush();
+  }
+
+  private async runEmail(): Promise<void> {
+    if (!this.running) return;
+    if (this.emailBusy) {
+      this.emailAgain = true;
+      return;
+    }
+    this.emailBusy = true;
+    try {
+      do {
+        this.emailAgain = false;
+        while ((await this.email.processBatch()) > 0 && this.running);
+      } while (this.emailAgain && this.running);
+    } catch (error) {
+      log('warn', 'email_batch_failed', { error: (error as Error).message });
+    } finally {
+      this.emailBusy = false;
+    }
   }
 
   private async runPush(): Promise<void> {
@@ -382,8 +411,9 @@ export class WorkerService implements OnModuleDestroy {
   }
 
   private async prepare(delivery: DeliveryRow, now: Date, badge?: number): Promise<PreparedPush | null> {
-    const { id, event, pushSubscription: device } = delivery;
+    const { id, event, notice, pushSubscription: device } = delivery;
     const { user, session } = device;
+    if (!event) return notice ? this.prepareNotice(delivery, notice, now, badge) : null;
 
     // Checked again immediately before sending: access may have ended since the job was queued.
     const access = evaluateSignalAccess(user, user.subscription, now);
@@ -424,6 +454,53 @@ export class WorkerService implements OnModuleDestroy {
             ? ((event.payload as { direction?: string } | null)?.direction ?? null)
             : null,
       },
+    };
+    const target: PushTarget =
+      device.channel === 'EXPO'
+        ? { channel: 'EXPO', endpoint: device.endpoint }
+        : {
+            channel: 'WEB_PUSH',
+            endpoint: device.endpoint,
+            p256dh: device.p256dh as string,
+            auth: device.auth as string,
+          };
+    return { delivery, target, message };
+  }
+
+  /**
+   * A message about the person's own account. It carries no signal, so it does not depend on signal access: it
+   * reaches someone whose subscription ended. A signed-out device or a disabled account still gets nothing.
+   */
+  private async prepareNotice(
+    delivery: DeliveryRow,
+    notice: NonNullable<DeliveryRow['notice']>,
+    now: Date,
+    badge?: number,
+  ): Promise<PreparedPush | null> {
+    const { id, pushSubscription: device } = delivery;
+    const { user, session } = device;
+    const sessionLive = session !== null && session.revokedAt === null && session.expiresAt > now;
+    if (user.status !== 'ACTIVE' || !sessionLive || device.invalidatedAt) {
+      await this.finish(id, 'SKIPPED', null, user.status !== 'ACTIVE' ? 'Account not active' : 'Device signed out');
+      return null;
+    }
+    if (now.getTime() - notice.createdAt.getTime() > 24 * 3600 * 1000) {
+      await this.finish(id, 'FAILED', null, 'Too old to be useful');
+      return null;
+    }
+    const hide = user.preferences?.hidePreview ?? false;
+    const message: PushMessage = {
+      title: hide ? 'Account update' : notice.title,
+      body: hide ? 'Open the app to read it.' : notice.body.slice(0, 1000),
+      url: '/app',
+      path: '/feed',
+      tag: notice.id,
+      urgent: false,
+      androidChannel: 'announcements',
+      interruptionLevel: 'active',
+      badge,
+      threadId: 'account',
+      data: { tradeId: null, seq: 0, tradeVersion: null, category: 'ACCOUNT', priority: 'NORMAL', direction: null },
     };
     const target: PushTarget =
       device.channel === 'EXPO'
@@ -588,5 +665,13 @@ export class WorkerService implements OnModuleDestroy {
     await this.prisma.session.deleteMany({
       where: { expiresAt: { lt: days(90) }, pushSubscriptions: { none: {} } },
     });
+    if (now - this.lastPurge > 10 * 60_000) {
+      this.lastPurge = now;
+      // Details typed at sign-up are not kept beyond a day if the address was never proved.
+      await this.challenges.purgeStale();
+      await this.prisma.emailOutbox.deleteMany({
+        where: { createdAt: { lt: days(90) }, status: { in: ['SENT', 'DEAD'] }, enquiries: { none: {} } },
+      });
+    }
   }
 }

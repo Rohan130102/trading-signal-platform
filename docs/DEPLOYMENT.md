@@ -26,6 +26,20 @@ are validated at startup: a process with bad configuration refuses to start and 
 Production requires `NODE_ENV=production`, `https://` in every `APP_ORIGINS` entry, and `TRUST_PROXY_HOPS` equal to the number of
 proxies in front of the API. Keep `PUBLIC_PERFORMANCE_ENABLED=false` unless compliance review says otherwise.
 
+## Email
+
+Sign-up codes, recovery codes, subscription enquiries to support and account messages are sent by email. Without it, sign-up
+says plainly that email is not set up, and nothing pretends to be sent.
+
+| Setting                                 | Notes                                                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `EMAIL_TRANSPORT`                       | `smtp` for real delivery, `disabled` (default) for none. `file` is for development and is refused in production |
+| `EMAIL_FROM`                            | The sender, such as `Signal Desk <no-reply@yourdomain>`                                                         |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | Gmail: `smtp.gmail.com`, `587`, `false` (STARTTLS, required)                                                    |
+| `SMTP_USER`, `SMTP_PASS`                | Keep the password in a secret manager or the server's `.env` only                                               |
+
+"Sent" in the app means the provider accepted the message. Whether it reached an inbox is not observable.
+
 ## Native app settings
 
 | Setting                      | Default                           | Notes                                                                             |

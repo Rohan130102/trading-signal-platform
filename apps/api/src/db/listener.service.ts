@@ -30,12 +30,15 @@ export class ListenerService implements OnModuleDestroy {
   private readonly reconnectHandlers = new Set<() => void>();
   private stopped = false;
   private retry: NodeJS.Timeout | null = null;
+  /** One query at a time on this connection: several channels can be added together. */
+  private listening: Promise<unknown> = Promise.resolve();
 
   on(channel: string, handler: Handler): void {
     const set = this.handlers.get(channel) ?? new Set<Handler>();
     set.add(handler);
     this.handlers.set(channel, set);
-    if (this.client) void this.client.query(`LISTEN ${channel}`).catch(() => undefined);
+    const client = this.client;
+    if (client) this.listening = this.listening.then(() => client.query(`LISTEN ${channel}`)).catch(() => undefined);
   }
 
   onReconnect(handler: () => void): void {

@@ -5,6 +5,7 @@ import {
   LIVE_STATUSES,
   performanceQuery,
   settingsSchema,
+  supportSettingsSchema,
   type TradeStatus,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
@@ -201,6 +202,17 @@ export class AdminController {
     @ZBody(settingsSchema) body: z.infer<typeof settingsSchema>,
   ) {
     return this.settings.update(body, auth.user.id, requestId);
+  }
+
+  @Put('settings/support')
+  @MasterOnly()
+  @Summary('Set the support WhatsApp number and email used by every enquiry. Master Admin only; audited.')
+  updateSupport(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(supportSettingsSchema) body: z.output<typeof supportSettingsSchema>,
+  ) {
+    return this.settings.updateSupport(body, auth.user.id, requestId);
   }
 
   @Get('compliance/public-performance')

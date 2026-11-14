@@ -81,3 +81,20 @@ describe('opening a notification', () => {
     expect(resolveDeepLink(admin, '/feed')).toBe('/dashboard');
   });
 });
+
+describe('sign-up and recovery routes', () => {
+  it('lets someone signed out reach sign-up and password recovery', () => {
+    const out: SessionPhase = { phase: 'signed-out' };
+    expect(gateRedirect(out, ['(auth)', 'signup'])).toBeNull();
+    expect(gateRedirect(out, ['(auth)', 'forgot-password'])).toBeNull();
+    expect(gateRedirect(out, ['welcome'])).toBe('/login');
+  });
+
+  it('shows a new account its welcome or the status screen, never the signals', () => {
+    const none = signedIn({ access: { allowed: false, reason: 'SUBSCRIPTION_NONE' } });
+    expect(gateRedirect(none, ['welcome'])).toBeNull();
+    expect(gateRedirect(none, ['access-ended'])).toBeNull();
+    expect(gateRedirect(none, ['(subscriber)', 'feed'])).toBe('/access-ended');
+    expect(gateRedirect(none, ['trades', 'abc'])).toBe('/access-ended');
+  });
+});

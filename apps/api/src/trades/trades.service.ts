@@ -10,6 +10,7 @@ import {
   entryLabel,
   formatPrice,
   type InstrumentSpec,
+  isUpcomingSignal,
   type NewClosure,
   publishSignalSchema,
   resolveEntryExpiry,
@@ -20,6 +21,7 @@ import {
   type TemplateKind,
   type TradeCommand,
   type TargetState,
+  validateEntryAndTargets,
   validateSignalLevels,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
@@ -52,7 +54,7 @@ export function normalizeFields(fields: SignalFields) {
   return {
     entry: { type: fields.entryType, low: canon(fields.entryLow), high: canon(fields.entryHigh) },
     targets: fields.targets.map(canon),
-    stopLoss: canon(fields.stopLoss),
+    stopLoss: fields.stopLoss === undefined ? null : canon(fields.stopLoss),
   };
 }
 
@@ -77,7 +79,13 @@ export class TradesService {
   async validateSignal(fields: SignalFields) {
     const spec = await this.loadInstrumentSpec(fields.instrumentId);
     const { entry, targets, stopLoss } = normalizeFields(fields);
-    const issues = validateSignalLevels({ spec, direction: fields.direction, entry, targets, stopLoss });
+    // An upcoming range trade has only its entry zone; its levels are checked when it is activated.
+    const issues =
+      stopLoss === null
+        ? validateEntryAndTargets({ spec, direction: fields.direction, entry, targets }).filter(
+            (issue) => !(issue.field === 'targets' && issue.code === 'REQUIRED'),
+          )
+        : validateSignalLevels({ spec, direction: fields.direction, entry, targets, stopLoss });
     if (issues.length > 0) throw new AppError(422, 'VALIDATION', issues[0]?.message ?? 'Invalid signal', { issues });
     return { spec, entry, targets, stopLoss };
   }
@@ -130,20 +138,32 @@ export class TradesService {
 
     const platform = await this.settings.platform();
     const now = new Date();
-    const active = startsActive(input.activateOnPublish, platform.signalStartMode);
+    const upcoming = isUpcomingSignal(input);
+    if (upcoming && input.activateOnPublish === true) {
+      throw new AppError(
+        422,
+        'LEVELS_REQUIRED',
+        'An upcoming trade is activated later, with its final entry, target and stop-loss.',
+      );
+    }
+    // An upcoming trade always waits for activation, whatever the platform's start mode.
+    const active = !upcoming && startsActive(input.activateOnPublish, platform.signalStartMode);
     if (input.entryExpiresAt && !active && new Date(input.entryExpiresAt).getTime() <= now.getTime()) {
       throw new AppError(422, 'VALIDATION', 'The entry window must end in the future.');
     }
     const entryExpiresAt = resolveEntryExpiry(input.entryExpiresAt, platform.entryExpiryMinutesDefault, active, now);
     const defaults = calculateLevels({ spec, direction: input.direction, entry });
-    const usedDefaultLevels =
-      defaults.stopLoss === stopLoss &&
-      targets.length === defaultTargetPoints(spec).length &&
-      defaults.targets.every((t, i) => t === targets[i]);
+    const usedDefaultLevels = upcoming
+      ? null
+      : defaults.stopLoss === stopLoss &&
+        targets.length === defaultTargetPoints(spec).length &&
+        defaults.targets.every((t, i) => t === targets[i]);
 
     try {
       const tradeId = await this.prisma.$transaction(async (tx) => {
-        const template = await this.chooseSignalTemplate(tx, input);
+        const template = upcoming
+          ? await this.templates.resolve('UPCOMING_TRADE', tx)
+          : await this.chooseSignalTemplate(tx, input);
         const [{ next } = { next: 0n }] = await tx.$queryRaw<
           { next: bigint }[]
         >`SELECT nextval('trade_ref_seq') AS next`;
@@ -202,7 +222,7 @@ export class TradesService {
           instrument: spec.symbol,
           direction: input.direction,
           entry: entryLabel(spec, entry),
-          stop: formatPrice(spec, stopLoss),
+          stop: stopLoss === null ? null : formatPrice(spec, stopLoss),
           target1: targets[0] ? formatPrice(spec, targets[0]) : null,
           target2: targets[1] ? formatPrice(spec, targets[1]) : null,
           target3: targets[2] ? formatPrice(spec, targets[2]) : null,
@@ -255,6 +275,7 @@ export class TradesService {
               targets,
               stopLoss,
               usedDefaultLevels,
+              upcoming,
               startedAs: active ? 'ACTIVE' : 'AWAITING_ENTRY',
               entryExpiresAt: entryExpiresAt?.toISOString() ?? null,
             },
@@ -434,8 +455,10 @@ export class TradesService {
           data: {
             status: next.status,
             version: next.version,
+            entryType: next.entry.type,
             entryLow: next.entry.low,
             entryHigh: next.entry.high,
+            originalStopLoss: next.originalStopLoss,
             stopLoss: next.stopLoss,
             targets: next.targets as unknown as Prisma.InputJsonValue,
             closedFraction: next.closedFraction,

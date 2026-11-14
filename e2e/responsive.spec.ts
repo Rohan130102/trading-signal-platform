@@ -151,7 +151,7 @@ test.describe('administrator', () => {
     await page.screenshot({ path: resolve(dir, `${info.project.name}-admin-publish-dialog.png`) });
     await page.getByRole('button', { name: 'Close' }).click();
     await page.goto(`/admin/trades/${partial.id}`);
-    await page.getByRole('button', { name: 'Close trade' }).click();
+    await page.getByRole('button', { name: 'Close Trade' }).click();
     await page
       .getByRole('dialog')
       .getByLabel('Exit price')

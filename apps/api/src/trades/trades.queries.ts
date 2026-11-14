@@ -333,7 +333,7 @@ export class TradesQueries {
           }
         : null,
       // A removed trade is frozen until it is restored: nothing may alert subscribers about it.
-      allowedActions: row.removal ? [] : allowedActions(row.status),
+      allowedActions: row.removal ? [] : allowedActions(row.status, row.stopLoss === null),
       contractMultiplier: spec.contractMultiplier,
       tickSize: spec.tickSize,
       archivedAt: row.archive?.archivedAt.toISOString() ?? null,

@@ -27,6 +27,16 @@
 2. The session then has at most one required step, in this order: replace temporary password, enrol MFA (admin), verify MFA (admin). Until complete, only the routes for that step work, including at the WebSocket.
 3. An unknown login ID runs the same password check as a known one, and returns the same error, so neither the message nor the timing reveals which IDs exist.
 
+## Sign-up and recovery
+
+- **Email codes.** Six random digits, valid five minutes, five tries per code, a new code at most once a minute, each new code replacing the last. Only an HMAC of the code keyed with `APP_ENCRYPTION_KEY` and bound to its challenge is stored, so a copy of the table cannot be used to try codes offline. A right code is cleared at once and cannot be replayed. Wrong tries are counted atomically before the comparison.
+- **Limits.** Code emails per address per hour, new challenges and code checks per client address per hour (`EMAIL_CODE_IP_LIMIT_PER_HOUR`).
+- **No enumeration.** Sign-up answers the same for a taken address, which gets an email saying it already has an account instead of a code. Recovery answers the same for an unknown address and sends it nothing.
+- **Setup token.** Proving the address returns a 15-minute, single-use token for creating the password. Its use is claimed atomically, so two requests cannot create two accounts.
+- **Recovery is administrator-managed.** A proved address files one request. An administrator issues a temporary password, shown once, stored only as a hash, valid 24 hours; the old password and every session stop working, and the person must replace it before anything else. The audit log records who issued it and never the password.
+- **No paid access from sign-up.** A new account has no subscription and no trial; both come only from an administrator.
+- **Emails never carry a password.** Codes are sent at once and never stored readable; other email is queued in the database.
+
 ## Secrets
 
 | Secret               | Where it lives                                                                                                                    |
@@ -34,6 +44,7 @@
 | `APP_ENCRYPTION_KEY` | Secret manager. **Losing it means every administrator must re-enrol MFA** (`npm run admin:reset`). There is no rotation tool yet. |
 | `VAPID_PRIVATE_KEY`  | Secret manager. Changing the pair invalidates every device's subscription.                                                        |
 | `DATABASE_URL`       | Secret manager. Use the restricted role from `deploy/app-role.sql`.                                                               |
+| `SMTP_PASS`          | Secret manager, or the server's `.env` only. With Gmail, use an app password, never the account password.                         |
 
 `.env` is ignored by git. `scripts/setup-env.mjs` creates a local one with mode 600. No default password exists anywhere:
 `npm run admin:create` prints a temporary one once. Nothing logs passwords, tokens, request bodies or signal text.

@@ -1,0 +1,124 @@
+'use client';
+
+import { ACTIONS, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
+import { clsx } from 'clsx';
+import { Check, Eye, EyeOff } from 'lucide-react';
+import Link from 'next/link';
+import { forwardRef, type InputHTMLAttributes, useEffect, useState } from 'react';
+import { Button, Input } from '@/components/ui';
+
+/** Two clearly separate ways in. The current one is marked for assistive technology too. */
+export function AuthTabs({ current }: { current: 'login' | 'signup' }) {
+  const tab = (href: string, label: string, active: boolean) => (
+    <Link
+      href={href}
+      aria-current={active ? 'page' : undefined}
+      className={clsx(
+        'flex h-10 flex-1 items-center justify-center rounded-lg text-sm font-semibold transition-colors',
+        active ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text',
+      )}
+    >
+      {label}
+    </Link>
+  );
+  return (
+    <nav aria-label="Account" className="mb-6 flex gap-1 rounded-xl bg-neutral-soft p-1">
+      {tab('/login', ACTIONS.logIn, current === 'login')}
+      {tab('/signup', ACTIONS.signUp, current === 'signup')}
+    </nav>
+  );
+}
+
+export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function PasswordInput(props, ref) {
+    const [show, setShow] = useState(false);
+    return (
+      <div className="relative">
+        <Input {...props} ref={ref} type={show ? 'text' : 'password'} className="pr-12" />
+        <button
+          type="button"
+          onClick={() => setShow(!show)}
+          aria-label={show ? 'Hide password' : 'Show password'}
+          aria-pressed={show}
+          className="absolute right-0 top-0 grid h-full w-11 place-items-center text-muted hover:text-text"
+        >
+          {show ? <EyeOff className="size-4" aria-hidden /> : <Eye className="size-4" aria-hidden />}
+        </button>
+      </div>
+    );
+  },
+);
+
+/** One field for the whole code, so paste and the phone's one-time-code suggestion both work. */
+export const CodeInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { value: string }>(
+  function CodeInput({ value, onChange, ...props }, ref) {
+    return (
+      <Input
+        {...props}
+        ref={ref}
+        value={value}
+        onChange={(e) => {
+          e.target.value = e.target.value.replace(/\D/g, '').slice(0, OTP_LENGTH);
+          onChange?.(e);
+        }}
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        maxLength={OTP_LENGTH}
+        pattern="[0-9]*"
+        placeholder={'•'.repeat(OTP_LENGTH)}
+        className="num h-12 text-center text-xl tracking-[0.5em] placeholder:tracking-[0.5em]"
+      />
+    );
+  },
+);
+
+/** Counts down to when a new code may be asked for; the server enforces the same wait. */
+export function ResendButton({ onResend }: { onResend: () => Promise<void> }) {
+  const [now, setNow] = useState(() => Date.now());
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  // Counted from when this code arrived (the parent remounts this for each code), so a device whose clock is off
+  // still shows the right wait. The server enforces the same wait in any case.
+  const [arrivedAt] = useState(() => Date.now());
+  const wait = Math.max(0, Math.ceil(OTP_RESEND_SECONDS - (now - arrivedAt) / 1000));
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="shrink-0"
+      disabled={wait > 0}
+      loading={busy}
+      onClick={() => {
+        setBusy(true);
+        void onResend().finally(() => setBusy(false));
+      }}
+    >
+      {wait > 0 ? `${ACTIONS.resendCode} in ${wait}s` : ACTIONS.resendCode}
+    </Button>
+  );
+}
+
+export function Hints({ hints }: { hints: { text: string; met: boolean }[] }) {
+  return (
+    <ul className="flex flex-col gap-1 text-[13px]" aria-live="polite">
+      {hints.map((hint) => (
+        <li key={hint.text} className={clsx('flex items-center gap-2', hint.met ? 'text-success' : 'text-subtle')}>
+          <Check className={clsx('size-3.5', hint.met ? 'opacity-100' : 'opacity-30')} aria-hidden />
+          {hint.text}
+          <span className="sr-only">{hint.met ? '(done)' : '(not yet)'}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Field messages from the server's validation, keyed by field name. */
+export function issuesByField(error: unknown): Record<string, string> {
+  const issues = (error as { details?: { issues?: { field: string; message: string }[] } } | null)?.details?.issues;
+  const out: Record<string, string> = {};
+  for (const issue of issues ?? []) out[issue.field.split('.')[0] as string] ??= issue.message;
+  return out;
+}

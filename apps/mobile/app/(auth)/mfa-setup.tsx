@@ -118,7 +118,7 @@ export default function MfaSetup() {
           </View>
           <Card>
             <T v="small" c="muted">
-              Or enter this key by hand
+              Or enter this key manually
             </T>
             <T testID="mfa-secret" num selectable style={{ marginTop: 4 }}>
               {setup.data.secret}

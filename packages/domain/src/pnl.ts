@@ -22,8 +22,8 @@ export type CalculationBasis = (typeof CALCULATION_BASES)[number];
 
 export const BASIS_LABELS: Record<CalculationBasis, string> = {
   NONE: 'No measurable basis',
-  HYPOTHETICAL_OUTCOME: 'Hypothetical outcome of the signal',
-  ADMIN_DECLARED_EXECUTION: 'Execution declared by the administrator (unverified)',
+  HYPOTHETICAL_OUTCOME: 'Signal result, measured from its own entry',
+  ADMIN_DECLARED_EXECUTION: 'Measured from the recorded entry, not independently verified',
   EXTERNALLY_VERIFIED: 'Externally verified execution',
 };
 

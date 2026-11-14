@@ -10,6 +10,8 @@ const FALLBACK: PublicInfo = {
   riskDisclosure: '',
   privacyNotice: '',
   supportContact: '',
+  supportWhatsapp: '',
+  supportEmail: '',
   publicResultsAvailable: false,
   aboutBody: '',
   dataResetAt: null,

@@ -28,7 +28,7 @@ export default function TradePage() {
       href="/app/active"
       className="-ml-1 inline-flex items-center gap-1 rounded px-1 text-[13px] text-muted hover:text-text"
     >
-      <ArrowLeft className="size-3.5" aria-hidden /> Active trades
+      <ArrowLeft className="size-3.5" aria-hidden /> Signals
     </Link>
   );
   if (trade.isPending) return <Loading rows={2} label="Loading trade" />;

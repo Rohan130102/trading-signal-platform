@@ -23,7 +23,7 @@ export function isValidTimezone(tz: string): boolean {
   return DateTime.now().setZone(tz).isValid;
 }
 
-function assertDays(durationDays: number): void {
+export function assertDays(durationDays: number): void {
   if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > MAX_SUBSCRIPTION_DAYS) {
     throw new RangeError(`Duration must be 1 to ${MAX_SUBSCRIPTION_DAYS} days.`);
   }
@@ -57,18 +57,20 @@ export function computeInitialWindow(startsAt: Date, durationDays: number, tz: s
 
 export interface RenewalResult extends SubscriptionWindow {
   /** Which branch of the renewal policy applied, recorded on the subscription event. */
-  mode: 'EXTENDED_FROM_EXPIRY' | 'RESTARTED_FROM_NOW';
+  mode: 'EXTENDED_FROM_EXPIRY' | 'RESTARTED_FROM_NOW' | 'RESTARTED_FROM_DATE';
 }
 
 /**
  * Renewal policy: time still owed is never lost. A subscription still running (or scheduled) is
- * extended from its current expiry; one already expired starts a fresh window today.
+ * extended from its current expiry; one already expired starts a fresh window, today or from the
+ * chosen activation instant.
  */
 export function computeRenewal(
   current: SubscriptionWindow,
   durationDays: number,
   now: Date,
   tz: string,
+  restartFrom?: Date,
 ): RenewalResult {
   assertDays(durationDays);
   if (now.getTime() < current.expiresAt.getTime()) {
@@ -81,7 +83,84 @@ export function computeRenewal(
       mode: 'EXTENDED_FROM_EXPIRY',
     };
   }
+  if (restartFrom && restartFrom.getTime() > now.getTime()) {
+    return { ...computeInitialWindow(restartFrom, durationDays, tz), mode: 'RESTARTED_FROM_DATE' };
+  }
   return { ...computeInitialWindow(now, durationDays, tz), mode: 'RESTARTED_FROM_NOW' };
+}
+
+/* ---------- Kinds of access, trials and starting a subscription ---------- */
+
+/** What the current access window is. A trial gives the same access as a paid subscription. */
+export const SUBSCRIPTION_KINDS = ['PAID', 'TRIAL'] as const;
+export type SubscriptionKind = (typeof SUBSCRIPTION_KINDS)[number];
+
+/** Shortcuts offered in the forms. Any whole number of days in range is accepted. */
+export const SUBSCRIPTION_DAY_SHORTCUTS = [7, 30, 90, 180, 365] as const;
+export const TRIAL_DAY_SHORTCUTS = [2, 3, 5, 7, 14] as const;
+export const MAX_TRIAL_DAYS = 90;
+
+export interface StartPreview extends SubscriptionWindow {
+  /** True when the new window ends before the access the person already has. Needs explicit confirmation. */
+  shortensAccess: boolean;
+}
+
+/**
+ * Starting a subscription (or a trial) replaces whatever window exists from the chosen instant. Used for someone
+ * with no access, an expired one, or a running trial. A running paid subscription is renewed instead.
+ */
+export function previewStart(
+  current: SubscriptionWindow | null,
+  startsAt: Date,
+  durationDays: number,
+  now: Date,
+  tz: string,
+): StartPreview {
+  const window = computeInitialWindow(startsAt, durationDays, tz);
+  const running = current !== null && current.expiresAt.getTime() > now.getTime();
+  return {
+    ...window,
+    shortensAccess: running && window.expiresAt.getTime() < (current as SubscriptionWindow).expiresAt.getTime(),
+  };
+}
+
+export type SubscriberAction = 'START' | 'RENEW' | 'GRANT_TRIAL';
+
+/**
+ * Which subscription actions make sense for this person now. A paid subscription is renewed, not started again;
+ * a trial is offered only while no paid access is running, and a second trial needs an explicit override.
+ */
+export function subscriberActions(
+  current: (SubscriptionWindow & { kind: SubscriptionKind }) | null,
+  now: Date,
+): SubscriberAction[] {
+  const state = subscriptionState(current, now);
+  if (!current || state === 'NONE') return ['START', 'GRANT_TRIAL'];
+  if (current.kind === 'TRIAL') return state === 'EXPIRED' ? ['START', 'GRANT_TRIAL'] : ['START'];
+  return ['RENEW'];
+}
+
+export interface TrialGrantView {
+  id: string;
+  durationDays: number;
+  startsAt: Date;
+  expiresAt: Date;
+  acknowledgedAt: Date | null;
+}
+
+/**
+ * The welcome is shown once per grant, only while that grant is what gives access right now. A grant seen on
+ * another device, replaced by a paid subscription, or already over is never celebrated.
+ */
+export function trialToGreet(
+  grant: TrialGrantView | null,
+  current: (SubscriptionWindow & { kind: SubscriptionKind }) | null,
+  now: Date,
+): TrialGrantView | null {
+  if (!grant || grant.acknowledgedAt || !current || current.kind !== 'TRIAL') return null;
+  if (subscriptionState(current, now) !== 'ACTIVE') return null;
+  if (current.expiresAt.getTime() !== grant.expiresAt.getTime()) return null;
+  return grant;
 }
 
 export function subscriptionState(sub: SubscriptionWindow | null, now: Date): SubscriptionState {
@@ -93,6 +172,13 @@ export function subscriptionState(sub: SubscriptionWindow | null, now: Date): Su
 /** Last calendar date of access, for display. The inverse of the exclusive-instant convention. */
 export function lastValidLocalDate(expiresAt: Date, tz: string): string {
   return DateTime.fromMillis(expiresAt.getTime() - 1, { zone: tz }).toISODate() as string;
+}
+
+/** "20 December 2026": the last day of access in the business timezone, as people read it. */
+export function accessUntilLabel(expiresAt: Date, tz: string): string {
+  return DateTime.fromMillis(expiresAt.getTime() - 1, { zone: tz })
+    .setLocale('en-GB')
+    .toFormat('d LLLL yyyy');
 }
 
 /** Whole calendar days of access remaining, counting today. Zero once expired. */

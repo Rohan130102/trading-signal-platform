@@ -27,6 +27,8 @@ export class PublicController {
       riskDisclosure: s.riskDisclosure,
       privacyNotice: s.privacyNotice,
       supportContact: s.supportContact,
+      supportWhatsapp: s.supportWhatsapp,
+      supportEmail: s.supportEmail,
       publicResultsAvailable: gate.enabled,
       aboutBody: s.aboutBody,
       dataResetAt: s.dataResetAt?.toISOString() ?? null,

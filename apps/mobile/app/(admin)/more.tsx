@@ -1,14 +1,42 @@
+import type { AdminInbox } from '@signaldesk/domain';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { space } from '@/theme/tokens';
-import { Card, Divider, ListRow, PageTitle, Screen, SectionTitle, T } from '@/ui';
+import { Badge, Card, Divider, ListRow, PageTitle, Screen, SectionTitle, T } from '@/ui';
 
 export default function More() {
   const router = useRouter();
   const master = useSession().me?.isMasterAdmin === true;
+  const inbox = useQuery({
+    queryKey: ['admin', 'inbox'],
+    queryFn: () => api.get<AdminInbox>('/admin/inbox'),
+    refetchInterval: 30_000,
+  });
+  const count = (n: number | undefined) => (n ? <Badge tone="buy">{String(n)}</Badge> : undefined);
   return (
     <Screen testID="more">
       <PageTitle title="More" />
+      <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+        <ListRow
+          testID="more-registrations"
+          icon="person-add-outline"
+          title="New Registrations"
+          subtitle="People who signed themselves up"
+          right={count(inbox.data?.newRegistrations)}
+          onPress={() => router.push('/admin/registrations')}
+        />
+        <Divider />
+        <ListRow
+          testID="more-password-resets"
+          icon="key-outline"
+          title="Password Resets"
+          subtitle="Requests from verified email addresses"
+          right={count(inbox.data?.openPasswordResets)}
+          onPress={() => router.push('/admin/password-resets')}
+        />
+      </Card>
       <Card padded={false} style={{ paddingHorizontal: space.lg }}>
         <ListRow
           testID="more-announcement"

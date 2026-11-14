@@ -4,6 +4,7 @@ import type {
   PlatformSettings,
   SettingsInput,
   SignalStartMode,
+  SupportContact,
   TrailingStopWording,
 } from '@signaldesk/domain';
 import { isValidTimezone } from '@signaldesk/domain';
@@ -20,6 +21,8 @@ const RULE_FIELDS = [
   'screenshotsAllowedDefault',
   'historyScope',
   'businessTimezone',
+  'supportWhatsapp',
+  'supportEmail',
 ] as const;
 
 @Injectable()
@@ -47,6 +50,37 @@ export class SettingsService {
       screenshotsAllowedDefault: s.screenshotsAllowedDefault,
       historyScope: s.historyScope as HistoryScope,
     };
+  }
+
+  /** Read on every request, so a change applies to every screen and email at once. */
+  async support(): Promise<SupportContact> {
+    const s = await this.get();
+    return {
+      serviceName: s.serviceName,
+      whatsapp: s.supportWhatsapp,
+      email: s.supportEmail,
+      contact: s.supportContact,
+      renewalInstructions: s.renewalInstructions,
+    };
+  }
+
+  /** Master Admin only. Before and after go into the audit log: these decide where enquiries are sent. */
+  async updateSupport(input: { supportWhatsapp: string; supportEmail: string }, actorId: string, requestId: string) {
+    const before = await this.get();
+    const after = await this.prisma.appSettings.update({ where: { id: 1 }, data: input });
+    await this.audit.record({
+      actorId,
+      action: 'SUPPORT_CONTACT_UPDATED',
+      targetType: 'settings',
+      targetId: '1',
+      metadata: {
+        whatsapp: { from: before.supportWhatsapp, to: after.supportWhatsapp },
+        email: { from: before.supportEmail, to: after.supportEmail },
+      },
+      requestId,
+    });
+    await notifyRefresh(this.prisma, 'SETTINGS_CHANGED');
+    return after;
   }
 
   async update(input: SettingsInput, actorId: string, requestId: string) {

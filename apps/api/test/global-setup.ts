@@ -30,6 +30,8 @@ declare module 'vitest' {
       ws: string;
       origin: string;
       databaseUrl: string;
+      /** Where the API writes the emails it sends (EMAIL_TRANSPORT=file). */
+      mailDir: string;
       adminCookie: string;
       adminId: string;
     };
@@ -68,6 +70,7 @@ async function json(req: IncomingMessage): Promise<Buffer> {
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   const dataDir = mkdtempSync(join(tmpdir(), 'sd-test-pg-'));
   const certDir = mkdtempSync(join(tmpdir(), 'sd-test-cert-'));
+  const mailDir = mkdtempSync(join(tmpdir(), 'sd-test-mail-'));
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: 'signaldesk',
@@ -104,6 +107,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
     RUN_WORKER_IN_API: 'false',
     PUBLIC_PERFORMANCE_ENABLED: 'false',
     RATE_LIMIT_PER_MINUTE: '1000000',
+    EMAIL_TRANSPORT: 'file',
+    EMAIL_FILE_DIR: mailDir,
+    EMAIL_FROM: 'Signal Desk <no-reply@example.test>',
+    EMAIL_CODE_IP_LIMIT_PER_HOUR: '100000',
   };
 
   execFileSync('npx', ['prisma', 'migrate', 'deploy'], { cwd: apiDir, env: baseEnv, stdio: 'pipe' });
@@ -253,6 +260,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     PORT: String(LIMITED_API_PORT),
     INSTANCE_ID: 'api-limited',
     RATE_LIMIT_PER_MINUTE: '20',
+    EMAIL_CODE_IP_LIMIT_PER_HOUR: '3',
     // Lets a test say which address a request came from, as a reverse proxy would.
     TRUST_PROXY_HOPS: '1',
   });
@@ -341,6 +349,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
     ws: `ws://localhost:${API_PORT}/ws`,
     origin: ORIGIN,
     databaseUrl,
+    mailDir,
     adminCookie,
     adminId: me.id,
   });
@@ -361,5 +370,6 @@ export default async function setup(project: TestProject): Promise<() => Promise
     await pg.stop().catch(() => undefined);
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(certDir, { recursive: true, force: true });
+    rmSync(mailDir, { recursive: true, force: true });
   };
 }

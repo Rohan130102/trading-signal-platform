@@ -38,8 +38,8 @@ function summary(card: Card): string {
   const entry = card.entryType === 'RANGE' ? `${fmt(card.entryLow)} to ${fmt(card.entryHigh)}` : fmt(card.entryLow);
   const parts = [
     `${card.direction === 'BUY' ? 'Buy' : 'Sell'} ${card.symbol}`,
-    STATUS_LABELS[card.status],
-    `Entry ${entry}, stop-loss ${fmt(card.stopLoss)}`,
+    card.stopLoss === null ? 'Upcoming trade, awaiting activation' : STATUS_LABELS[card.status],
+    card.stopLoss === null ? `Entry zone ${entry}` : `Entry ${entry}, stop-loss ${fmt(card.stopLoss)}`,
     ...card.targets.map((t) => `Target ${t.index} ${fmt(t.price)}${t.status === 'HIT' ? ', reached' : ''}`),
   ];
   if (card.unread) parts.unshift('New');
@@ -90,13 +90,21 @@ export function CompactLevels({
   entryLow: string;
   entryHigh: string;
   entryType: 'SINGLE' | 'RANGE';
-  stopLoss: string;
-  originalStopLoss?: string;
+  /** Null for an upcoming trade, which shows only its entry zone. */
+  stopLoss: string | null;
+  originalStopLoss?: string | null;
   targets: Pick<TargetState, 'index' | 'price' | 'status'>[];
 }) {
   const fmt = (v: string) => formatPrice({ pricePrecision: precision }, v);
   const range = entryType === 'RANGE';
-  const moved = originalStopLoss !== undefined && originalStopLoss !== stopLoss;
+  if (stopLoss === null) {
+    return (
+      <View style={styles.levels}>
+        <Level testID="card-entry" label="Entry zone" value={`${fmt(entryLow)} – ${fmt(entryHigh)}`} wrap />
+      </View>
+    );
+  }
+  const moved = originalStopLoss != null && originalStopLoss !== stopLoss;
   const targetsLabel = targets
     .map((t) => `Target ${t.index} ${fmt(t.price)}${t.status === 'HIT' ? ', reached' : ''}`)
     .join(', ');
@@ -197,7 +205,12 @@ export const SignalCard = memo(function SignalCard({
         <T v="strong" style={styles.symbol} numberOfLines={1}>
           {card.symbol}
         </T>
-        <StatusBadge status={card.status} />
+        {card.stopLoss === null && card.status === 'PUBLISHED' ? (
+          // Short, so the instrument keeps its room; the full status is in the card's spoken summary.
+          <Badge tone="update">Upcoming</Badge>
+        ) : (
+          <StatusBadge status={card.status} />
+        )}
         <View style={styles.spacer} />
         {fresh ? (
           <View testID="fresh-badge">

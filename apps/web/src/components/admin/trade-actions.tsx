@@ -19,13 +19,17 @@ import {
   toDec,
   trailStopPrice,
   type InstrumentSpec,
+  canon,
+  singleEntry,
   type TrailingStopWording,
+  validateSignalLevels,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Dialog, Field, FormError, Input, Segmented, Select, Textarea } from '@/components/ui';
 import { api, ApiError } from '@/lib/api';
+import { Levels } from '@/components/trade';
 import { money, signedPoints } from '@/lib/format';
 
 export type ActionKind =
@@ -44,19 +48,19 @@ export type ActionKind =
   | 'CORRECT';
 
 const TITLES: Record<ActionKind, string> = {
-  ACTIVATE: 'Activate trade',
+  ACTIVATE: 'Activate Trade',
   RECORD_EXECUTION: 'Record my execution',
-  MOVE_STOP: 'Move stop-loss',
+  MOVE_STOP: 'Update Stop-Loss',
   MOVE_STOP_BREAKEVEN: 'Move stop-loss to breakeven',
   TRAIL_STOP: 'Trail stop-loss',
   TARGET_HIT: 'Mark target reached',
   MODIFY_TARGETS: 'Change remaining targets',
   BOOK_PARTIAL: 'Book partial profit',
-  CLOSE: 'Close trade',
+  CLOSE: 'Close Trade',
   URGENT: 'Send urgent instruction',
   CANCEL: 'Cancel signal',
   EXPIRE: 'Mark as expired without entry',
-  CORRECT: 'Correct a published error',
+  CORRECT: 'Correct Trade',
 };
 
 const INTERNAL: ActionKind[] = ['RECORD_EXECUTION'];
@@ -131,7 +135,7 @@ export function ActionDialog({ trade, kind, targetIndex, onClose }: Props) {
   let form: ReactNode;
   switch (kind) {
     case 'ACTIVATE':
-      form = <ActivateForm {...shared} />;
+      form = trade.stopLoss === null ? <UpcomingActivateForm {...shared} /> : <ActivateForm {...shared} />;
       break;
     case 'RECORD_EXECUTION':
       form = <ExecutionForm {...shared} />;
@@ -176,8 +180,13 @@ export function ActionDialog({ trade, kind, targetIndex, onClose }: Props) {
       wide={kind === 'CLOSE' || kind === 'BOOK_PARTIAL' || kind === 'CORRECT'}
       description={
         <>
-          {trade.direction} {trade.symbol} · <span className="num">{trade.ref}</span> · Stop-loss{' '}
-          <span className="num">{formatPrice(trade, trade.stopLoss)}</span>
+          {trade.direction} {trade.symbol} · <span className="num">{trade.ref}</span>
+          {trade.stopLoss !== null && (
+            <>
+              {' '}
+              · Stop-loss <span className="num">{stopText(trade)}</span>
+            </>
+          )}
         </>
       }
     >
@@ -268,6 +277,82 @@ function PriceInput({
 
 const optional = (value: string) => value.trim() || undefined;
 
+/** An upcoming trade has no stop-loss until it is activated. */
+function stopText(trade: AdminTradeDetail): string {
+  return trade.stopLoss === null ? 'not set yet' : formatPrice(trade, trade.stopLoss);
+}
+
+/**
+ * Turns an upcoming trade into a trade: the final entry, at least one target and the stop-loss, checked by the same
+ * rules the server applies, with a preview of what subscribers will see.
+ */
+function UpcomingActivateForm({ trade, run, pending, error }: FormProps) {
+  const [entry, setEntry] = useState('');
+  const [targets, setTargets] = useState(['', '', '']);
+  const [stop, setStop] = useState('');
+  const [comment, setComment] = useState('');
+  const filled = targets.map((t) => t.trim()).filter(Boolean);
+  const wellFormed = [entry.trim(), stop.trim(), ...filled].every(isDecimalLiteral) && filled.length > 0;
+  const issues = wellFormed
+    ? validateSignalLevels({
+        spec: specOf(trade),
+        direction: trade.direction,
+        entry: singleEntry(canon(entry.trim())),
+        targets: filled.map((t) => canon(t)),
+        stopLoss: canon(stop.trim()),
+      })
+    : [];
+  const ready = wellFormed && issues.length === 0;
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    run({ entryPrice: entry.trim(), targets: filled, stopLoss: stop.trim(), comment: optional(comment) });
+  };
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <p className="text-sm text-muted">
+        Published zone{' '}
+        <span className="num font-medium text-text">
+          {formatPrice(trade, trade.entryLow)} – {formatPrice(trade, trade.entryHigh)}
+        </span>
+        . The same trade becomes active with these levels.
+      </p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <PriceInput label="Final entry" value={entry} onChange={setEntry} autoFocus />
+        <PriceInput label="Stop-loss" value={stop} onChange={setStop} />
+        {targets.map((value, i) => (
+          <PriceInput
+            key={i}
+            label={i === 0 ? 'Target 1' : `Target ${i + 1} (optional)`}
+            value={value}
+            onChange={(v) => setTargets((prev) => prev.map((t, j) => (j === i ? v : t)))}
+          />
+        ))}
+      </div>
+      {issues.length > 0 && (
+        <ul className="flex flex-col gap-1 text-[13px] text-stop" role="alert">
+          {issues.map((issue) => (
+            <li key={issue.field + issue.code}>{issue.message}</li>
+          ))}
+        </ul>
+      )}
+      {ready && (
+        <div className="rounded-lg bg-bg p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Subscribers will see</p>
+          <Levels
+            precision={trade.pricePrecision}
+            entryLow={canon(entry.trim())}
+            entryType="SINGLE"
+            targets={filled.map((price, i) => ({ index: i + 1, price: canon(price), status: 'OPEN' as const }))}
+            stopLoss={canon(stop.trim())}
+          />
+        </div>
+      )}
+      <CommentField value={comment} onChange={setComment} />
+      <Actions pending={pending} error={error} label="Activate Trade and notify" disabled={!ready} />
+    </form>
+  );
+}
+
 function ActivateForm({ trade, run, pending, error }: FormProps) {
   const [entry, setEntry] = useState('');
   const [quantity, setQuantity] = useState('');
@@ -339,8 +424,8 @@ function MoveStopForm({ trade, run, pending, error, confirmWiden }: FormProps) {
     <div role="alert" className="rounded-lg bg-update-soft p-3 text-sm text-update">
       <p className="font-semibold">This increases risk</p>
       <p>
-        The new stop-loss is further from the trade than the current one ({formatPrice(trade, trade.stopLoss)}). Press
-        the button again to confirm.
+        The new stop-loss is further from the trade than the current one ({stopText(trade)}). Press the button again to
+        confirm.
       </p>
     </div>
   );
@@ -353,8 +438,7 @@ function MoveStopForm({ trade, run, pending, error, confirmWiden }: FormProps) {
         autoFocus
         hint={
           <>
-            Currently <span className="num">{formatPrice(trade, trade.stopLoss)}</span>. The original stays in the
-            history.
+            Currently <span className="num">{stopText(trade)}</span>. The original stays in the history.
           </>
         }
       />
@@ -383,7 +467,7 @@ function BreakevenForm({ trade, run, pending, error }: FormProps) {
     <form onSubmit={submit} className="flex flex-col gap-4">
       {known ? (
         <p className="text-sm">
-          The stop-loss moves from <span className="num font-semibold">{formatPrice(trade, trade.stopLoss)}</span> to{' '}
+          The stop-loss moves from <span className="num font-semibold">{stopText(trade)}</span> to{' '}
           <span className="num font-semibold text-stop">{formatPrice(trade, known)}</span>
           {trade.execution ? ', your recorded entry.' : ', the recommended entry.'}
         </p>
@@ -476,13 +560,13 @@ function TrailForm({ trade, run, pending, error }: FormProps) {
         <div className="rounded-lg bg-bg p-3 text-sm">
           <p>
             New stop-loss: <span className="num font-semibold text-stop">{next}</span>{' '}
-            <span className="text-muted">(was {formatPrice(trade, trade.stopLoss)})</span>
+            <span className="text-muted">(was {stopText(trade)})</span>
           </p>
           <p className="mt-1 text-[13px] text-muted">
             Subscribers read:{' '}
             {wording === 'GENERAL'
               ? `“Trail the stop-loss on trade ${trade.ref} to ${next}.”`
-              : `“Stop-loss on trade ${trade.ref} trailed from ${formatPrice(trade, trade.stopLoss)} to ${next} (${formatPoints(points.trim() || '0')} pts from ${formatPrice(trade, reference.trim() || '0')}).”`}
+              : `“Stop-loss on trade ${trade.ref} trailed from ${stopText(trade)} to ${next} (${formatPoints(points.trim() || '0')} pts from ${formatPrice(trade, reference.trim() || '0')}).”`}
           </p>
         </div>
       )}
@@ -611,11 +695,11 @@ function ExitForm({ trade, run, pending, error, final }: FormProps & { final: bo
           <Button
             size="sm"
             onClick={() => {
-              setExitPrice(trade.stopLoss);
+              setExitPrice(trade.stopLoss ?? '');
               setReason('STOP_LOSS_HIT');
             }}
           >
-            At stop-loss ({formatPrice(trade, trade.stopLoss)})
+            At stop-loss ({stopText(trade)})
           </Button>
         </div>
       )}
@@ -851,12 +935,9 @@ function CorrectForm({ trade, run, pending, error }: FormProps) {
             hint={`Now ${formatPrice(trade, trade.entryHigh)}`}
           />
         )}
-        <PriceInput
-          label="Stop-loss"
-          value={stop}
-          onChange={setStop}
-          hint={`Now ${formatPrice(trade, trade.stopLoss)}`}
-        />
+        {trade.stopLoss !== null && (
+          <PriceInput label="Stop-loss" value={stop} onChange={setStop} hint={`Now ${stopText(trade)}`} />
+        )}
         {trade.targets.map((target) => (
           <PriceInput
             key={target.index}

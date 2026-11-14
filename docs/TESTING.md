@@ -1,28 +1,86 @@
 # Testing
 
-The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The tables below were
-executed on 5 November 2026 on the web platform. The unit, integration and web end-to-end suites were run again on 6 November after
-the mobile work, and the unit, integration and native app suites again on 8 November after the mobile experience work (grouped
-signals, announcements, device binding, screen protection), on one Apple Silicon Mac with 8 GB of memory, Node 22.23. The web
-end-to-end suite needs ports 3000 and 4000, which a running demo held, so on 8 November it ran in CI only.
+The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The latest
+results below are from 14 November 2026, after sign-up, enquiries, trials, password recovery and upcoming trades were
+added, on one Apple Silicon Mac with 8 GB of memory, Node 22.23. Earlier rounds ran on 5, 6 and 8 November.
 
 ## Results
 
-| Gate                                                            | Result                                                                                               |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Clean install from lockfile (`npm ci`) and build                | Pass                                                                                                 |
-| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                 |
-| ESLint, zero warnings allowed                                   | Pass                                                                                                 |
-| Prettier                                                        | Pass                                                                                                 |
-| Unit tests                                                      | **168 of 168** (154 before, 14 added)                                                                |
-| Integration tests                                               | **219 of 219** (186 before, 33 added)                                                                |
-| Native app unit and component tests (Jest)                      | **85 of 85** (61 before, 24 added)                                                                   |
-| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                 |
-| Native app journeys, Android emulator in Expo Go                | **28 of 28**, including 7 new ones (see below); the live-signal journey checks the new-signal banner |
-| End-to-end tests                                                | **77 of 77**                                                                                         |
-| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                                                                |
-| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship                                               |
-| Tests skipped or weakened to pass                               | None                                                                                                 |
+| Gate                                                            | Result                                                                                                     |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                       |
+| ESLint, zero warnings allowed                                   | Pass                                                                                                       |
+| Prettier                                                        | Pass                                                                                                       |
+| Unit tests                                                      | **219 of 219**                                                                                             |
+| Integration tests                                               | **287 of 287**                                                                                             |
+| Native app unit and component tests (Jest)                      | **95 of 95**                                                                                               |
+| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                       |
+| Native app journeys, Android emulator in Expo Go                | **31 of 31** that can run here (see below). Screen protection was not run this round                       |
+| End-to-end tests (website)                                      | **78 of 78**, on ports 3300 and 4300 beside a running demo                                                 |
+| `npm audit --omit=dev`                                          | 3 moderate, all `minimatch` inside Expo's build tooling (`@expo/fingerprint`). Not introduced by this work |
+| Secret scan                                                     | No secrets found                                                                                           |
+| Tests skipped or weakened to pass                               | None                                                                                                       |
+
+### 14 November: sign-up, trials, recovery and upcoming trades
+
+**Phone.** All 32 journeys in `apps/mobile/e2e/run.mjs` ran on a separate Android emulator (6 GB, its own data) against a
+throwaway stack. Five are new:
+
+- sign-in errors;
+- sign-up with email code, password and an emailed enquiry;
+- a trial and its one-time welcome;
+- an upcoming trade activated with levels and then corrected;
+- password recovery reaching the administrators.
+
+Emails were read from the file transport, never a real inbox.
+
+In the final full run, 27 passed, screen protection was skipped and 4 failed. All 4 failures were the journeys
+themselves:
+
+- two needed to scroll to lines now below the fold;
+- one tapped a field hidden behind the composer's sticky bar;
+- one ran while an app file was being saved, which reloads the app.
+
+After those fixes the 4 passed on the same stack. Sign-up, trial and recovery passed again after the last change to the
+code screen. Screen protection needs Metro started without the capture switch; it is unchanged since it passed on
+8 November.
+
+Defects these runs found in the app, now fixed:
+
+- the resend countdown lost its seconds on Android;
+- granted a trial, the first-use tour covered the trial welcome;
+- renewed while on the expired screen, coming back to the app did not check again for up to a minute;
+- a short "OK" button was 43 points wide;
+- the status screen said "Log out" where everything else says "Sign out";
+- the phone's sign-up and recovery calls were refused for having no `Origin`.
+
+Several older journeys and website tests had not been updated for the Master Admin round's changes:
+
+- signals now start as Awaiting entry by default;
+- hidden trades now have their own History filter.
+
+They are updated now.
+
+**Website.** The end-to-end suite ran in full on spare ports, with the website built against them, so it did not touch
+the demo on 3000 and 4000:
+
+```bash
+API_ORIGIN=http://localhost:4300 NEXT_PUBLIC_WS_URL=ws://localhost:4300/ws npm run build -w @signaldesk/web
+```
+
+```bash
+E2E_WEB_PORT=3300 E2E_API_PORT=4300 npm run test:e2e
+```
+
+Its first run found 8 failures:
+
+- an accessibility rule: the "OK" button's spoken name did not include "OK";
+- one administrator form label changed by mistake in a test;
+- tests still expecting the old Signals heading.
+
+All 78 passed after the fixes.
+
+**Not run:** iOS (no Xcode here; CI bundles the iOS JavaScript on every pull request, and the native build runs from the "iOS build" workflow when started by hand), real email delivery (needs SMTP settings), and push to real phones.
 
 ### Native app journeys, 8 November
 
@@ -62,7 +120,7 @@ npm run build && PLAYWRIGHT_BROWSERS_PATH=0 npm run test:e2e
 ulimit -n 20000 && SOCKETS=1000 EVENTS=100 DEVICES=500 npm run test:perf
 ```
 
-Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 3000 and 4000 free (E2E) or 4101 to 4106 free (integration).
+Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 4101 to 4106 free (integration) or 3000 and 4000 (E2E). The E2E ports can be moved with `E2E_WEB_PORT` and `E2E_API_PORT`; build the website against the same API port first, as shown above.
 
 ## Layers
 

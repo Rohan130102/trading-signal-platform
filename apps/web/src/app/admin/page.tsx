@@ -40,7 +40,13 @@ function TradeRow({ trade }: { trade: TradeSummary }) {
         <span className="num text-xs text-subtle">{trade.ref}</span>
         <StatusBadge status={trade.status} />
         <span className="num ml-auto text-[13px] text-muted">
-          SL <span className="text-stop">{formatPrice(trade, trade.stopLoss)}</span>
+          {trade.stopLoss === null ? (
+            'Upcoming'
+          ) : (
+            <>
+              SL <span className="text-stop">{formatPrice(trade, trade.stopLoss)}</span>
+            </>
+          )}
         </span>
       </Link>
     </li>

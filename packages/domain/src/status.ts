@@ -72,8 +72,19 @@ export function canTransition(from: TradeStatus, to: TradeStatus): boolean {
   return TRANSITIONS[from].includes(to);
 }
 
-export function allowedActions(status: TradeStatus): TradeAction[] {
-  return TRADE_ACTIONS.filter((action) => ACTION_FROM[action].includes(status));
+/** Actions that need a stop-loss or targets, which an upcoming trade gets only when it is activated. */
+const NEEDS_LEVELS: readonly TradeAction[] = [
+  'MOVE_STOP',
+  'MOVE_STOP_BREAKEVEN',
+  'TRAIL_STOP',
+  'TARGET_HIT',
+  'MODIFY_TARGETS',
+];
+
+export function allowedActions(status: TradeStatus, levelsPending = false): TradeAction[] {
+  return TRADE_ACTIONS.filter(
+    (action) => ACTION_FROM[action].includes(status) && !(levelsPending && NEEDS_LEVELS.includes(action)),
+  );
 }
 
 export const STATUS_LABELS: Record<TradeStatus, string> = {
