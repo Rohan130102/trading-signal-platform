@@ -127,17 +127,43 @@ export function previewStart(
 export type SubscriberAction = 'START' | 'RENEW' | 'GRANT_TRIAL';
 
 /**
- * Which subscription actions make sense for this person now. A paid subscription is renewed, not started again;
- * a trial is offered only while no paid access is running, and a second trial needs an explicit override.
+ * Which subscription actions make sense for this person now. A paid subscription is renewed, not started again.
+ * A free trial can be given to anyone, at any time.
  */
 export function subscriberActions(
   current: (SubscriptionWindow & { kind: SubscriptionKind }) | null,
   now: Date,
 ): SubscriberAction[] {
   const state = subscriptionState(current, now);
-  if (!current || state === 'NONE') return ['START', 'GRANT_TRIAL'];
-  if (current.kind === 'TRIAL') return state === 'EXPIRED' ? ['START', 'GRANT_TRIAL'] : ['START'];
-  return ['RENEW'];
+  if (!current || state === 'NONE' || current.kind === 'TRIAL') return ['START', 'GRANT_TRIAL'];
+  return ['RENEW', 'GRANT_TRIAL'];
+}
+
+export interface TrialWindow extends SubscriptionWindow {
+  /** STARTED: access begins (no access, or it had ended). EXTENDED: the days are added after the current end. */
+  mode: 'STARTED' | 'EXTENDED';
+  /** A paid member keeps paid access with the extra days; anyone else is on a trial. */
+  kind: SubscriptionKind;
+}
+
+/**
+ * Free days for any member. While access is running, paid or trial, the days are added after its last day, so
+ * nothing already given is lost. Otherwise a trial starts on the chosen date, or now.
+ */
+export function grantTrialWindow(
+  current: (SubscriptionWindow & { kind: SubscriptionKind }) | null,
+  durationDays: number,
+  now: Date,
+  tz: string,
+  startsAt?: Date,
+): TrialWindow {
+  if (durationDays > MAX_TRIAL_DAYS) throw new Error(`A trial can last at most ${MAX_TRIAL_DAYS} days`);
+  if (current && now.getTime() < current.expiresAt.getTime()) {
+    const extended = computeRenewal(current, durationDays, now, tz);
+    return { startsAt: extended.startsAt, expiresAt: extended.expiresAt, mode: 'EXTENDED', kind: current.kind };
+  }
+  const start = startsAt && startsAt.getTime() > now.getTime() ? startsAt : now;
+  return { ...computeInitialWindow(start, durationDays, tz), mode: 'STARTED', kind: 'TRIAL' };
 }
 
 export interface TrialGrantView {
@@ -149,15 +175,15 @@ export interface TrialGrantView {
 }
 
 /**
- * The welcome is shown once per grant, only while that grant is what gives access right now. A grant seen on
- * another device, replaced by a paid subscription, or already over is never celebrated.
+ * The welcome is shown once per grant, only while that grant decides when access ends: free days added to a paid
+ * membership are welcomed too. A grant seen on another device, followed by a renewal, or already over is not.
  */
 export function trialToGreet(
   grant: TrialGrantView | null,
   current: (SubscriptionWindow & { kind: SubscriptionKind }) | null,
   now: Date,
 ): TrialGrantView | null {
-  if (!grant || grant.acknowledgedAt || !current || current.kind !== 'TRIAL') return null;
+  if (!grant || grant.acknowledgedAt || !current) return null;
   if (subscriptionState(current, now) !== 'ACTIVE') return null;
   if (current.expiresAt.getTime() !== grant.expiresAt.getTime()) return null;
   return grant;

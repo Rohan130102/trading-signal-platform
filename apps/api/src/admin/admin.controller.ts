@@ -2,6 +2,8 @@ import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nes
 import {
   approvalSchema,
   auditQuery,
+  emailSettingsSchema,
+  emailTestSchema,
   LIVE_STATUSES,
   performanceQuery,
   settingsSchema,
@@ -188,9 +190,39 @@ export class AdminController {
   }
 
   @Get('settings')
-  @Summary('Application settings')
+  @Summary('Application settings. Contains no secrets: the email account has its own Master Admin endpoint.')
   getSettings() {
-    return this.settings.get();
+    return this.settings.view();
+  }
+
+  @Get('settings/email')
+  @MasterOnly()
+  @Summary('The email account used for sign-up codes and account emails. The password is never returned.')
+  getEmailSettings() {
+    return this.settings.emailView();
+  }
+
+  @Put('settings/email')
+  @MasterOnly()
+  @Summary('Save the email account. A password left empty keeps the saved one. Master Admin only; audited.')
+  updateEmailSettings(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(emailSettingsSchema) body: z.output<typeof emailSettingsSchema>,
+  ) {
+    return this.settings.updateEmail(body, auth.user.id, requestId);
+  }
+
+  @Post('settings/email/test')
+  @MasterOnly()
+  @HttpCode(200)
+  @Summary('Send one test email with the saved account. Answers with what went wrong if it fails.')
+  testEmail(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(emailTestSchema) body: z.output<typeof emailTestSchema>,
+  ) {
+    return this.settings.testEmail(body.to, auth.user.id, requestId);
   }
 
   @Put('settings')

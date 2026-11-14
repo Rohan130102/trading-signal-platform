@@ -390,8 +390,8 @@ export const grantTrialSchema = z.strictObject({
     .max(MAX_TRIAL_DAYS, `A trial can last at most ${MAX_TRIAL_DAYS} days`),
   activationDate: localDate.optional(),
   note: shortText(500).optional(),
-  /** Required to give a second trial to someone who already had one. */
-  allowRepeat: z.boolean().default(false),
+  /** Accepted from older clients and ignored: any member may be given a trial, as often as needed. */
+  allowRepeat: z.boolean().optional(),
   idempotencyKey: idempotencyKeySchema,
 });
 export const enquiryStatusSchema = z.strictObject({ status: z.enum(ENQUIRY_STATUSES) });
@@ -523,6 +523,10 @@ export const settingsSchema = z.strictObject({
   /** Where enquiries go. Optional here, so older clients that do not send them leave them unchanged. */
   supportWhatsapp: supportWhatsappField.optional(),
   supportEmail: supportEmailField.optional(),
+  /** Whether new people may sign themselves up. Optional for older clients, like the two above. */
+  signupOpen: z.boolean().optional(),
+  /** The length a free trial starts at when an administrator grants one. */
+  defaultTrialDays: z.number().int().min(1).max(MAX_TRIAL_DAYS).optional(),
 });
 export type SettingsInput = z.output<typeof settingsSchema>;
 

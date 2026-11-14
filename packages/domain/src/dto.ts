@@ -212,6 +212,10 @@ export interface PublicInfo {
   aboutBody: string;
   /** When demonstration data was last cleared. Results start after it. */
   dataResetAt: string | null;
+  /** The Super Admin allows sign-up. */
+  signupOpen: boolean;
+  /** Sign-up is open and a code can be emailed. When false the sign-up screen says so before asking anything. */
+  signupAvailable: boolean;
 }
 
 /** One finished trade on the public page. Times are when the desk published, activated and closed it. */

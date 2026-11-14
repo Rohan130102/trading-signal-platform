@@ -144,7 +144,7 @@ describe('starting and renewing subscriptions', () => {
     const sub = res.body.subscriber;
     expect(sub.subscription).toMatchObject({ state: 'ACTIVE', kind: 'PAID', daysRemaining: 37 });
     expect(sub.enquiryStatus).toBe('RESOLVED');
-    expect(sub.actions).toEqual(['RENEW']);
+    expect(sub.actions).toEqual(['RENEW', 'GRANT_TRIAL']);
     // Retrying the same request changes nothing.
     const replay = await admin().post(`/admin/subscribers/${id}/start`, { durationDays: 37, idempotencyKey: key });
     expect(replay.body.replayed).toBe(true);
@@ -247,17 +247,32 @@ describe('free trials', () => {
     await waitUntil(() => mailbox(email).find((m) => m.subject.includes('Your Free Trial Is Ready!')));
   });
 
-  it('never overlap running access, and a second trial needs an explicit override', async () => {
-    const { id } = await signUp();
+  it('can be given to anyone, as often as needed: running access is extended, ended access starts again', async () => {
+    const { id, client } = await signUp();
     expect((await trial(id, { durationDays: 3 })).status).toBe(201);
-    const overlapping = await trial(id, { durationDays: 3 });
-    expect(overlapping.status).toBe(409);
-    expect(overlapping.body.error.code).toBe('TRIAL_RUNNING');
+    // A second grant while the first runs adds its days after the current end.
+    const more = await trial(id, { durationDays: 2 });
+    expect(more.status).toBe(201);
+    expect(more.body.subscriber.subscription).toMatchObject({ kind: 'TRIAL', daysRemaining: 5 });
+    expect((await client.get('/me/notices')).body.notices[0]).toMatchObject({ title: 'Free Days Added!' });
+    // After it ends, another trial starts again from today, with no extra confirmation.
     await endNow(id);
     const again = await trial(id, { durationDays: 3 });
-    expect(again.body.error.code).toBe('TRIAL_ALREADY_USED');
-    expect((await trial(id, { durationDays: 3, allowRepeat: true })).status).toBe(201);
+    expect(again.status).toBe(201);
+    expect(again.body.subscriber.subscription).toMatchObject({ state: 'ACTIVE', kind: 'TRIAL', daysRemaining: 3 });
     expect((await trial(id, { durationDays: 91 })).status).toBe(422);
+  });
+
+  it('give an existing paying member free days after their paid days, and keep them a paying member', async () => {
+    const { id, client } = await newSubscriber(30);
+    const res = await trial(id, { durationDays: 7, note: 'Goodwill' });
+    expect(res.status).toBe(201);
+    expect(res.body.subscriber.subscription).toMatchObject({ state: 'ACTIVE', kind: 'PAID', daysRemaining: 37 });
+    const me = (await client.get('/auth/me')).body;
+    expect(me.trialGreeting).toMatchObject({ durationDays: 7, lastValidDate: me.subscription.lastValidDate });
+    const notice = (await client.get('/me/notices')).body.notices[0];
+    expect(notice).toMatchObject({ kind: 'TRIAL_GRANTED', title: 'Free Days Added!' });
+    expect(notice.body).toContain("You've received 7 free days");
   });
 
   it('after the trial ends: sign-in still works, no greeting, no new signals, and the renewal screen state', async () => {
@@ -318,7 +333,7 @@ describe('older accounts', () => {
       200,
     );
     const detail = (await admin().get(`/admin/subscribers/${legacy.id}`)).body;
-    expect(detail).toMatchObject({ selfRegistered: false, emailVerifiedAt: null, actions: ['RENEW'] });
+    expect(detail).toMatchObject({ selfRegistered: false, emailVerifiedAt: null, actions: ['RENEW', 'GRANT_TRIAL'] });
     expect(uniqueId()).toBeTruthy();
   });
 });

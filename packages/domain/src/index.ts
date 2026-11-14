@@ -1,5 +1,6 @@
 export * from './announcements.js';
 export * from './composer.js';
+export * from './configuration.js';
 export * from './contracts.js';
 export * from './copy.js';
 export * from './decimal.js';

@@ -57,7 +57,7 @@ export class NoticesService {
     }
 
     const user = await tx.user.findUniqueOrThrow({ where: { id: notice.userId }, select: { email: true } });
-    if (user.email && this.email.available) {
+    if (user.email && (await this.email.available())) {
       await this.email.enqueue(tx, {
         kind: `notice:${notice.kind}`,
         ...noticeEmail(user.email, serviceName, notice.title, notice.body),

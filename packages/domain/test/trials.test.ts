@@ -49,10 +49,11 @@ describe('starting a subscription', () => {
     const running = { startsAt: NOW, expiresAt: at('2026-11-30T18:30:00Z') };
     const ended = { startsAt: at('2026-10-01T00:00:00Z'), expiresAt: at('2026-11-01T18:30:00Z') };
     expect(subscriberActions(null, NOW)).toEqual(['START', 'GRANT_TRIAL']);
-    expect(subscriberActions({ ...running, kind: 'TRIAL' }, NOW)).toEqual(['START']);
+    // Free days can be given to anyone, at any time.
+    expect(subscriberActions({ ...running, kind: 'TRIAL' }, NOW)).toEqual(['START', 'GRANT_TRIAL']);
     expect(subscriberActions({ ...ended, kind: 'TRIAL' }, NOW)).toEqual(['START', 'GRANT_TRIAL']);
-    expect(subscriberActions({ ...running, kind: 'PAID' }, NOW)).toEqual(['RENEW']);
-    expect(subscriberActions({ ...ended, kind: 'PAID' }, NOW)).toEqual(['RENEW']);
+    expect(subscriberActions({ ...running, kind: 'PAID' }, NOW)).toEqual(['RENEW', 'GRANT_TRIAL']);
+    expect(subscriberActions({ ...ended, kind: 'PAID' }, NOW)).toEqual(['RENEW', 'GRANT_TRIAL']);
   });
 });
 
@@ -70,10 +71,11 @@ describe('trial greeting', () => {
     expect(trialToGreet(grant, trial, NOW)).toBe(grant);
   });
 
-  it('does not greet twice, after the trial ended, or once a paid subscription replaced it', () => {
+  it('does not greet twice, after the trial ended, or once a renewal moved the end date', () => {
     expect(trialToGreet({ ...grant, acknowledgedAt: NOW }, trial, NOW)).toBeNull();
     expect(trialToGreet(grant, trial, at('2026-11-19T00:00:00Z'))).toBeNull();
-    expect(trialToGreet(grant, { ...trial, kind: 'PAID' }, NOW)).toBeNull();
+    // Free days added to a paid membership are welcomed too, while they decide the end date.
+    expect(trialToGreet(grant, { ...trial, kind: 'PAID' }, NOW)).toEqual(grant);
     expect(trialToGreet(grant, { ...trial, expiresAt: at('2026-12-30T18:30:00Z') }, NOW)).toBeNull();
     expect(trialToGreet(null, trial, NOW)).toBeNull();
   });

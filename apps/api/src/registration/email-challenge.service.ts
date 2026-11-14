@@ -104,7 +104,7 @@ export class EmailChallengeService {
   }
 
   async issue(input: IssueInput): Promise<ChallengeResponse> {
-    if (!this.email.available) throw NOT_CONFIGURED;
+    if (!(await this.email.available())) throw NOT_CONFIGURED;
     const ipKey = `challenge:ip:${fingerprint(input.ip)}`;
     if ((await this.limits.count(ipKey, HOUR)) >= STARTS_PER_IP()) throw THROTTLED;
     await this.limits.hit(ipKey, HOUR);

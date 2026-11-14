@@ -78,7 +78,7 @@ export class EnquiriesService {
     const text = enquiryMessage(person, settings.serviceName, input.purpose);
 
     if (input.channel === 'EMAIL') {
-      if (!this.email.available) {
+      if (!(await this.email.available())) {
         throw new AppError(
           503,
           'EMAIL_NOT_CONFIGURED',

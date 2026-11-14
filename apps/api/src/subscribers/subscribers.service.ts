@@ -4,6 +4,7 @@ import {
   accessUntilLabel,
   adjustSubscriptionSchema,
   computeInitialWindow,
+  grantTrialWindow,
   computeRenewal,
   createSubscriberSchema,
   daysRemaining,
@@ -648,28 +649,25 @@ export class SubscribersService {
         const user = await this.lockSubscriber(tx, id);
         const now = new Date();
         const current = user.subscription;
-        if (current && current.expiresAt.getTime() > now.getTime()) {
-          throw new AppError(
-            409,
-            current.kind === 'TRIAL' ? 'TRIAL_RUNNING' : 'SUBSCRIPTION_RUNNING',
-            current.kind === 'TRIAL'
-              ? 'A trial is already running. It can be replaced by a subscription.'
-              : 'They already have a running subscription.',
-          );
-        }
+        // Any member, any time: running access gets the days added after its end; otherwise a trial starts.
         const earlier = await tx.trialGrant.count({ where: { userId: id } });
-        if (earlier > 0 && !input.allowRepeat) {
-          throw new AppError(409, 'TRIAL_ALREADY_USED', 'They already had a free trial. Confirm to grant another.');
-        }
-        const startsAt = input.activationDate ? this.activationInstant(input.activationDate, tz, now) : now;
-        const window = computeInitialWindow(startsAt, input.durationDays, tz);
+        const startsAt = input.activationDate ? this.activationInstant(input.activationDate, tz, now) : undefined;
+        const window = grantTrialWindow(
+          current
+            ? { startsAt: current.startsAt, expiresAt: current.expiresAt, kind: current.kind as SubscriptionKind }
+            : null,
+          input.durationDays,
+          now,
+          tz,
+          startsAt,
+        );
         const subscription = current
           ? await tx.subscription.update({
               where: { id: current.id },
-              data: { startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'TRIAL' },
+              data: { startsAt: window.startsAt, expiresAt: window.expiresAt, kind: window.kind },
             })
           : await tx.subscription.create({
-              data: { userId: id, startsAt: window.startsAt, expiresAt: window.expiresAt, kind: 'TRIAL' },
+              data: { userId: id, startsAt: window.startsAt, expiresAt: window.expiresAt, kind: window.kind },
             });
         const grant = await tx.trialGrant.create({
           data: {
@@ -711,6 +709,7 @@ export class SubscribersService {
               grantId: grant.id,
               durationDays: input.durationDays,
               repeat: earlier > 0,
+              mode: window.mode,
               to: window.expiresAt.toISOString(),
             },
             requestId: actor.requestId,
@@ -723,8 +722,11 @@ export class SubscribersService {
           {
             userId: id,
             kind: 'TRIAL_GRANTED',
-            title: 'Your Free Trial Is Ready!',
-            body: `You've received ${input.durationDays} ${input.durationDays === 1 ? 'day' : 'days'} of access to ${serviceName}, until ${accessUntilLabel(window.expiresAt, tz)}.\nEnjoy exploring your signals.`,
+            title: window.mode === 'EXTENDED' ? 'Free Days Added!' : 'Your Free Trial Is Ready!',
+            body:
+              window.mode === 'EXTENDED'
+                ? `You've received ${input.durationDays} free ${input.durationDays === 1 ? 'day' : 'days'} of ${serviceName}. Your access now runs until ${accessUntilLabel(window.expiresAt, tz)}.`
+                : `You've received ${input.durationDays} ${input.durationDays === 1 ? 'day' : 'days'} of access to ${serviceName}, until ${accessUntilLabel(window.expiresAt, tz)}.\nEnjoy exploring your signals.`,
             dedupeKey: `trial:${grant.id}`,
           },
           serviceName,
