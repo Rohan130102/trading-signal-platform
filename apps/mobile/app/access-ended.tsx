@@ -1,6 +1,6 @@
 import { subscriberStatus } from '@signaldesk/domain';
-import { useState } from 'react';
-import { Linking, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { AppState, Linking, View } from 'react-native';
 import { useMe, useSession } from '@/lib/session';
 import { EnquiryActions } from '@/subscriber/EnquiryActions';
 import { AuthFrame, Button, Card, ListRow } from '@/ui';
@@ -8,7 +8,7 @@ import { AuthFrame, Button, Card, ListRow } from '@/ui';
 /**
  * What a signed-in person without access sees instead of signals: one short message and one obvious action.
  * Nothing private is here, because the server sends nothing private to this account now. The account is checked
- * again every minute, so a subscription or trial granted meanwhile opens the signals by itself.
+ * again every minute and on returning to the app, so a subscription or trial granted meanwhile opens the signals.
  */
 export default function AccessEnded() {
   const { me } = useSession();
@@ -17,8 +17,15 @@ export default function AccessEnded() {
 
 function Content() {
   const me = useMe();
-  const { signOut } = useSession();
+  const { signOut, refresh } = useSession();
   const [contact, setContact] = useState(false);
+  // Coming back to the app checks again at once, so someone told they have been renewed sees it straight away.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (status) => {
+      if (status === 'active') void refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
   const copy = subscriberStatus(me);
   if (!copy) return null;
   const digits = me.support.whatsapp.replace(/\D/g, '');
@@ -51,7 +58,7 @@ function Content() {
       <View style={{ flexGrow: 1 }} />
       <Button
         testID="sign-out"
-        label="Log out"
+        label="Sign out"
         variant="ghost"
         style={{ alignSelf: 'center' }}
         onPress={() => void signOut()}

@@ -1,10 +1,11 @@
 import type { FeedEvent, MeResponse } from '@signaldesk/domain';
-import { render, screen } from '@testing-library/react-native';
+import { act, render, screen } from '@testing-library/react-native';
+import { CodeStep } from '@/subscriber/AuthParts';
 import { whatsappLinkFor } from '@/subscriber/EnquiryActions';
 import { ThemeProvider } from '@/theme';
 import { FeedCard } from '@/trade';
 
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn() }) }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: jest.fn(), replace: jest.fn() }) }));
 
 const wrap = (node: React.ReactElement) => render(<ThemeProvider>{node}</ThemeProvider>);
 
@@ -108,5 +109,36 @@ describe('the WhatsApp enquiry', () => {
     expect(text).toContain('Name: Asha Rao');
     expect(text).toContain('Registered Mobile: +919876543210');
     expect(whatsappLinkFor({ ...me, profile: null }, 'SUBSCRIPTION')).toBeNull();
+  });
+});
+
+describe('the code screen', () => {
+  it('counts down a minute before a new code can be asked for', async () => {
+    jest.useFakeTimers();
+    const challenge = {
+      challengeId: '6b1f0a52-4f55-4b8e-9d10-111111111111',
+      email: 'asha@example.test',
+      resendAvailableAt: new Date(Date.now() + 60_000).toISOString(),
+      expiresAt: new Date(Date.now() + 300_000).toISOString(),
+    };
+    await wrap(
+      <CodeStep
+        challenge={challenge}
+        resendPath="/auth/register/resend"
+        verifyPath="/auth/register/verify"
+        onVerified={() => undefined}
+        onChallenge={() => undefined}
+      />,
+    );
+    expect(screen.getByText('Resend Code in 60s')).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(screen.getByText('Resend Code in 30s')).toBeTruthy();
+    await act(async () => {
+      jest.advanceTimersByTime(31_000);
+    });
+    expect(screen.getByText('Resend Code')).toBeTruthy();
+    jest.useRealTimers();
   });
 });

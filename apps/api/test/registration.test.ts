@@ -223,6 +223,42 @@ describe('sign-up', () => {
   });
 });
 
+describe('sign-up from the phone app', () => {
+  // Native apps send no Origin header and hold no cookie until they have a token.
+  const native = (path: string, body: unknown) =>
+    fetch(`${ctx().api}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(async (res) => ({ status: res.status, body: await res.json() }));
+
+  it('works without an Origin header and ends with a bearer token for this installation', async () => {
+    const email = uniqueEmail('phone');
+    const started = await native('/auth/register', details(email));
+    expect(started.status).toBe(200);
+    const verified = await native('/auth/register/verify', {
+      challengeId: started.body.challengeId,
+      code: await latestCode(email),
+    });
+    expect(verified.status).toBe(200);
+    const done = await native('/auth/register/complete-token', {
+      setupToken: verified.body.setupToken,
+      password: NEW_PASSWORD,
+      installationId: `e2e-native-${Date.now().toString(36)}-installation`,
+      platform: 'android',
+    });
+    expect(done.status).toBe(200);
+    const me = await fetch(`${ctx().api}/auth/me`, { headers: { authorization: `Bearer ${done.body.token}` } });
+    expect((await me.json()).loginId).toBe(email);
+  });
+
+  it('still refuses the cookie-setting web step from an unknown origin', async () => {
+    const res = await native('/auth/register/complete', { setupToken: 'x'.repeat(40), password: NEW_PASSWORD });
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe('BAD_ORIGIN');
+  });
+});
+
 describe('new registrations for administrators', () => {
   it('lists a completed registration once, marks it new, and clears it when opened', async () => {
     const before = (await admin().get('/admin/inbox')).body.newRegistrations as number;

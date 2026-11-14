@@ -2,10 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { type APIRequestContext, type Browser, type Page, expect, request } from '@playwright/test';
+import { WEB_ORIGIN } from './ports.js';
 
 export const ADMIN_STATE = resolve(import.meta.dirname, '.auth/admin.json');
 export const PASSWORD = 'a-long-subscriber-passphrase';
-const BASE = 'http://localhost:3000';
+const BASE = WEB_ORIGIN;
 
 export function adminState(): { login: string; temp: string; databaseUrl: string } {
   return JSON.parse(readFileSync(resolve(import.meta.dirname, '.state/admin.json'), 'utf8'));
@@ -95,9 +96,9 @@ export async function createSubscriberViaApi(api: APIRequestContext, days = 30):
 /** The real first-time path through the UI. */
 export async function signInFirstTime(page: Page, sub: Sub): Promise<void> {
   await page.goto('/login');
-  await page.getByLabel('Login ID').fill(sub.loginId);
+  await page.getByLabel('Email or username').fill(sub.loginId);
   await page.getByLabel('Password', { exact: true }).fill(sub.temporaryPassword);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Choose your password' })).toBeVisible();
   await page.getByLabel('Temporary password').fill(sub.temporaryPassword);
   await page.getByLabel('New password', { exact: true }).fill(PASSWORD);

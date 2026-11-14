@@ -42,7 +42,14 @@ function DetailsStep({ onSent }: { onSent: (challenge: ChallengeResponse) => voi
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const set = (key: keyof Details) => (value: string | boolean) => setForm((f) => ({ ...f, [key]: value }));
+  // Editing a field clears its message: it was about the old value.
+  const set = (key: keyof Details) => (value: string | boolean) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    setErrors((e) => {
+      const { [key]: _cleared, ...rest } = e;
+      return rest;
+    });
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

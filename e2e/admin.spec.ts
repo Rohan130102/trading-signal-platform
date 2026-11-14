@@ -40,7 +40,7 @@ test('complete administrator journey', async ({ page, browser }) => {
     expect(temp).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}-[A-Z2-9]{5}$/);
     await page.getByRole('button', { name: 'Open subscriber' }).click();
     await expect(page.getByRole('heading', { name: /Priya Sharma/ })).toBeVisible();
-    await expect(page.getByText('Created for 30 days')).toBeVisible();
+    await expect(page.getByText('Subscription started for 30 days')).toBeVisible();
     await expect(page.getByText(temp)).toHaveCount(0);
   });
 
@@ -102,7 +102,7 @@ test('complete administrator journey', async ({ page, browser }) => {
     await dialog.getByRole('button', { name: 'Close trade and notify' }).click();
     await expect(page.getByText(/This trade is finished/)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Result' })).toBeVisible();
-    await expect(page.getByRole('main').getByText('Hypothetical outcome of the signal')).toBeVisible();
+    await expect(page.getByRole('main').getByText('Signal result, measured from its own entry')).toBeVisible();
   });
 
   await test.step('the internal dashboard shows it, with the methodology', async () => {
@@ -128,9 +128,9 @@ test('complete administrator journey', async ({ page, browser }) => {
     const context = await browser.newContext({ storageState: undefined });
     const subscriberTab = await context.newPage();
     await subscriberTab.goto('/login');
-    await subscriberTab.getByLabel('Login ID').fill(login);
+    await subscriberTab.getByLabel('Email or username').fill(login);
     await subscriberTab.getByLabel('Password', { exact: true }).fill(temp);
-    await subscriberTab.getByRole('button', { name: 'Sign in' }).click();
+    await subscriberTab.getByRole('button', { name: 'Log In', exact: true }).click();
     await expect(subscriberTab.getByRole('heading', { name: 'Choose your password' })).toBeVisible();
     await context.close();
   });
@@ -309,7 +309,7 @@ test('declared execution shows money, privately, and only with full data', async
   await expect(page.getByText(/This trade is finished/)).toBeVisible();
   // 1 x 100 + 1 x 200 = 300, less 10 of fees.
   await expect(page.getByText('290.00 USD').first()).toBeVisible();
-  await expect(page.getByText('Execution declared by the administrator (unverified)').first()).toBeVisible();
+  await expect(page.getByText('Measured from the recorded entry, not independently verified').first()).toBeVisible();
 });
 
 test('trade actions work from the keyboard, and shortcuts stay out of the way while typing', async ({ page }) => {
@@ -394,8 +394,8 @@ test('renewal from the subscriber page says which policy applies', async ({ page
   const { subscriber } = await res.json();
   await page.goto(`/admin/subscribers/${subscriber.id}`);
   await page.getByRole('button', { name: 'Renew' }).click();
-  await expect(page.getByText(/Still active, so the new days are added after/)).toBeVisible();
-  await page.getByLabel('Days to add').fill('10');
+  await expect(page.getByText(/Still running, so the new days are added after its last day/)).toBeVisible();
+  await page.getByLabel('Duration (days)').fill('10');
   await page.getByRole('dialog').getByRole('button', { name: 'Renew' }).click();
   await expect(page.getByText(/Renewed for 10 days, extended from expiry/)).toBeVisible();
 });
@@ -433,9 +433,9 @@ test('a later administrator sign-in asks for a code', async ({ browser }) => {
   const { login } = adminState();
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel('Login ID').fill(login);
+  await page.getByLabel('Email or username').fill(login);
   await page.getByLabel('Password', { exact: true }).fill('quiet-river-stone-lamp');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Enter your code' })).toBeVisible();
   await page.getByLabel('Code', { exact: true }).fill('000000');
   await page.getByRole('button', { name: 'Continue' }).click();

@@ -27,9 +27,9 @@ test('complete subscriber journey', async ({ page }) => {
     await expect(card.getByText('Awaiting entry')).toBeVisible();
   });
 
-  await test.step('active trades shows it with current levels', async () => {
-    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Active' }).click();
-    await expect(page.getByText('Awaiting entry (')).toBeVisible();
+  await test.step('Signals lists it under Upcoming with current levels', async () => {
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Signals' }).click();
+    await expect(page.getByRole('heading', { name: /^Upcoming/ })).toBeVisible();
     await page.getByRole('link', { name: new RegExp(trade.ref) }).click();
     await expect(page.getByRole('heading', { name: 'XAU/USD' })).toBeVisible();
     await expect(page.getByText(/waiting for its entry/)).toBeVisible();
@@ -96,7 +96,7 @@ test('an unread count shows on other screens and clears on the feed', async ({ p
   const api = await adminApi();
   const sub = await createSubscriberViaApi(api);
   await signInFirstTime(page, sub);
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Active' }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Signals' }).click();
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await publishViaApi(api);
   const feedLink = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Feed/ });
@@ -134,8 +134,10 @@ test('sign out ends the session and returns to sign-in', async ({ page }) => {
 
 test('wrong credentials explain themselves and reveal nothing', async ({ page }) => {
   await page.goto('/login');
-  await page.getByLabel('Login ID').fill('nobody.here');
+  await page.getByLabel('Email or username').fill('nobody.here');
   await page.getByLabel('Password', { exact: true }).fill('wrong-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'That login ID or password is not right.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'That email, username or password is not right.' }),
+  ).toBeVisible();
 });

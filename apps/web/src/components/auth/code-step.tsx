@@ -48,10 +48,10 @@ export function CodeStep({
       <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full">
         {ACTIONS.verifyEmail}
       </Button>
-      <div className="flex items-center justify-between text-[13px] text-muted">
+      <div className="flex items-center justify-between gap-3 text-[13px] text-muted">
         <span>The code expires in 5 minutes.</span>
         <ResendButton
-          availableAt={challenge.resendAvailableAt}
+          key={challenge.resendAvailableAt}
           onResend={async () => {
             setError(null);
             try {

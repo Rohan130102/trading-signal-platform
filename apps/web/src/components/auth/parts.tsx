@@ -1,6 +1,6 @@
 'use client';
 
-import { ACTIONS, OTP_LENGTH } from '@signaldesk/domain';
+import { ACTIONS, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
 import { clsx } from 'clsx';
 import { Check, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
@@ -73,18 +73,22 @@ export const CodeInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLIn
 );
 
 /** Counts down to when a new code may be asked for; the server enforces the same wait. */
-export function ResendButton({ availableAt, onResend }: { availableAt: string; onResend: () => Promise<void> }) {
+export function ResendButton({ onResend }: { onResend: () => Promise<void> }) {
   const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const wait = Math.max(0, Math.ceil((Date.parse(availableAt) - now) / 1000));
+  // Counted from when this code arrived (the parent remounts this for each code), so a device whose clock is off
+  // still shows the right wait. The server enforces the same wait in any case.
+  const [arrivedAt] = useState(() => Date.now());
+  const wait = Math.max(0, Math.ceil(OTP_RESEND_SECONDS - (now - arrivedAt) / 1000));
   return (
     <Button
       variant="ghost"
       size="sm"
+      className="shrink-0"
       disabled={wait > 0}
       loading={busy}
       onClick={() => {

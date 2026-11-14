@@ -1,4 +1,4 @@
-import { ACTIONS, type ChallengeResponse, OTP_LENGTH } from '@signaldesk/domain';
+import { ACTIONS, type ChallengeResponse, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
@@ -47,12 +47,6 @@ export function CodeStep({
   const [code, setCode] = useState('');
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-  const wait = Math.max(0, Math.ceil((Date.parse(challenge.resendAvailableAt) - now) / 1000));
   const submit = async () => {
     if (code.length !== OTP_LENGTH) {
       setError(new Error(`Enter the ${OTP_LENGTH}-digit code.`));
@@ -95,16 +89,12 @@ export function CodeStep({
         loading={busy}
         onPress={() => void submit()}
       />
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <T v="small" c="muted">
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.sm }}>
+        <T v="small" c="muted" style={{ flexShrink: 1 }}>
           Expires in 5 minutes.
         </T>
-        <Button
-          testID="otp-resend"
-          small
-          variant="ghost"
-          label={wait > 0 ? `${ACTIONS.resendCode} in ${wait}s` : ACTIONS.resendCode}
-          disabled={wait > 0}
+        <ResendButton
+          key={challenge.resendAvailableAt}
           onPress={() => {
             setError(null);
             api
@@ -116,4 +106,28 @@ export function CodeStep({
       </View>
     </View>
   );
+}
+
+/**
+ * Counts down from when this code arrived (remounted for each code), so a phone whose clock is off still shows the
+ * right wait. The server enforces the same wait in any case. While waiting it is plain text in the regular weight:
+ * nothing to press yet, and Android measures it exactly (a semi-bold label could lose its last line).
+ */
+function ResendButton({ onPress }: { onPress: () => void }) {
+  const [arrivedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+  const wait = Math.max(0, Math.ceil(OTP_RESEND_SECONDS - (now - arrivedAt) / 1000));
+  useEffect(() => {
+    if (wait === 0) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [wait]);
+  if (wait > 0) {
+    return (
+      <T v="small" c="subtle" num testID="otp-resend" style={{ flexShrink: 0, paddingHorizontal: space.md }}>
+        {`${ACTIONS.resendCode} in ${wait}s`}
+      </T>
+    );
+  }
+  return <Button testID="otp-resend" small variant="ghost" label={ACTIONS.resendCode} onPress={onPress} />;
 }

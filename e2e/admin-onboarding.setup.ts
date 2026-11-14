@@ -8,9 +8,9 @@ import { ADMIN_STATE, adminState } from './helpers.js';
 setup('administrator first sign-in', async ({ page }) => {
   const { login, temp } = adminState();
   await page.goto('/login');
-  await page.getByLabel('Login ID').fill(login);
+  await page.getByLabel('Email or username').fill(login);
   await page.getByLabel('Password', { exact: true }).fill(temp);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Choose your password' })).toBeVisible();
   await page.getByLabel('Temporary password').fill(temp);

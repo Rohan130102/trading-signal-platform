@@ -65,4 +65,41 @@ architecture: nothing was rebuilt, and accounts, subscriptions, trades and their
 - **Corrections.** Subscribers see "Stop-loss updated: 64,920 (was 64,800)" and no reason or name. The reason, the
   administrator and every earlier value stay in the event payload and audit log, visible to administrators.
 - **"Hypothetical".** Cards say "Signal result" for points measured from the signal's own entry and "Recorded entry"
-  for an administrator-declared fill. The methodology note on History still says these are not anyone's profits.
+  for an administrator-declared fill, and the administrator picks the same words when recording an exit. The
+  methodology note on History still says these are not anyone's profits. The public performance record and the
+  administrators' analytics keep "Hypothetical": there it is the disclosure, and it stays.
+
+## Review: what each perspective found, and what was fixed
+
+| Perspective      | Finding                                                                                                                           | Fix                                                                                                  |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Senior developer | Renewing someone with no subscription said "Subscriber not found"                                                                 | Now `409 NO_SUBSCRIPTION`: start one instead                                                         |
+| Senior developer | A corrected sign-up field kept its old error until the next submit                                                                | Editing a field clears its message, on web and phone                                                 |
+| Architect        | The phone app's sign-up and recovery calls carry no `Origin`, and would have been refused                                         | Exactly those cookie-free steps are exempt; the web's cookie-setting step is not. Tested both ways   |
+| Architect        | The resend countdown read the server's timestamp against the device clock                                                         | Counted from when the code arrived; the server still enforces the wait                               |
+| Architect        | New-registration refreshes were going to be broadcast to every subscriber's open app                                              | Admin badges poll every 30 seconds instead                                                           |
+| QA               | An upside-down entry zone was not flagged when no target was given                                                                | Fixed in the shared rule, so the API, web and phone all catch it                                     |
+| UI/UX            | Registration filters stacked on desktop; long badge cut the instrument name on the phone's compact card                           | Fixed widths; "Upcoming" badge on the compact card                                                   |
+| UI/UX            | After a trial ended, its "Your Free Trial Is Ready!" message still showed on the renewal screen                                   | Account messages are not shown on the status screen                                                  |
+| UI/UX            | On the phone, the resend countdown read "Resend Code in": Android measured the semi-bold label as one line and cut off the second | While waiting it is plain text in the regular weight; the button appears when a new code can be sent |
+| First-time user  | Granted a trial, a new subscriber saw the first-use tour on top of the trial welcome, which never showed                          | The welcome comes first; the tour follows once it is closed                                          |
+| QA               | Renewed while the expired screen was open, the phone kept saying "Expired" for up to a minute after coming back to the app        | The status screen checks again on returning to the app (phone) or the tab (website)                  |
+| UI/UX            | The account message's "OK" button was 43 points wide on a small phone, under the 44-point minimum                                 | Every button is at least as wide as it is tall                                                       |
+| UI/UX            | The status screen said "Log out" where every other screen says "Sign out"                                                         | "Sign out" everywhere                                                                                |
+| First-time user  | "Latest: Updated: …" and "Active trades" read awkwardly                                                                           | "Updated: …"; the page and tab are "Signals"                                                         |
+
+The first-time user walk-through covered, on the Android emulator: sign up, verify the email, create the password,
+email an enquiry, see "Enquiry Started", receive a 5-day trial and its welcome (once), see an upcoming trade, see it
+activated and its stop-loss updated, see the expired screen and come back after renewal, and request a password reset.
+The website's screens were checked in a browser, and its end-to-end suite covers expiry and renewal.
+
+## Not built, or not verified
+
+- **Email delivery** needs SMTP settings in the server's `.env` (see `.env.example`). Until then sign-up says email is not
+  set up. With the file transport, every email was checked in tests; no real inbox was used.
+- **iOS** was not run: this Mac has no Xcode. The iOS bundle is built by CI.
+- **Push for account messages** reaches devices registered for push. A brand-new account registers a device only after
+  it can see signals, so its first "Subscription Activated" arrives in the app and by email.
+- **Expiry reminders** ("your trial ends tomorrow") are not built; the brief asked for them only where configured.
+- **"Activation pending"** is not shown: the product does not record offline payments, so it cannot know.
+- **Direction on an upcoming trade** is still required at publication. The trade model needs it, and it can be corrected.

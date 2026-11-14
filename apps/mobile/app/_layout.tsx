@@ -75,11 +75,12 @@ function App() {
   // The first-use tour, once, after the first full sign-in. A notification being opened goes first, and it
   // waits until the subscriber's tabs are on screen: pushed during a redirect it would be replaced at once.
   // Remembered per person, so someone signing in after another on the same phone still gets their tour.
+  // A trial's welcome goes first: one thing at a time, and the tour follows once the welcome is closed.
   const touredFor = useRef<string | null>(null);
   const onTabs = segments[0] === '(subscriber)';
   useEffect(() => {
     if (!settled || !onTabs || pending || !me || me.role !== 'SUBSCRIBER' || !me.access.allowed) return;
-    if (me.onboardedAt || touredFor.current === me.id) return;
+    if (me.onboardedAt || me.trialGreeting || touredFor.current === me.id) return;
     // A moment's wait lets a screen that navigates on success (setting a password) finish first; if the
     // route changes again meanwhile, this is cancelled and scheduled afresh.
     const timer = setTimeout(() => {

@@ -206,7 +206,8 @@ export const SignalCard = memo(function SignalCard({
           {card.symbol}
         </T>
         {card.stopLoss === null && card.status === 'PUBLISHED' ? (
-          <Badge tone="update">Awaiting activation</Badge>
+          // Short, so the instrument keeps its room; the full status is in the card's spoken summary.
+          <Badge tone="update">Upcoming</Badge>
         ) : (
           <StatusBadge status={card.status} />
         )}

@@ -355,7 +355,11 @@ export class SubscribersService {
         const locked = await tx.$queryRaw<{ id: string }[]>`
           SELECT s.id FROM subscriptions s JOIN users u ON u.id = s.user_id
           WHERE s.user_id = ${id}::uuid AND u.role = 'SUBSCRIBER' FOR UPDATE OF s`;
-        if (locked.length === 0) throw notFound('Subscriber not found');
+        if (locked.length === 0) {
+          const exists = await tx.user.count({ where: { id, role: 'SUBSCRIBER' } });
+          if (!exists) throw notFound('Subscriber not found');
+          throw new AppError(409, 'NO_SUBSCRIPTION', 'They have no subscription yet. Start one instead.');
+        }
         const current = await tx.subscription.findUniqueOrThrow({ where: { userId: id } });
         if (current.kind === 'TRIAL') {
           throw new AppError(409, 'TRIAL_NOT_RENEWABLE', 'A trial is not renewed. Start a subscription instead.');

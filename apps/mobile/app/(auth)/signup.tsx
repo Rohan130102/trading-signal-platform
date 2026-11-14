@@ -29,7 +29,14 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
     mobile: useRef<InputHandle>(null),
     age: useRef<InputHandle>(null),
   };
-  const set = (key: keyof typeof form) => (value: string | boolean) => setForm((f) => ({ ...f, [key]: value }));
+  // Editing a field clears its message: it was about the old value.
+  const set = (key: keyof typeof form) => (value: string | boolean) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    setErrors((e) => {
+      const { [key]: _cleared, ...rest } = e;
+      return rest;
+    });
+  };
   const submit = async () => {
     const body = { ...form, age: form.age.trim() === '' ? undefined : Number(form.age) };
     const parsed = registrationSchema.safeParse(body);

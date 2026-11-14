@@ -30,6 +30,8 @@ const api = `http://localhost:${API_PORT}/api/v1`;
 const PASSWORD = 'correct-horse-battery-staple';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'sd-mobile-pg-'));
+// Emails the API sends are written here, so a journey can read a sign-up code as a person reads their inbox.
+const mailDir = mkdtempSync(join(tmpdir(), 'sd-mobile-mail-'));
 const pg = new EmbeddedPostgres({
   databaseDir: dataDir,
   user: 'signaldesk',
@@ -60,6 +62,10 @@ const env = {
   RUN_WORKER_IN_API: 'false',
   PUBLIC_PERFORMANCE_ENABLED: 'false',
   RATE_LIMIT_PER_MINUTE: '1000000',
+  EMAIL_TRANSPORT: 'file',
+  EMAIL_FILE_DIR: mailDir,
+  EMAIL_FROM: 'Signal Desk <no-reply@example.test>',
+  EMAIL_CODE_IP_LIMIT_PER_HOUR: '100000',
 };
 execFileSync('npx', ['prisma', 'migrate', 'deploy'], { cwd: apiDir, env, stdio: 'pipe' });
 execFileSync('node', ['dist/scripts/seed.js'], { cwd: apiDir, env, stdio: 'pipe' });
@@ -196,6 +202,7 @@ writeFileSync(
       password: PASSWORD,
       totpSecret: secret,
       freshAdminTemp,
+      mailDir,
       subscriber: { ...subscriber, temporaryPassword: undefined },
     },
     null,
@@ -214,6 +221,7 @@ const stop = async () => {
   control.close();
   await pg.stop().catch(() => undefined);
   rmSync(dataDir, { recursive: true, force: true });
+  rmSync(mailDir, { recursive: true, force: true });
   process.exit(0);
 };
 process.on('SIGINT', () => void stop());

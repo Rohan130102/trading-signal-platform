@@ -33,7 +33,7 @@ export function Notices() {
             small
             variant="ghost"
             label="OK"
-            accessibilityLabel="Dismiss account messages"
+            accessibilityLabel="OK, dismiss account messages"
             onPress={() => void dismiss()}
           />
         </Card>

@@ -710,7 +710,8 @@ function ExitForm({ frame, trade, run, pending, error, final }: Shared & { final
       ...(final ? { reason, confirm: true } : { percent: portion.trim() }),
     });
   const options = [
-    { value: 'HYPOTHETICAL_OUTCOME' as const, label: 'Hypothetical' },
+    // The words subscribers then see on the card, as on the website.
+    { value: 'HYPOTHETICAL_OUTCOME' as const, label: 'Signal result' },
     ...(trade.execution ? [{ value: 'ADMIN_DECLARED_EXECUTION' as const, label: 'Declared' }] : []),
     { value: 'NONE' as const, label: 'Exit only' },
   ];

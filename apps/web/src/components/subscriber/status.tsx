@@ -36,15 +36,23 @@ export function SupportContact({ me }: { me: MeResponse }) {
 
 /**
  * What a signed-in person without access sees instead of signals: one short message and one obvious action. It
- * checks again every minute, so a subscription or trial granted meanwhile opens the signals without a reload.
+ * checks again every minute and on returning to the tab, so a subscription or trial granted meanwhile opens the
+ * signals without a reload.
  */
 export function SubscriptionStatus({ me }: { me: MeResponse }) {
   const client = useQueryClient();
   const copy = subscriberStatus(me);
   const [showContact, setShowContact] = useState(false);
   useEffect(() => {
-    const timer = setInterval(() => void client.invalidateQueries({ queryKey: ['me'] }), 60_000);
-    return () => clearInterval(timer);
+    const check = () => void client.invalidateQueries({ queryKey: ['me'] });
+    const timer = setInterval(check, 60_000);
+    // Returning to the tab checks again at once.
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, [client]);
   if (!copy) return null;
   const Icon = copy.tone === 'pending' ? Clock : copy.tone === 'ended' ? CalendarX2 : Sparkles;
@@ -91,7 +99,7 @@ export function SubscriptionStatus({ me }: { me: MeResponse }) {
           className="mt-10 flex items-center gap-2 rounded text-[13px] font-medium text-muted hover:text-text"
         >
           <LogOut className="size-4" aria-hidden />
-          Log out
+          Sign out
         </button>
       </div>
     </main>
@@ -124,7 +132,7 @@ export function Notices() {
               <p className="text-sm font-semibold">{notice.title}</p>
               <p className="mt-0.5 whitespace-pre-line text-[13px] text-muted">{notice.body}</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => void dismiss()} aria-label="Dismiss account messages">
+            <Button variant="ghost" size="sm" onClick={() => void dismiss()} aria-label="OK, dismiss account messages">
               OK
             </Button>
           </div>

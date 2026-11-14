@@ -13,7 +13,7 @@ test('expiry journey: access ends while the app is open, renewal restores it', a
 
   await test.step('protected content disappears without a refresh', async () => {
     await expireSubscriber(api, sub.id);
-    await expect(page.getByRole('heading', { name: 'Your subscription has ended' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Your Subscription Has Expired' })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(trade.ref)).toHaveCount(0);
     await expect(page.getByText(/renew/i).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Sign out' })).toBeVisible();
@@ -29,7 +29,7 @@ test('expiry journey: access ends while the app is open, renewal restores it', a
 
   await test.step('nothing private remains in the page after a reload', async () => {
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Your subscription has ended' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your Subscription Has Expired' })).toBeVisible();
     expect(await page.content()).not.toContain(trade.ref);
   });
 
