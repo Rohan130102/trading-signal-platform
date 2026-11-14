@@ -19,6 +19,16 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@v4
+      # Expo SDK 58 needs Swift 6.2, which comes with Xcode 26. The runner defaults to an older Xcode.
+      - name: Use Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode 26 on this runner. Expo SDK 58 needs Swift 6.2."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23
