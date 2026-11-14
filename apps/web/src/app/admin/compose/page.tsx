@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ACTIONS,
   type Direction,
   type DraftInput,
   type DraftRow,
@@ -15,6 +16,7 @@ import {
   toDec,
   composeSignal,
   defaultSignalTemplateKind,
+  isSignalReady,
   isTemplateForDirection,
   previewSignalEvent,
   ENTRY_WINDOW_CHOICES,
@@ -76,6 +78,8 @@ interface FormState {
   custom: boolean;
   targets: [string, string, string];
   stopLoss: string;
+  /** A range announced ahead: targets and stop-loss are set when it is activated. */
+  levelsLater: boolean;
   priority: Priority;
   templateId: string;
   commentary: string;
@@ -95,6 +99,7 @@ const EMPTY: FormState = {
   custom: false,
   targets: ['', '', ''],
   stopLoss: '',
+  levelsLater: false,
   priority: 'NORMAL',
   templateId: '',
   commentary: '',
@@ -256,20 +261,21 @@ function Composer() {
       entryLow: computed.entry?.low ?? '',
       entryHigh: computed.entry?.high ?? '',
       targets: computed.targets,
-      stopLoss: computed.stopLoss,
+      stopLoss: computed.upcoming ? undefined : computed.stopLoss,
       priority: form.priority,
-      templateId: form.templateId || null,
+      templateId: computed.upcoming ? null : form.templateId || null,
       commentary: form.commentary.trim() || undefined,
     }),
     [form, computed],
   );
   const defaultMode = platform.data?.signalStartMode ?? 'AWAITING_ENTRY';
   const defaultWindow = platform.data?.entryExpiryMinutesDefault ?? 0;
-  const startsActive = form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE';
+  const startsActive =
+    !computed.upcoming && (form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE');
   const windowOptions = [...new Set([...ENTRY_WINDOW_CHOICES])].filter((m) => m !== defaultWindow);
   /** Worked out when the button is pressed, so a long review does not shorten the window. */
   const startFields = () => ({
-    activateOnPublish: form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
+    activateOnPublish: computed.upcoming || form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
     entryExpiresAt: startsActive
       ? undefined
       : form.window === 'NONE'
@@ -343,14 +349,7 @@ function Composer() {
     },
   });
 
-  const canReview = Boolean(
-    spec &&
-    form.direction &&
-    computed.entry &&
-    computed.issues.length === 0 &&
-    computed.targets.length > 0 &&
-    computed.stopLoss,
-  );
+  const canReview = Boolean(spec && form.direction && isSignalReady(computed));
 
   const reset = useCallback(() => {
     setPublished(null);
@@ -407,10 +406,10 @@ function Composer() {
   );
   const chosenTemplate = useMemo(() => {
     const all = templates.data?.templates ?? [];
-    if (form.templateId) return all.find((t) => t.id === form.templateId);
-    const kind = defaultSignalTemplateKind(form.direction, form.priority);
+    if (form.templateId && !computed.upcoming) return all.find((t) => t.id === form.templateId);
+    const kind = defaultSignalTemplateKind(form.direction, form.priority, computed.upcoming);
     return all.find((t) => t.kind === kind && t.isDefault);
-  }, [form.direction, form.priority, form.templateId, templates.data]);
+  }, [computed.upcoming, form.direction, form.priority, form.templateId, templates.data]);
 
   const previewEvent: FeedEvent | null = useMemo(
     () =>
@@ -621,14 +620,16 @@ function Composer() {
             <CardHeader
               title="Targets and stop-loss"
               description={
-                form.custom
+                computed.upcoming
+                  ? 'Set when you activate the trade.'
+                  : form.custom
                   ? 'Using your own prices.'
                   : spec
                     ? `Automatic: ${formatPoints(spec.defaultTargetPoints)} pts target, ${formatPoints(spec.defaultStopPoints)} pts stop. 1 pt = ${spec.pointSize} ${spec.quoteCurrency} on ${spec.symbol}.`
                     : undefined
               }
               action={
-                mode === 'advanced' ? (
+                mode === 'advanced' && !computed.upcoming ? (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -646,13 +647,31 @@ function Composer() {
                       }
                     }}
                   >
-                    {form.custom ? 'Use automatic' : 'Set my own'}
+                    {form.custom ? 'Use Automatic Levels' : ACTIONS.editLevelsManually}
                   </Button>
                 ) : undefined
               }
             />
             <div className="border-t border-line px-4 py-4 sm:px-5">
-              {!form.direction || !computed.entry ? (
+              {form.entryType === 'RANGE' && (
+                <div className="mb-4">
+                  <Segmented<'NOW' | 'LATER'>
+                    label="When to set them"
+                    value={form.levelsLater ? 'LATER' : 'NOW'}
+                    onChange={(v) => set('levelsLater', v === 'LATER')}
+                    options={[
+                      { value: 'NOW', label: 'Now' },
+                      { value: 'LATER', label: 'At activation' },
+                    ]}
+                  />
+                </div>
+              )}
+              {computed.upcoming ? (
+                <p className="text-sm text-muted">
+                  Subscribers see an upcoming trade with this entry zone. Enter the final entry, targets and stop-loss
+                  when you activate it.
+                </p>
+              ) : !form.direction || !computed.entry ? (
                 <p className="text-sm text-muted">Choose a direction and enter a price, and the levels appear here.</p>
               ) : form.custom ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -701,7 +720,7 @@ function Composer() {
                   </div>
                 </dl>
               )}
-              {!form.custom && computed.auto && (
+              {!form.custom && !computed.upcoming && computed.auto && (
                 <details className="mt-3 text-[13px] text-muted">
                   <summary className="cursor-pointer select-none">How this was calculated</summary>
                   <ul className="num mt-1.5 flex flex-col gap-0.5 text-xs">
@@ -728,6 +747,7 @@ function Composer() {
           </Card>
 
           <Card className="flex flex-col gap-4 p-4 sm:p-5">
+            {!computed.upcoming && (
             <Labeled
               label="Starts as"
               hint={
@@ -749,6 +769,7 @@ function Composer() {
                 ]}
               />
             </Labeled>
+            )}
             {!startsActive && (
               <div className={clsx('grid gap-4', form.window === 'CUSTOM' && 'sm:grid-cols-2')}>
                 <Field
@@ -958,7 +979,9 @@ function Published({ trade, onAnother }: { trade: AdminTradeDetail; onAnother: (
           Published as <span className="num">{live.data.ref}</span>
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {live.data.status === 'PUBLISHED'
+          {live.data.status === 'PUBLISHED' && live.data.stopLoss === null
+            ? 'Subscribers see it as an upcoming trade. Activate it from the trade page with its final entry, targets and stop-loss.'
+            : live.data.status === 'PUBLISHED'
             ? live.data.entryExpiresAt
               ? `It is in every active subscriber’s feed, awaiting entry. If it is not activated by ${formatDateTime(live.data.entryExpiresAt)}, it is cancelled automatically.`
               : 'It is in every active subscriber’s feed, awaiting entry. Activate it from the trade page when the entry is reached.'

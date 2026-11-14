@@ -3,6 +3,7 @@ import {
   type AdminTradeDetail,
   composeSignal,
   defaultExitBasis,
+  defaultTemplate,
   defaultSignalTemplateKind,
   type InstrumentSpec,
   isSignalReady,
@@ -13,6 +14,7 @@ import {
   remainingFraction,
   trailStopPrice,
 } from '../src/index.js';
+import { XAU } from './fixtures.js';
 
 const gold: InstrumentSpec = {
   symbol: 'XAU/USD',
@@ -247,5 +249,43 @@ describe('previewCorrectedExit', () => {
 
   it('shows nothing for half-typed input', () => {
     expect(previewCorrectedExit({ trade, closure: unmeasured, actualEntry: '73950.', exitPrice: '' })).toBeNull();
+  });
+});
+
+describe('upcoming range trades in the composer', () => {
+  const form = {
+    direction: 'BUY' as const,
+    entryType: 'RANGE' as const,
+    entryLow: '3300',
+    entryHigh: '3310',
+    custom: false,
+    targets: [],
+    stopLoss: '',
+    levelsLater: true,
+  };
+
+  it('needs only the entry zone, and previews no target or stop-loss', () => {
+    const composed = composeSignal(form, XAU);
+    expect(composed).toMatchObject({ upcoming: true, targets: [], stopLoss: '', risk: null, issues: [] });
+    expect(isSignalReady(composed)).toBe(true);
+    const event = previewSignalEvent({
+      spec: XAU,
+      direction: 'BUY',
+      composed,
+      priority: 'NORMAL',
+      commentary: '',
+      template: defaultTemplate('UPCOMING_TRADE'),
+    });
+    expect(event?.title).toBe('Upcoming trade: BUY XAU/USD');
+    expect(event?.body).toBe('Entry zone: 3,300.00 to 3,310.00\nAwaiting activation');
+    expect(event?.payload.after).toMatchObject({ stopLoss: null, targets: [] });
+    expect(defaultSignalTemplateKind('BUY', 'PRIORITY', true)).toBe('UPCOMING_TRADE');
+  });
+
+  it('still checks the zone, and ignores the option for a single price', () => {
+    expect(composeSignal({ ...form, entryHigh: '3290' }, XAU).issues.length).toBeGreaterThan(0);
+    const single = composeSignal({ ...form, entryType: 'SINGLE', entryHigh: '3300' }, XAU);
+    expect(single.upcoming).toBe(false);
+    expect(single.targets.length).toBeGreaterThan(0);
   });
 });

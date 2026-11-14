@@ -6,7 +6,9 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { type ReactNode, useEffect } from 'react';
 import { ConnectionBanner, LivePill } from '@/components/shell/connection-banner';
-import { AccessEnded, SessionGate } from '@/components/shell/session-gate';
+import { SessionGate } from '@/components/shell/session-gate';
+import { Notices, SubscriptionStatus } from '@/components/subscriber/status';
+import { TrialGreeting } from '@/components/subscriber/trial-greeting';
 import { Logo } from '@/components/ui';
 import { registerServiceWorker } from '@/lib/push';
 import { RealtimeProvider, useRealtime, useStartRealtimeFromHead } from '@/lib/realtime';
@@ -70,6 +72,7 @@ function Shell({ children, serviceName }: { children: ReactNode; serviceName: st
         <ConnectionBanner />
       </header>
       <main id="main" className="mx-auto w-full max-w-3xl flex-1 px-4 pb-24 pt-5 sm:pb-10">
+        <Notices />
         {children}
       </main>
       <nav
@@ -115,9 +118,10 @@ export default function SubscriberLayout({ children }: { children: ReactNode }) 
         me.access.allowed ? (
           <RealtimeProvider>
             <Shell serviceName={me.support.serviceName}>{children}</Shell>
+            <TrialGreeting me={me} />
           </RealtimeProvider>
         ) : (
-          <AccessEnded me={me} />
+          <SubscriptionStatus me={me} />
         )
       }
     </SessionGate>

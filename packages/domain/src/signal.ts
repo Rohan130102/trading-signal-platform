@@ -111,7 +111,8 @@ export function validateEntryAndTargets(s: Omit<SignalLevels, 'stopLoss'>): Issu
     issues.push({ field: 'targets', code: 'TOO_MANY', message: `At most ${MAX_TARGETS} targets are supported.` });
   }
   s.targets.forEach((t, i) => issues.push(...validatePrice(s.spec, t, `targets.${i}`, `Target ${i + 1}`)));
-  if (issues.length > 0) return issues;
+  // A missing target does not stop the entry itself from being checked: an upcoming trade has none yet.
+  if (issues.some((issue) => issue.field !== 'targets')) return issues;
 
   const low = toDec(s.entry.low);
   const high = toDec(s.entry.high);

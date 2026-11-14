@@ -13,6 +13,7 @@ import {
   type RiskSummary,
   riskSummary,
   singleEntry,
+  validateEntryAndTargets,
   validateSignalLevels,
 } from './signal.js';
 import type { Priority } from './status.js';
@@ -32,6 +33,11 @@ export interface ComposerFields {
   custom: boolean;
   targets: readonly string[];
   stopLoss: string;
+  /**
+   * A range announced ahead: no target or stop-loss now; they are set when the trade is activated. Ignored for a
+   * single price, which always carries its levels.
+   */
+  levelsLater?: boolean;
 }
 
 export interface ComposedSignal {
@@ -41,6 +47,8 @@ export interface ComposedSignal {
   stopLoss: string;
   issues: Issue[];
   risk: RiskSummary | null;
+  /** True for an upcoming range trade: published with its entry zone only. */
+  upcoming: boolean;
 }
 
 const NOT_A_NUMBER = 'Enter a plain number, such as 3300.50.';
@@ -60,8 +68,18 @@ export function composeSignal(form: ComposerFields, spec: InstrumentSpec | undef
   if (form.entryType === 'RANGE' && high && !isDecimalLiteral(high)) {
     entryIssues.push({ field: 'entryHigh', code: 'INVALID_NUMBER', message: NOT_A_NUMBER });
   }
+  const upcoming = form.entryType === 'RANGE' && form.levelsLater === true;
   if (!spec || !form.direction || !entry) {
-    return { entry, auto: null, targets: [], stopLoss: '', issues: entryIssues, risk: null };
+    return { entry, auto: null, targets: [], stopLoss: '', issues: entryIssues, risk: null, upcoming };
+  }
+  if (upcoming) {
+    const issues = [
+      ...entryIssues,
+      ...validateEntryAndTargets({ spec, direction: form.direction, entry, targets: [] }).filter(
+        (issue) => !(issue.field === 'targets' && issue.code === 'REQUIRED'),
+      ),
+    ];
+    return { entry, auto: null, targets: [], stopLoss: '', issues, risk: null, upcoming };
   }
 
   const auto = calculateLevels({ spec, direction: form.direction, entry });
@@ -90,15 +108,22 @@ export function composeSignal(form: ComposerFields, spec: InstrumentSpec | undef
     stopLoss: wellFormed ? canon(stopLoss) : stopLoss,
     issues,
     risk,
+    upcoming,
   };
 }
 
 export function isSignalReady(composed: ComposedSignal): boolean {
+  if (composed.upcoming) return Boolean(composed.entry && composed.issues.length === 0);
   return Boolean(composed.entry && composed.issues.length === 0 && composed.targets.length > 0 && composed.stopLoss);
 }
 
 /** Which standard wording a signal gets when no template was picked. */
-export function defaultSignalTemplateKind(direction: Direction | null, priority: Priority): TemplateKind {
+export function defaultSignalTemplateKind(
+  direction: Direction | null,
+  priority: Priority,
+  upcoming = false,
+): TemplateKind {
+  if (upcoming) return 'UPCOMING_TRADE';
   if (priority === 'PRIORITY') return 'PRIORITY_SIGNAL';
   return direction === 'SELL' ? 'SELL_STANDARD' : 'BUY_STANDARD';
 }
@@ -117,14 +142,16 @@ export function previewSignalEvent(input: {
   template: { title: string; body: string } | undefined;
 }): FeedEvent | null {
   const { spec, direction, composed, priority, template } = input;
-  if (!composed.entry || composed.issues.length > 0 || composed.targets.length === 0) return null;
+  if (!composed.entry || composed.issues.length > 0 || (!composed.upcoming && composed.targets.length === 0)) {
+    return null;
+  }
   const comment = input.commentary.trim() || null;
   const context = {
     ref: 'T-NEW',
     instrument: spec.symbol,
     direction,
     entry: entryLabel(spec, composed.entry),
-    stop: formatPrice(spec, composed.stopLoss),
+    stop: composed.upcoming ? null : formatPrice(spec, composed.stopLoss),
     target1: composed.targets[0] ? formatPrice(spec, composed.targets[0]) : null,
     target2: composed.targets[1] ? formatPrice(spec, composed.targets[1]) : null,
     target3: composed.targets[2] ? formatPrice(spec, composed.targets[2]) : null,
@@ -154,7 +181,7 @@ export function previewSignalEvent(input: {
       comment,
       after: {
         status: 'PUBLISHED',
-        stopLoss: composed.stopLoss,
+        stopLoss: composed.upcoming ? null : composed.stopLoss,
         targets: composed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const })),
         closedFraction: '0',
       },
