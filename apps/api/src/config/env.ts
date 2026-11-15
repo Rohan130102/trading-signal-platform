@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createPrivateKey, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
@@ -27,6 +27,12 @@ const list = (fallback: string) =>
         .map((s) => s.trim())
         .filter(Boolean),
     );
+
+/** Docker Compose passes an unset optional value as an empty string. */
+const blankAsUnset = z
+  .string()
+  .optional()
+  .transform((v) => v?.trim() || undefined);
 
 const schema = z
   .object({
@@ -69,6 +75,28 @@ const schema = z
     ADMIN_SESSION_TTL_HOURS: z.coerce.number().int().min(1).default(12),
     ADMIN_IDLE_MINUTES: z.coerce.number().int().min(5).default(120),
     INSTANCE_ID: z.string().default(() => randomUUID().slice(0, 8)),
+    /**
+     * smtp: real delivery. file: each message is written to EMAIL_FILE_DIR, for development and tests only.
+     * disabled: nothing can be sent, and sign-up says so instead of pretending.
+     */
+    EMAIL_TRANSPORT: z.enum(['smtp', 'file', 'disabled']).default('disabled'),
+    EMAIL_FROM: z.string().optional(),
+    EMAIL_FILE_DIR: z.string().optional(),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+    /** true: TLS from the start (port 465). false: STARTTLS, which is then required. */
+    SMTP_SECURE: flag(false),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    /** Email-code requests one client address may start per hour. Checking codes allows three times as many. */
+    EMAIL_CODE_IP_LIMIT_PER_HOUR: z.coerce.number().int().min(1).default(20),
+    /** Folder of published over-the-air app updates (see AppUpdatesService). Unset: the app is told there are none. */
+    APP_UPDATES_DIR: blankAsUnset,
+    /**
+     * Base64 of the PEM private key that signs app updates. Its certificate is built into the app
+     * (apps/mobile/code-signing), so the app refuses anything this key did not sign. Never commit it.
+     */
+    APP_UPDATES_SIGNING_KEY: blankAsUnset,
   })
   .superRefine((env, ctx) => {
     if (env.PUSH_TRANSPORT === 'webpush' && (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT)) {
@@ -76,6 +104,35 @@ const schema = z
         code: 'custom',
         message: 'PUSH_TRANSPORT=webpush requires VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT',
       });
+    }
+    if (env.EMAIL_TRANSPORT === 'smtp' && (!env.SMTP_HOST || !env.EMAIL_FROM)) {
+      ctx.addIssue({ code: 'custom', message: 'EMAIL_TRANSPORT=smtp requires SMTP_HOST and EMAIL_FROM' });
+    }
+    if (env.EMAIL_TRANSPORT === 'file' && !env.EMAIL_FILE_DIR) {
+      ctx.addIssue({ code: 'custom', message: 'EMAIL_TRANSPORT=file requires EMAIL_FILE_DIR' });
+    }
+    if (env.NODE_ENV === 'production' && env.EMAIL_TRANSPORT === 'file') {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'EMAIL_TRANSPORT=file writes codes to disk and is refused in production',
+      });
+    }
+    if (env.APP_UPDATES_DIR && !env.APP_UPDATES_SIGNING_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'APP_UPDATES_DIR requires APP_UPDATES_SIGNING_KEY: the app accepts only signed updates',
+      });
+    }
+    if (env.APP_UPDATES_SIGNING_KEY) {
+      try {
+        const key = createPrivateKey(Buffer.from(env.APP_UPDATES_SIGNING_KEY, 'base64'));
+        if (key.asymmetricKeyType !== 'rsa') throw new Error('not RSA');
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'APP_UPDATES_SIGNING_KEY must be a base64-encoded PEM RSA private key',
+        });
+      }
     }
     if (env.NODE_ENV === 'production' && env.APP_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', message: 'In production every APP_ORIGINS entry must use https://' });

@@ -157,8 +157,11 @@ EXPO_PUBLIC_API_URL=https://api.your-domain npx eas-cli build --profile producti
 
 Nothing is ever submitted to a store by these commands, or by CI.
 
-Without an Expo account, CI compiles an installable test APK on every push: see the `android-apk` job. The `ios-build` workflow
-compiles for the iOS simulator when run by hand. Its macOS minutes cost ten times as much, so it does not run automatically.
+Without an Expo account, CI compiles an installable test APK: see the `android-apk` job. To stay within the
+repository's free monthly runner minutes, it compiles only for a native fingerprint (see
+[Updates without a new APK](#updates-without-a-new-apk)) it has not compiled yet, or when CI is started by hand. The
+JavaScript is still bundled for both platforms on every run. The `ios-build` workflow compiles for the iOS simulator
+when run by hand. Its macOS minutes cost ten times as much, so it does not run automatically.
 
 ## Sharing a test build with someone elsewhere
 
@@ -170,10 +173,10 @@ cloudflared tunnel --url http://localhost:4000
 
 This puts your development server on the public internet for as long as it runs. The address changes every time, and your computer has to stay on and awake.
 
-| Their phone | How                                                                                                                                                                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Rebuild if the address changes |
-| iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                |
+| Their phone | How                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Later pushes compile a new APK only when the native parts or the address change; otherwise they package an update. Put `[new apk]` in the commit message for a fresh copy |
+| iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                                                                                                                                                           |
 
 The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. Until notifications are set up it says "Not set up in this build" under Alerts, and alerts arrive only while the app is open.
 
@@ -184,6 +187,31 @@ To switch notifications on in that APK (all three are needed; nothing secret goe
 3. In Firebase, create a service account key (Project settings, Service accounts) and upload it on expo.dev under the project's Credentials, Android, FCM V1 service account key. It stays with Expo: never in the repository, a variable or a chat.
 
 The app checks that the build contains Firebase before it offers to turn alerts on, so a half-configured build says it is not set up rather than failing. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
+
+## Updates without a new APK
+
+Release builds that talk to an HTTPS server fetch new versions of their screens, wording and images from that server
+(`/api/v1/app-updates/manifest`, version 1 of the Expo Updates protocol). No Expo account or third-party service is
+involved.
+
+- **When it arrives.** The app asks at launch without delaying it, and again when it returns to the foreground at most
+  every half hour. A downloaded version starts the next time the app is opened; a short notice and a row on the
+  Account screen offer to restart now. Nothing restarts on its own while someone is reading a signal.
+- **Signed.** Every answer is signed with a private key that only the server holds; its certificate,
+  `code-signing/certificate.pem`, is compiled into the APK. The app rejects anything unsigned or signed by another
+  key, and checks every file against a hash inside the signed manifest. Losing the key means a new APK with a new
+  certificate; a leaked key means the same, at once. The key is never in the repository, CI or chat.
+- **Which phones.** `runtimeVersion` is a fingerprint of everything native: Expo SDK, native libraries, permissions,
+  plugins, icons. An update reaches only APKs with the same fingerprint, so code that needs a newer APK can never be
+  sent to an older one. Changes like those need a new APK; screens, wording, logic and images do not.
+- **Recovery.** If an update crashes at launch, the library returns to the previous working version. Publishing a
+  `rollback` folder (see [DEPLOYMENT.md](DEPLOYMENT.md#app-updates)) sends every phone back to the code inside its APK.
+- **Packaging.** `node scripts/export-update.mjs <folder>` in `apps/mobile`, in the same environment as the APK build.
+  The `share/android` workflow does this on every push. It compiles an APK only for a fingerprint it has not compiled
+  one for, or when the last commit message says `[new apk]`, and refuses an update whose fingerprint differs from the
+  APK's.
+
+Development builds use Metro and never check for updates, and neither do builds without an HTTPS server address.
 
 ## What you need to provide
 

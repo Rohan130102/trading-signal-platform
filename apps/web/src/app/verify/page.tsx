@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
+import { useFocusOnLoad } from '@/components/auth/parts';
 import { AuthFrame } from '@/components/shell/auth-frame';
 import { Button, Field, FormError, Input } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -13,6 +14,7 @@ export default function VerifyPage() {
   const client = useQueryClient();
   const me = useMe();
   const [code, setCode] = useState('');
+  const firstField = useFocusOnLoad<HTMLInputElement>();
   const verify = useMutation({
     mutationFn: () => api.post('/auth/mfa/verify', { code }),
     onSuccess: () => client.invalidateQueries({ queryKey: ['me'] }),
@@ -29,7 +31,11 @@ export default function VerifyPage() {
   };
 
   return (
-    <AuthFrame title="Enter your code" description="Open your authenticator app and type the six digits it shows.">
+    <AuthFrame
+      focused
+      title="Enter your code"
+      description="Open your authenticator app and type the six digits it shows."
+    >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="Code" hint="Lost your phone? Enter one of your recovery codes here instead.">
           {(c) => (
@@ -37,7 +43,7 @@ export default function VerifyPage() {
               {...c}
               className="num tracking-wider"
               autoComplete="one-time-code"
-              autoFocus
+              ref={firstField}
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />

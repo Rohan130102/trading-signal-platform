@@ -4,7 +4,10 @@ import {
   type ClosureRecord,
   computeClosureResult,
   computePerformanceStats,
+  type ReportTrade,
   type StatsTrade,
+  summarizePerformance,
+  type TradeAggregate,
 } from '../src/index.js';
 
 const base = {
@@ -291,5 +294,91 @@ describe('performance statistics', () => {
     const s = computePerformanceStats([closed('100')]);
     expect(s.netPnl).toBeNull();
     expect(s.monetaryTrades).toBe(0);
+  });
+});
+
+describe('one performance report', () => {
+  const result = (outcome: TradeAggregate['outcome'], points: string | null): TradeAggregate => ({
+    basis: 'HYPOTHETICAL_OUTCOME',
+    closedFraction: '1',
+    averageExit: null,
+    weightedPriceMove: points,
+    weightedPoints: points,
+    grossPnl: null,
+    netPnl: null,
+    fees: null,
+    outcome,
+  });
+  let n = 0;
+  const trade = (
+    status: string,
+    aggregate: TradeAggregate | null,
+    symbol = 'XAU/USD',
+    finishedAt: string | null = null,
+  ): ReportTrade => ({ status, aggregate, symbol, ref: `T-${(n += 1)}`, finishedAt });
+
+  it('counts each signal once, and the win rate only over trades with a result', () => {
+    // 6 signals: 5 closed, 1 cancelled; 2 of the closed have a result, 1 win and 1 loss.
+    const report = summarizePerformance([
+      trade('CLOSED', result('WIN', '150'), 'XAU/USD', '2026-11-02T00:00:00Z'),
+      trade('CLOSED', result('LOSS', '-80'), 'XAU/USD', '2026-11-03T00:00:00Z'),
+      trade('CLOSED', result('UNRESOLVED', null)),
+      trade('CLOSED', null),
+      trade('CLOSED', result('UNRESOLVED', null)),
+      trade('CANCELLED', null),
+    ]);
+    expect(report.counts).toEqual({ total: 6, closed: 5, active: 0, awaitingEntry: 0, cancelled: 1 });
+    expect(report.results).toEqual({ winRate: '0.5', wins: 1, losses: 1, breakevens: 0, measured: 2 });
+  });
+
+  it('keeps points per instrument, never added across instruments', () => {
+    const report = summarizePerformance([
+      trade('CLOSED', result('WIN', '150'), 'XAU/USD', '2026-11-02T00:00:00Z'),
+      trade('CLOSED', result('LOSS', '-50'), 'XAU/USD', '2026-11-04T00:00:00Z'),
+      trade('CLOSED', result('WIN', '2300'), 'BTC/USD', '2026-11-03T00:00:00Z'),
+      trade('EXPIRED', null, 'BTC/USD'),
+      trade('ACTIVE', null, 'BTC/USD'),
+    ]);
+    expect(report.counts).toMatchObject({ total: 5, closed: 3, active: 1, cancelled: 1 });
+    expect(report.instruments).toEqual([
+      {
+        symbol: 'BTC/USD',
+        winRate: '1',
+        wins: 1,
+        losses: 0,
+        breakevens: 0,
+        measured: 1,
+        netPoints: '2300',
+        averagePoints: '2300',
+      },
+      {
+        symbol: 'XAU/USD',
+        winRate: '0.5',
+        wins: 1,
+        losses: 1,
+        breakevens: 0,
+        measured: 2,
+        netPoints: '100',
+        averagePoints: '50',
+      },
+    ]);
+    // A running total only for one instrument, in the order trades finished.
+    expect(report.running).toBeNull();
+    const gold = summarizePerformance(
+      [
+        trade('CLOSED', result('LOSS', '-50'), 'XAU/USD', '2026-11-04T00:00:00Z'),
+        trade('CLOSED', result('WIN', '150'), 'XAU/USD', '2026-11-02T00:00:00Z'),
+      ],
+      'XAU/USD',
+    );
+    expect(gold.running?.map((p) => p.total)).toEqual(['150', '100']);
+  });
+
+  it('a breakeven counts in the win rate, but not as a win', () => {
+    const report = summarizePerformance([
+      trade('CLOSED', result('BREAKEVEN', '0')),
+      trade('CLOSED', result('WIN', '10')),
+    ]);
+    expect(report.results).toMatchObject({ wins: 1, breakevens: 1, measured: 2, winRate: '0.5' });
   });
 });

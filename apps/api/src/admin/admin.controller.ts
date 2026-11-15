@@ -2,9 +2,12 @@ import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from '@nes
 import {
   approvalSchema,
   auditQuery,
+  emailSettingsSchema,
+  emailTestSchema,
   LIVE_STATUSES,
   performanceQuery,
   settingsSchema,
+  supportSettingsSchema,
   type TradeStatus,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
@@ -21,13 +24,39 @@ import {
   ZQuery,
 } from '../common/http.js';
 import { env } from '../config/env.js';
-import { PrismaService } from '../db/prisma.service.js';
+import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PerformanceService } from '../performance/performance.service.js';
+import { EmailTransport } from '../email/email-transport.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TradesQueries } from '../trades/trades.queries.js';
 import { TradesService } from '../trades/trades.service.js';
+
+/** Records of what only the Master Admin can do: other administrators never see these, or that they exist. */
+const PRIVILEGED_AUDIT: Prisma.AuditLogWhereInput = {
+  OR: [
+    { action: { startsWith: 'ADMIN_' } },
+    { action: { startsWith: 'MASTER_ADMIN' } },
+    {
+      action: {
+        in: [
+          'SETTINGS_UPDATED',
+          'SUPPORT_CONTACT_UPDATED',
+          'EMAIL_SETTINGS_UPDATED',
+          'EMAIL_TEST_SENT',
+          'EMAIL_TEST_FAILED',
+          'PUBLIC_PERFORMANCE_APPROVAL_RECORDED',
+          'PUBLIC_PERFORMANCE_APPROVAL_REVOKED',
+          'SUBSCRIBER_SCREENSHOT_PERMISSION_SET',
+          'TRADES_REMOVED_FROM_SCREENS',
+          'TRADES_RESTORED_TO_SCREENS',
+          'DEMO_DATA_RESET',
+        ],
+      },
+    },
+  ],
+};
 
 @Controller('admin')
 @AdminOnly()
@@ -40,11 +69,12 @@ export class AdminController {
     private readonly performance: PerformanceService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly email: EmailTransport,
   ) {}
 
   @Get('dashboard')
   @Summary('Everything the administrator needs at a glance')
-  async dashboard() {
+  async dashboard(@Auth() auth: AuthContext) {
     const now = new Date();
     const soon = new Date(now.getTime() + 7 * 86_400_000);
     const [live, closed, recentEvents, drafts, total, active, expiring, expired, health] = await Promise.all([
@@ -98,6 +128,15 @@ export class AdminController {
         href: '/admin/notifications',
       });
     }
+    // Sign-up sends a code by email. Only those who can set email up are told about it.
+    const [{ signupOpen }, emailStatus] = await Promise.all([this.settings.get(), this.email.status()]);
+    if (auth.user.isMasterAdmin && signupOpen && emailStatus === 'NOT_SET_UP') {
+      alerts.push({
+        level: 'WARNING',
+        message: 'Email is not set up, so sign-up codes cannot be sent. Set it up in Configuration, Email.',
+        href: '/admin/settings?tab=email',
+      });
+    }
     if (health.push.last24h.failed > 0) {
       alerts.push({
         level: 'WARNING',
@@ -136,13 +175,14 @@ export class AdminController {
   @Get('performance')
   @Summary('Internal analytics. Never exposed publicly.')
   performanceReport(@ZQuery(performanceQuery) query: z.infer<typeof performanceQuery>) {
-    return this.performance.internal(query);
+    return this.performance.report(query);
   }
 
   @Get('audit')
-  @Summary('Audit log')
-  async auditLog(@ZQuery(auditQuery) query: z.infer<typeof auditQuery>) {
-    const where = {
+  @Summary('Audit log. Actions only the Master Admin can take are listed for the Master Admin only.')
+  async auditLog(@ZQuery(auditQuery) query: z.infer<typeof auditQuery>, @Auth() auth: AuthContext) {
+    const where: Prisma.AuditLogWhereInput = {
+      ...(auth.user.isMasterAdmin ? {} : { NOT: PRIVILEGED_AUDIT }),
       ...(query.action ? { action: { contains: query.action, mode: 'insensitive' as const } } : {}),
       ...(query.actorId ? { actorId: query.actorId } : {}),
       ...(query.targetId ? { targetId: query.targetId } : {}),
@@ -187,9 +227,39 @@ export class AdminController {
   }
 
   @Get('settings')
-  @Summary('Application settings')
+  @Summary('Application settings. Contains no secrets: the email account has its own Master Admin endpoint.')
   getSettings() {
-    return this.settings.get();
+    return this.settings.view();
+  }
+
+  @Get('settings/email')
+  @MasterOnly()
+  @Summary('The email account used for sign-up codes and account emails. The password is never returned.')
+  getEmailSettings() {
+    return this.settings.emailView();
+  }
+
+  @Put('settings/email')
+  @MasterOnly()
+  @Summary('Save the email account. A password left empty keeps the saved one. Master Admin only; audited.')
+  updateEmailSettings(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(emailSettingsSchema) body: z.output<typeof emailSettingsSchema>,
+  ) {
+    return this.settings.updateEmail(body, auth.user.id, requestId);
+  }
+
+  @Post('settings/email/test')
+  @MasterOnly()
+  @HttpCode(200)
+  @Summary('Send one test email with the saved account. Answers with what went wrong if it fails.')
+  testEmail(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(emailTestSchema) body: z.output<typeof emailTestSchema>,
+  ) {
+    return this.settings.testEmail(body.to, auth.user.id, requestId);
   }
 
   @Put('settings')
@@ -201,6 +271,17 @@ export class AdminController {
     @ZBody(settingsSchema) body: z.infer<typeof settingsSchema>,
   ) {
     return this.settings.update(body, auth.user.id, requestId);
+  }
+
+  @Put('settings/support')
+  @MasterOnly()
+  @Summary('Set the support WhatsApp number and email used by every enquiry. Master Admin only; audited.')
+  updateSupport(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @ZBody(supportSettingsSchema) body: z.output<typeof supportSettingsSchema>,
+  ) {
+    return this.settings.updateSupport(body, auth.user.id, requestId);
   }
 
   @Get('compliance/public-performance')

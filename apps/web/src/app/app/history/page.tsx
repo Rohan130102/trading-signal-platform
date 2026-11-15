@@ -181,9 +181,7 @@ export default function HistoryPage() {
           title={filtered ? 'Nothing matches those filters' : 'No history yet'}
           action={filtered ? <Button onClick={() => update(INITIAL)}>Clear filters</Button> : undefined}
         >
-          {filtered
-            ? 'Try fewer filters or a wider date range.'
-            : 'Signals will be listed here once they are published.'}
+          {filtered ? 'Try fewer filters or a wider date range.' : 'Finished signals will appear here.'}
         </EmptyState>
       )}
       {history.isSuccess && history.data.trades.length > 0 && (

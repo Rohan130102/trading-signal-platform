@@ -40,7 +40,7 @@ test('complete administrator journey', async ({ page, browser }) => {
     expect(temp).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}-[A-Z2-9]{5}$/);
     await page.getByRole('button', { name: 'Open subscriber' }).click();
     await expect(page.getByRole('heading', { name: /Priya Sharma/ })).toBeVisible();
-    await expect(page.getByText('Created for 30 days')).toBeVisible();
+    await expect(page.getByText('Subscription started for 30 days')).toBeVisible();
     await expect(page.getByText(temp)).toHaveCount(0);
   });
 
@@ -71,11 +71,11 @@ test('complete administrator journey', async ({ page, browser }) => {
 
   await test.step('a signal published as active needs no separate activation step', async () => {
     await expect(page.getByRole('main').getByText('Active', { exact: true }).first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Activate trade' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Activate Trade' })).toHaveCount(0);
   });
 
   await test.step('move the stop-loss: the original is retained in the timeline', async () => {
-    await page.getByRole('button', { name: 'Move stop-loss' }).click();
+    await page.getByRole('button', { name: 'Update Stop-Loss' }).click();
     await page.getByLabel('New stop-loss').fill(String(entry + 50));
     await page.getByRole('button', { name: 'Move and notify' }).click();
     await expect(page.getByText('Stop-loss (now)')).toBeVisible();
@@ -85,30 +85,30 @@ test('complete administrator journey', async ({ page, browser }) => {
   });
 
   await test.step('widening risk needs a second, explicit confirmation', async () => {
-    await page.getByRole('button', { name: 'Move stop-loss' }).click();
+    await page.getByRole('button', { name: 'Update Stop-Loss' }).click();
     await page.getByLabel('New stop-loss').fill(String(entry + 10));
     await page.getByRole('button', { name: 'Move and notify' }).click();
     await expect(page.getByText('This increases risk')).toBeVisible();
     await page.getByRole('button', { name: 'Close' }).click();
   });
 
-  await test.step('close the trade and see the recorded result, labelled by its basis', async () => {
-    await page.getByRole('button', { name: 'Close trade' }).click();
+  await test.step('close the trade: nothing to classify, and the result is recorded', async () => {
+    await page.getByRole('button', { name: 'Close Trade' }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: /At target 1/ }).click();
-    await expect(dialog.getByLabel('What is this result based on?')).toHaveValue('HYPOTHETICAL_OUTCOME');
+    await expect(dialog.getByText(/based on|basis/i)).toHaveCount(0);
     await expect(dialog.getByText('+150 pts')).toBeVisible();
-    await expect(dialog.getByText('None: no position recorded')).toBeVisible();
     await dialog.getByRole('button', { name: 'Close trade and notify' }).click();
     await expect(page.getByText(/This trade is finished/)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Result' })).toBeVisible();
-    await expect(page.getByRole('main').getByText('Hypothetical outcome of the signal')).toBeVisible();
+    await expect(page.getByRole('main').getByText(/hypothetical|declared|verified|measured from/i)).toHaveCount(0);
   });
 
-  await test.step('the internal dashboard shows it, with the methodology', async () => {
+  await test.step('it is on the Performance page at once, in one set of results', async () => {
     await page.goto('/admin/performance');
-    await expect(page.getByRole('heading', { name: 'Every record in this period' })).toBeVisible();
-    await expect(page.getByText(/Win rate = wins/)).toBeVisible();
+    await expect(page.getByText('Total signals')).toBeVisible();
+    await expect(page.getByText('Win rate')).toHaveCount(1);
+    await expect(page.getByText(/hypothetical|declared|verified|basis/i)).toHaveCount(0);
     await expect(
       page
         .getByRole('table', { name: /Finished trades/ })
@@ -128,9 +128,9 @@ test('complete administrator journey', async ({ page, browser }) => {
     const context = await browser.newContext({ storageState: undefined });
     const subscriberTab = await context.newPage();
     await subscriberTab.goto('/login');
-    await subscriberTab.getByLabel('Login ID').fill(login);
+    await subscriberTab.getByLabel('Email or username').fill(login);
     await subscriberTab.getByLabel('Password', { exact: true }).fill(temp);
-    await subscriberTab.getByRole('button', { name: 'Sign in' }).click();
+    await subscriberTab.getByRole('button', { name: 'Log In', exact: true }).click();
     await expect(subscriberTab.getByRole('heading', { name: 'Choose your password' })).toBeVisible();
     await context.close();
   });
@@ -268,25 +268,36 @@ test('financial integrity: closing a range signal with no data invents no result
   });
   await actViaApi(api, trade, 'ACTIVATE');
   await page.goto(`/admin/trades/${trade.id}`);
-  await page.getByRole('button', { name: 'Close trade' }).click();
+  await page.getByRole('button', { name: 'Close Trade' }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByLabel('What is this result based on?')).toHaveValue('NONE');
-  await expect(dialog.getByRole('option', { name: /record your execution first/ })).toBeDisabled();
+  // A range has no single entry: the result is measured only from an entry typed here.
+  await expect(dialog.getByLabel('Entry', { exact: true })).toHaveValue('');
   await dialog.getByLabel('Exit price').fill(String(low + 100));
-  await expect(dialog.getByText('Not measured')).toBeVisible();
-  await expect(dialog.getByText('None: no position recorded')).toBeVisible();
-
-  await dialog.getByLabel('What is this result based on?').selectOption('HYPOTHETICAL_OUTCOME');
-  await dialog.getByRole('button', { name: 'Close trade and notify' }).click();
-  await expect(dialog.getByText(/recommended a range/)).toBeVisible();
-
-  await dialog.getByLabel('What is this result based on?').selectOption('NONE');
+  await expect(dialog.getByText(/pts/)).toHaveCount(0);
   await dialog.getByRole('button', { name: 'Close trade and notify' }).click();
   await expect(page.getByText(/This trade is finished/)).toBeVisible();
   const main = page.getByRole('main');
-  await expect(main.getByText('Not measured').first()).toBeVisible();
-  await expect(main.getByText('No position recorded')).toBeVisible();
+  await expect(main.getByText(/[+−-]\d[\d,.]* pts/)).toHaveCount(0);
   await expect(main.getByText(/\bUSD\b/).filter({ hasText: /[+−-]?\d[\d,]*\.\d{2} USD/ })).toHaveCount(0);
+
+  // With the entry typed, the same kind of trade is measured from it.
+  const low2 = nextPrice();
+  const second = await publishViaApi(api, low2, {
+    entryType: 'RANGE',
+    entryLow: String(low2),
+    entryHigh: String(low2 + 10),
+    targets: [String(low2 + 160)],
+    stopLoss: String(low2 - 180),
+  });
+  await actViaApi(api, second, 'ACTIVATE');
+  await page.goto(`/admin/trades/${second.id}`);
+  await page.getByRole('button', { name: 'Close Trade' }).click();
+  const again = page.getByRole('dialog');
+  await again.getByLabel('Entry', { exact: true }).fill(String(low2 + 5));
+  await again.getByLabel('Exit price').fill(String(low2 + 100));
+  await expect(again.getByText('+95 pts')).toBeVisible();
+  await again.getByRole('button', { name: 'Close trade and notify' }).click();
+  await expect(page.getByText(/This trade is finished/)).toBeVisible();
 });
 
 test('declared execution shows money, privately, and only with full data', async ({ page, request: _ }) => {
@@ -301,7 +312,7 @@ test('declared execution shows money, privately, and only with full data', async
   await expect(dialog.getByText('100.00 USD')).toBeVisible();
   await dialog.getByRole('button', { name: 'Book partial and notify' }).click();
   await expect(page.getByText('Partly closed').first()).toBeVisible();
-  await page.getByRole('button', { name: 'Close trade' }).click();
+  await page.getByRole('button', { name: 'Close Trade' }).click();
   dialog = page.getByRole('dialog');
   await dialog.getByLabel('Exit price').fill(String(entry + 200));
   await dialog.getByLabel(/Fees/).fill('10');
@@ -309,7 +320,7 @@ test('declared execution shows money, privately, and only with full data', async
   await expect(page.getByText(/This trade is finished/)).toBeVisible();
   // 1 x 100 + 1 x 200 = 300, less 10 of fees.
   await expect(page.getByText('290.00 USD').first()).toBeVisible();
-  await expect(page.getByText('Execution declared by the administrator (unverified)').first()).toBeVisible();
+  await expect(page.getByRole('main').getByText(/declared|verified/i)).toHaveCount(0);
 });
 
 test('trade actions work from the keyboard, and shortcuts stay out of the way while typing', async ({ page }) => {
@@ -322,7 +333,7 @@ test('trade actions work from the keyboard, and shortcuts stay out of the way wh
   // M, type the price, Enter: three inputs to move a stop.
   await page.keyboard.press('m');
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: 'Move stop-loss' })).toBeVisible();
+  await expect(dialog.getByRole('heading', { name: 'Update Stop-Loss' })).toBeVisible();
   await expect(dialog.getByLabel('New stop-loss')).toBeFocused();
   await page.keyboard.type(String(entry - 100));
   await page.keyboard.press('Enter');
@@ -394,8 +405,8 @@ test('renewal from the subscriber page says which policy applies', async ({ page
   const { subscriber } = await res.json();
   await page.goto(`/admin/subscribers/${subscriber.id}`);
   await page.getByRole('button', { name: 'Renew' }).click();
-  await expect(page.getByText(/Still active, so the new days are added after/)).toBeVisible();
-  await page.getByLabel('Days to add').fill('10');
+  await expect(page.getByText(/Still running, so the new days are added after its last day/)).toBeVisible();
+  await page.getByLabel('Duration (days)').fill('10');
   await page.getByRole('dialog').getByRole('button', { name: 'Renew' }).click();
   await expect(page.getByText(/Renewed for 10 days, extended from expiry/)).toBeVisible();
 });
@@ -405,6 +416,8 @@ test('an announcement reaches the feed as an announcement, not a trade', async (
   const sub = await createSubscriberViaApi(api);
   const subscriber = await (await browser.newContext({ storageState: { cookies: [], origins: [] } })).newPage();
   await signInFirstTime(subscriber, sub);
+  // Announcements arrive in Alerts, as on the phone.
+  await subscriber.goto('/app/alerts');
   await page.goto('/admin');
   await page.getByRole('button', { name: 'Announcement' }).click();
   const text = `Markets close early ${Date.now()}.`;
@@ -433,9 +446,9 @@ test('a later administrator sign-in asks for a code', async ({ browser }) => {
   const { login } = adminState();
   await page.goto('/admin');
   await expect(page).toHaveURL(/\/login/);
-  await page.getByLabel('Login ID').fill(login);
+  await page.getByLabel('Email or username').fill(login);
   await page.getByLabel('Password', { exact: true }).fill('quiet-river-stone-lamp');
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Enter your code' })).toBeVisible();
   await page.getByLabel('Code', { exact: true }).fill('000000');
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -449,8 +462,8 @@ test('a later administrator sign-in asks for a code', async ({ browser }) => {
   await context.close();
 });
 
-test('public performance stays closed, and the settings page says why', async ({ page }) => {
-  await page.goto('/admin/settings');
+test('public performance stays closed, and the configuration screen says why', async ({ page }) => {
+  await page.goto('/admin/settings?tab=legal');
   await expect(page.getByRole('heading', { name: 'Public performance section' })).toBeVisible();
   await expect(page.getByText('Closed', { exact: true })).toBeVisible();
   await expect(page.getByText(/A disclaimer alone does not make/)).toBeVisible();
@@ -463,10 +476,49 @@ test('public performance stays closed, and the settings page says why', async ({
 
 test('the Master Admin sets platform rules and registers administrators', async ({ page }) => {
   await page.goto('/admin/settings');
-  await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Signals' }).click();
+  await expect(page.getByRole('heading', { name: 'New signals' })).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Awaiting entry' })).toBeChecked();
   await expect(page.getByLabel('Entry window')).toHaveValue('240');
   await page.goto('/admin/admins');
   await expect(page.getByRole('heading', { name: 'Administrators' })).toBeVisible();
   await expect(page.getByText('Master Admin').first()).toBeVisible();
+});
+
+test('an ordinary administrator sees nothing of the Master Admin’s pages', async ({ browser }) => {
+  const api = await adminApi();
+  const loginId = `desk.${Date.now().toString(36)}`;
+  const created = await api.post('/api/v1/admin/admins', {
+    data: { name: 'Desk Admin', loginId, idempotencyKey: randomUUID() },
+  });
+  expect(created.status()).toBe(201);
+  const temp = (await created.json()).temporaryPassword as string;
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await context.newPage();
+  await page.goto('/login');
+  await page.getByLabel('Email or username').fill(loginId);
+  await page.getByLabel('Password', { exact: true }).fill(temp);
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
+  await page.getByLabel('Temporary password').fill(temp);
+  await page.getByLabel('New password', { exact: true }).fill('desk-admin-pass-phrase');
+  await page.getByLabel('New password again').fill('desk-admin-pass-phrase');
+  await page.getByRole('button', { name: 'Save password' }).click();
+  await page.getByText('Cannot scan it?').click();
+  const secret = ((await page.locator('code').first().textContent()) as string).trim();
+  await page.getByLabel('Six-digit code').fill(await generate({ secret }));
+  await page.getByRole('button', { name: 'Turn on' }).click();
+  await page.getByRole('button', { name: 'I have saved them' }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  // No link, no lock, no mention of a higher role.
+  await expect(page.getByRole('link', { name: 'Configuration' })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Administrators' })).toHaveCount(0);
+  await expect(page.getByText(/Master Admin|Super Admin/)).toHaveCount(0);
+  // Typing the address leads back to the dashboard, as if the page did not exist.
+  await page.goto('/admin/settings');
+  await expect(page).toHaveURL(/\/admin$/);
+  await page.goto('/admin/admins');
+  await expect(page).toHaveURL(/\/admin$/);
+  await context.close();
 });

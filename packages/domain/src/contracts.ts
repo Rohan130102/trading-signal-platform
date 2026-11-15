@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { CALCULATION_BASES, TRADE_OUTCOMES } from './pnl.js';
 import {
   HISTORY_SCOPES,
   MAX_ENTRY_WINDOW_MINUTES,
@@ -11,7 +10,8 @@ import { DIRECTIONS, ENTRY_TYPES, MAX_TARGETS } from './signal.js';
 import { CLOSE_REASONS, PRIORITIES, TRADE_STATUSES, EVENT_TYPES } from './status.js';
 import { installationIdSchema } from './devices.js';
 import { STATUS_GROUPS, symbolList } from './signals-feed.js';
-import { MAX_SUBSCRIPTION_DAYS } from './subscription.js';
+import { MAX_SUBSCRIPTION_DAYS, MAX_TRIAL_DAYS } from './subscription.js';
+import { ENQUIRY_STATUSES, supportEmailField, supportWhatsappField } from './support.js';
 import { TEMPLATE_KINDS, TEMPLATE_TONES } from './templates.js';
 
 /**
@@ -98,8 +98,9 @@ export const signalFieldsSchema = z.strictObject({
   entryLow: priceSchema,
   /** For a single entry this equals entryLow. */
   entryHigh: priceSchema,
-  targets: z.array(priceSchema).min(1).max(MAX_TARGETS),
-  stopLoss: priceSchema,
+  /** Empty only for an upcoming range trade, which gets its levels when it is activated. */
+  targets: z.array(priceSchema).max(MAX_TARGETS).default([]),
+  stopLoss: priceSchema.optional(),
   priority: z.enum(PRIORITIES).default('NORMAL'),
   templateId: z.uuid().nullable().optional(),
   commentary: comment,
@@ -111,19 +112,39 @@ export const signalFieldsSchema = z.strictObject({
 });
 export type SignalFields = z.infer<typeof signalFieldsSchema>;
 
-export const publishSignalSchema = signalFieldsSchema.extend({
-  idempotencyKey: idempotencyKeySchema,
-  draftId: z.uuid().nullable().optional(),
-  draftVersion: expectedVersionSchema.optional(),
-  /** Set after the administrator has seen and accepted a duplicate-signal warning. */
-  confirmDuplicate: z.boolean().default(false),
-  /**
-   * True: the signal is active at once. The activation is recorded in the same transaction as the
-   * publication, as its own (internal) event, and is still not a fill. False: it waits for entry until an
-   * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
-   */
-  activateOnPublish: z.boolean().optional(),
-});
+/**
+ * A single-price signal always carries its target and stop-loss. A range signal either carries both, or neither:
+ * then it is an upcoming trade, announced ahead and activated later with its final levels.
+ */
+function requireLevels(value: { entryType: string; targets: string[]; stopLoss?: string }, ctx: z.RefinementCtx) {
+  const hasTargets = value.targets.length > 0;
+  const hasStop = value.stopLoss !== undefined;
+  if (value.entryType === 'SINGLE' || hasTargets || hasStop) {
+    if (!hasTargets) ctx.addIssue({ code: 'custom', path: ['targets'], message: 'Enter at least one target' });
+    if (!hasStop) ctx.addIssue({ code: 'custom', path: ['stopLoss'], message: 'Enter the stop-loss' });
+  }
+}
+
+/** True for a range signal published without a target or stop-loss. */
+export function isUpcomingSignal(value: { entryType: string; targets: readonly string[]; stopLoss?: string | null }) {
+  return value.entryType === 'RANGE' && value.targets.length === 0 && !value.stopLoss;
+}
+
+export const publishSignalSchema = signalFieldsSchema
+  .extend({
+    idempotencyKey: idempotencyKeySchema,
+    draftId: z.uuid().nullable().optional(),
+    draftVersion: expectedVersionSchema.optional(),
+    /** Set after the administrator has seen and accepted a duplicate-signal warning. */
+    confirmDuplicate: z.boolean().default(false),
+    /**
+     * True: the signal is active at once. The activation is recorded in the same transaction as the
+     * publication, as its own (internal) event, and is still not a fill. False: it waits for entry until an
+     * administrator activates it or its entry window ends. Omitted: the platform's start mode decides.
+     */
+    activateOnPublish: z.boolean().optional(),
+  })
+  .superRefine(requireLevels);
 
 /** Drafts may be incomplete: only publication requires the full signal. */
 export const draftSchema = z.strictObject({
@@ -140,7 +161,7 @@ export const draftSchema = z.strictObject({
 });
 export type DraftInput = z.infer<typeof draftSchema>;
 
-export const previewSignalSchema = signalFieldsSchema;
+export const previewSignalSchema = signalFieldsSchema.superRefine(requireLevels);
 
 /* ---------- Trade commands ---------- */
 
@@ -153,8 +174,9 @@ const executionBasis = z.enum(['HYPOTHETICAL_OUTCOME', 'ADMIN_DECLARED_EXECUTION
 const closureOutcome = {
   exitPrice: priceSchema,
   exitedAt: instant.optional(),
-  basis: executionBasis,
-  /** Entry for a hypothetical outcome. Required when the recommendation was a range. */
+  /** What the result is measured from. Left out, the server decides (see `exitBasis`). */
+  basis: executionBasis.optional(),
+  /** Entry the result is measured from, when the recommendation was a range. */
   hypotheticalEntry: priceSchema.optional(),
   fees: priceSchema.optional(),
   comment,
@@ -167,6 +189,10 @@ export const tradeCommandSchema = z.discriminatedUnion('action', [
     /** Optional administrator-declared fill. Without it the trade is active but has no execution record. */
     actualEntry: priceSchema.optional(),
     quantity: priceSchema.optional(),
+    /** Required to activate an upcoming trade, and refused for any other: its final entry and levels. */
+    entryPrice: priceSchema.optional(),
+    targets: z.array(priceSchema).min(1).max(MAX_TARGETS).optional(),
+    stopLoss: priceSchema.optional(),
     comment,
   }),
   z.strictObject({
@@ -334,11 +360,50 @@ export const updateSubscriberSchema = z.strictObject({
   phone: contactPhone,
   notes: shortText(2000).nullable().optional(),
 });
+const subscriptionDays = z
+  .number({ error: 'Enter the number of days' })
+  .int('Use a whole number of days')
+  .min(1, 'Use at least 1 day')
+  .max(MAX_SUBSCRIPTION_DAYS, `Use at most ${MAX_SUBSCRIPTION_DAYS} days`);
+
 export const renewSubscriptionSchema = z.strictObject({
-  durationDays: z.number().int().min(1).max(MAX_SUBSCRIPTION_DAYS),
+  durationDays: subscriptionDays,
+  /** Used only when the subscription has already expired: the new window starts on this local date. */
+  activationDate: localDate.optional(),
   idempotencyKey: idempotencyKeySchema,
   note: shortText(500).optional(),
 });
+/** A paid window for someone with no access, an expired one, or a running trial. */
+export const startSubscriptionSchema = z.strictObject({
+  durationDays: subscriptionDays,
+  activationDate: localDate.optional(),
+  note: shortText(500).optional(),
+  /** Required when the new window would end before access the person already has. */
+  confirmShorter: z.boolean().default(false),
+  idempotencyKey: idempotencyKeySchema,
+});
+export const grantTrialSchema = z.strictObject({
+  durationDays: z
+    .number({ error: 'Enter the number of days' })
+    .int('Use a whole number of days')
+    .min(1, 'Use at least 1 day')
+    .max(MAX_TRIAL_DAYS, `A trial can last at most ${MAX_TRIAL_DAYS} days`),
+  activationDate: localDate.optional(),
+  note: shortText(500).optional(),
+  /** Accepted from older clients and ignored: any member may be given a trial, as often as needed. */
+  allowRepeat: z.boolean().optional(),
+  idempotencyKey: idempotencyKeySchema,
+});
+export const enquiryStatusSchema = z.strictObject({ status: z.enum(ENQUIRY_STATUSES) });
+export const listRegistrationsQuery = z.object({
+  q: z.string().trim().max(120).optional(),
+  enquiry: z.enum(ENQUIRY_STATUSES).optional(),
+  access: z.enum(['NONE', 'TRIAL', 'ACTIVE', 'EXPIRED']).optional(),
+  unseen: z.enum(['true', 'false']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export const passwordResetsQuery = z.object({ status: z.enum(['OPEN', 'ALL']).default('OPEN') });
 export const adjustSubscriptionSchema = z.strictObject({
   /** Last local calendar date of access, inclusive. */
   lastValidDate: localDate.optional(),
@@ -455,8 +520,15 @@ export const settingsSchema = z.strictObject({
   trailingStopWording: z.enum(TRAILING_STOP_WORDINGS),
   screenshotsAllowedDefault: z.boolean(),
   historyScope: z.enum(HISTORY_SCOPES),
+  /** Where enquiries go. Optional here, so older clients that do not send them leave them unchanged. */
+  supportWhatsapp: supportWhatsappField.optional(),
+  supportEmail: supportEmailField.optional(),
+  /** Whether new people may sign themselves up. Optional for older clients, like the two above. */
+  signupOpen: z.boolean().optional(),
+  /** The length a free trial starts at when an administrator grants one. */
+  defaultTrialDays: z.number().int().min(1).max(MAX_TRIAL_DAYS).optional(),
 });
-export type SettingsInput = z.infer<typeof settingsSchema>;
+export type SettingsInput = z.output<typeof settingsSchema>;
 
 export const approvalSchema = z.strictObject({
   jurisdiction: z.string().trim().min(2).max(120),
@@ -468,13 +540,11 @@ export const approvalSchema = z.strictObject({
   notes: shortText(2000).optional(),
 });
 
+/** One instrument and a period. Figures are never computed from a subset chosen by outcome. */
 export const performanceQuery = z.object({
   from: localDate.optional(),
   to: localDate.optional(),
   symbol: z.string().trim().max(24).optional(),
-  basis: z.enum(CALCULATION_BASES).optional(),
-  direction: z.enum(DIRECTIONS).optional(),
-  outcome: z.enum(TRADE_OUTCOMES).optional(),
 });
 
 export const auditQuery = z.object({

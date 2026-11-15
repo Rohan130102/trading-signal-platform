@@ -7,10 +7,16 @@ test('complete subscriber journey', async ({ page }) => {
   const api = await adminApi();
   const sub = await createSubscriberViaApi(api);
 
-  await test.step('first sign-in leads straight to the feed', async () => {
+  await test.step('first sign-in leads straight to Signals, with the same five places as the phone app', async () => {
     await signInFirstTime(page, sub);
-    await expect(page.getByRole('heading', { name: 'Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
     await expect(page.getByText('Live', { exact: true })).toBeVisible();
+    const nav = page.getByRole('navigation', { name: 'Main' }).first();
+    for (const name of ['Signals', 'Alerts', 'News', 'History', 'Account']) {
+      await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible();
+    }
+    await nav.getByRole('link', { name: /^Alerts/ }).click();
+    await expect(page.getByRole('heading', { name: 'Alerts', exact: true })).toBeVisible();
   });
 
   const entry = nextPrice();
@@ -27,9 +33,9 @@ test('complete subscriber journey', async ({ page }) => {
     await expect(card.getByText('Awaiting entry')).toBeVisible();
   });
 
-  await test.step('active trades shows it with current levels', async () => {
-    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Active' }).click();
-    await expect(page.getByText('Awaiting entry (')).toBeVisible();
+  await test.step('Signals lists it under Upcoming with current levels', async () => {
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Signals' }).click();
+    await expect(page.getByRole('heading', { name: /^Upcoming/ })).toBeVisible();
     await page.getByRole('link', { name: new RegExp(trade.ref) }).click();
     await expect(page.getByRole('heading', { name: 'XAU/USD' })).toBeVisible();
     await expect(page.getByText(/waiting for its entry/)).toBeVisible();
@@ -49,8 +55,11 @@ test('complete subscriber journey', async ({ page }) => {
     await expect(page.getByText(/Owner Admin/)).toHaveCount(0);
   });
 
-  await test.step('the update in the feed reads as an update, not a new entry', async () => {
-    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Feed' }).click();
+  await test.step('the update in Alerts reads as an update, not a new entry', async () => {
+    await page
+      .getByRole('navigation', { name: 'Main' })
+      .getByRole('link', { name: /^Alerts/ })
+      .click();
     const update = page
       .getByRole('link', { name: new RegExp(`Open trade ${trade.ref}`) })
       .filter({ hasText: 'Stop-loss' })
@@ -70,11 +79,18 @@ test('complete subscriber journey', async ({ page }) => {
     await expect(page.getByRole('link', { name: new RegExp(trade.ref) })).toBeVisible();
   });
 
-  await test.step('account explains the subscription in plain words', async () => {
+  await test.step('account explains the subscription in plain words, with About us and support', async () => {
     await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Account' }).click();
     await expect(page.getByText(/30 days left, including today/)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Notifications' })).toBeVisible();
     await expect(page.getByText(/Phone alerts can arrive late/)).toBeVisible();
+    await expect(page.getByRole('link', { name: /About us/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /Risk disclosure and privacy/ })).toBeVisible();
+  });
+
+  await test.step('News lists the desk’s announcements', async () => {
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'News' }).click();
+    await expect(page.getByRole('heading', { name: 'News' })).toBeVisible();
   });
 });
 
@@ -92,14 +108,14 @@ test('the app stays live across a refresh during an active trade', async ({ page
   await expect(page.getByText(/cancelled before entry/)).toBeVisible();
 });
 
-test('an unread count shows on other screens and clears on the feed', async ({ page }) => {
+test('an unread count shows on other screens and clears on Alerts', async ({ page }) => {
   const api = await adminApi();
   const sub = await createSubscriberViaApi(api);
   await signInFirstTime(page, sub);
-  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Active' }).click();
+  await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Signals' }).click();
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   await publishViaApi(api);
-  const feedLink = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Feed/ });
+  const feedLink = page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /Alerts/ });
   await expect(feedLink.getByText('1 unread').or(feedLink.getByText('1', { exact: true }))).toBeVisible();
   // The count comes from the server, so it survives arriving on another screen.
   await page.reload();
@@ -108,11 +124,12 @@ test('an unread count shows on other screens and clears on the feed', async ({ p
   await expect(feedLink.getByText(/unread/)).toHaveCount(0);
 });
 
-test('times stay truthful on a feed left open, and show the actual time', async ({ page }) => {
+test('times stay truthful on Alerts left open, and show the actual time', async ({ page }) => {
   await page.clock.install();
   const api = await adminApi();
   const sub = await createSubscriberViaApi(api);
   await signInFirstTime(page, sub);
+  await page.goto('/app/alerts');
   const trade = await publishViaApi(api);
   const card = page.getByRole('link', { name: new RegExp(`Open trade ${trade.ref}`) }).first();
   await expect(card.getByText(/just now/)).toBeVisible();
@@ -134,8 +151,10 @@ test('sign out ends the session and returns to sign-in', async ({ page }) => {
 
 test('wrong credentials explain themselves and reveal nothing', async ({ page }) => {
   await page.goto('/login');
-  await page.getByLabel('Login ID').fill('nobody.here');
+  await page.getByLabel('Email or username').fill('nobody.here');
   await page.getByLabel('Password', { exact: true }).fill('wrong-password');
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'That login ID or password is not right.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'That email, username or password is not right.' }),
+  ).toBeVisible();
 });

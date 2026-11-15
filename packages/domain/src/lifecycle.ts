@@ -10,7 +10,14 @@ import {
   validatePrice,
 } from './instrument.js';
 import { type CalculationBasis, type ClosureResult, computeClosureResult } from './pnl.js';
-import { type Direction, type EntryLevels, MAX_TARGETS, validateEntryAndTargets } from './signal.js';
+import {
+  type Direction,
+  type EntryLevels,
+  MAX_TARGETS,
+  singleEntry,
+  validateEntryAndTargets,
+  validateSignalLevels,
+} from './signal.js';
 import {
   ACTION_FROM,
   canTransition,
@@ -72,8 +79,9 @@ export interface TradeState {
   spec: InstrumentSpec;
   direction: Direction;
   entry: EntryLevels;
-  originalStopLoss: DecimalString;
-  stopLoss: DecimalString;
+  /** Null only for an upcoming range trade, published before its levels: it gets them when activated. */
+  originalStopLoss: DecimalString | null;
+  stopLoss: DecimalString | null;
   targets: TargetState[];
   closedFraction: DecimalString;
   closureBasis: CalculationBasis | null;
@@ -88,7 +96,7 @@ export interface TradeState {
 /** Shown on every event so a card can be drawn without further lookups. */
 export interface EventSnapshot {
   status: TradeStatus;
-  stopLoss: DecimalString;
+  stopLoss: DecimalString | null;
   targets: { index: number; price: DecimalString; status: 'OPEN' | 'HIT' }[];
   closedFraction: DecimalString;
 }
@@ -120,6 +128,10 @@ export interface EventPayload {
   // ENTRY_ACTIVATED / EXECUTION_RECORDED
   activationPrice?: DecimalString;
   quantity?: DecimalString | null;
+  /** ENTRY_ACTIVATED of an upcoming trade: the levels it was activated with. */
+  finalEntry?: DecimalString;
+  activatedTargets?: DecimalString[];
+  activatedStop?: DecimalString;
   // PARTIAL_BOOKED / TRADE_CLOSED
   exitPrice?: DecimalString;
   exitedAt?: string;
@@ -189,6 +201,18 @@ export function evolve(state: TradeState, type: EventType, payload: EventPayload
     case 'ENTRY_ACTIVATED':
       next.status = 'ACTIVE';
       next.activatedAt = at;
+      if (payload.finalEntry && payload.activatedStop && payload.activatedTargets) {
+        next.entry = { type: 'SINGLE', low: payload.finalEntry, high: payload.finalEntry };
+        next.stopLoss = payload.activatedStop;
+        next.originalStopLoss = state.originalStopLoss ?? payload.activatedStop;
+        next.targets = payload.activatedTargets.map((price, i) => ({
+          index: i + 1,
+          price,
+          originalPrice: price,
+          status: 'OPEN' as const,
+          hitAt: null,
+        }));
+      }
       break;
     case 'EXECUTION_RECORDED':
       next.execution = {
@@ -287,6 +311,18 @@ function requirePrice(spec: InstrumentSpec, value: string, field: string, label:
   if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid price', issues);
 }
 
+/** An upcoming range trade: published as advance notice, with no target or stop-loss until it is activated. */
+export function levelsPending(s: { stopLoss: DecimalString | null }): boolean {
+  return s.stopLoss === null;
+}
+
+const LEVELS_PENDING_MESSAGE = 'This trade has no target or stop-loss yet. Activate it with its levels first.';
+
+function stopOf(s: TradeState): DecimalString {
+  if (s.stopLoss === null) fail('LEVELS_PENDING', LEVELS_PENDING_MESSAGE);
+  return s.stopLoss;
+}
+
 export function entryLabel(spec: InstrumentSpec, entry: EntryLevels): string {
   return entry.type === 'RANGE'
     ? `${formatPrice(spec, entry.low)} to ${formatPrice(spec, entry.high)}`
@@ -304,7 +340,7 @@ function baseContext(s: TradeState): TemplateContext {
     instrument: s.spec.symbol,
     direction: s.direction,
     entry: entryLabel(s.spec, s.entry),
-    stop: formatPrice(s.spec, s.stopLoss),
+    stop: s.stopLoss === null ? null : formatPrice(s.spec, s.stopLoss),
     target1: openOrAll[0] ? formatPrice(s.spec, openOrAll[0].price) : null,
     target2: openOrAll[1] ? formatPrice(s.spec, openOrAll[1].price) : null,
     target3: openOrAll[2] ? formatPrice(s.spec, openOrAll[2].price) : null,
@@ -359,7 +395,7 @@ function assertTargetOrder(s: TradeState, prices: string[]): void {
   if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid targets', issues);
   const first = prices[0];
   if (first) {
-    const stop = toDec(s.stopLoss);
+    const stop = toDec(stopOf(s));
     const conflict = s.direction === 'BUY' ? !toDec(first).greaterThan(stop) : !toDec(first).lessThan(stop);
     if (conflict) fail('STOP_BEYOND_TARGET', 'Targets must stay on the profit side of the current stop-loss.');
   }
@@ -368,6 +404,21 @@ function assertTargetOrder(s: TradeState, prices: string[]): void {
 interface ResolvedOutcome {
   basis: CalculationBasis;
   entryPrice: string | null;
+}
+
+/**
+ * What an exit is measured from when the administrator does not say: the basis of earlier exits (they cannot be
+ * mixed), else their recorded entry, else the signal's own entry, or for a range the entry they typed. Without any
+ * of these the exit is recorded with no result, never an invented one.
+ */
+export function exitBasis(
+  s: Pick<TradeState, 'closureBasis' | 'execution' | 'entry'>,
+  hypotheticalEntry?: string,
+): CalculationBasis {
+  if (s.closureBasis) return s.closureBasis;
+  if (s.execution) return 'ADMIN_DECLARED_EXECUTION';
+  if (s.entry.type === 'SINGLE' || hypotheticalEntry !== undefined) return 'HYPOTHETICAL_OUTCOME';
+  return 'NONE';
 }
 
 /**
@@ -422,6 +473,14 @@ function assertExitTime(s: TradeState, exitedAt: string | undefined, now: Date):
   return at.toISOString();
 }
 
+/** One line of an update notice: "Stop-loss updated: 64,920 (was 64,800)". */
+export function changeLine(change: { field: string; from: string | null; to: string | null }): string {
+  if (change.to === null) return `${change.field} removed`;
+  return change.from === null
+    ? `${change.field}: ${change.to}`
+    : `${change.field} updated: ${change.to} (was ${change.from})`;
+}
+
 /** A time in a correction notice. UTC, so it reads the same for every subscriber and in the audit log. */
 function utcLabel(iso: string | null): string | null {
   return iso ? `${iso.slice(0, 16).replace('T', ' ')} UTC` : null;
@@ -431,8 +490,7 @@ function movementText(basis: CalculationBasis, points: string | null): string | 
   if (points === null) return null;
   const value = toDec(points);
   const signed = `${value.greaterThan(0) ? '+' : ''}${formatPoints(value)} pts`;
-  const label = basis === 'HYPOTHETICAL_OUTCOME' ? 'hypothetical' : 'declared by the administrator, unverified';
-  return `${signed} (${label})`;
+  return signed;
 }
 
 function remainingQuantity(s: TradeState): Dec | null {
@@ -558,8 +616,31 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
       if (command.quantity !== undefined && command.actualEntry === undefined) {
         fail('VALIDATION', 'A quantity needs an actual entry price.');
       }
+      const givesLevels =
+        command.entryPrice !== undefined || command.targets !== undefined || command.stopLoss !== undefined;
+      let levels: EventPayload = {};
+      if (levelsPending(s)) {
+        // An upcoming trade becomes a trade here: it needs everything a full signal needs.
+        if (command.entryPrice === undefined || command.stopLoss === undefined || !command.targets?.length) {
+          fail('LEVELS_REQUIRED', 'Enter the final entry, at least one target and the stop-loss to activate.');
+        }
+        const finalEntry = canon(command.entryPrice);
+        const targets = command.targets.map(canon);
+        const stop = canon(command.stopLoss);
+        const issues = validateSignalLevels({
+          spec: s.spec,
+          direction: s.direction,
+          entry: singleEntry(finalEntry),
+          targets,
+          stopLoss: stop,
+        });
+        if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid levels', issues);
+        levels = { finalEntry, activatedTargets: targets, activatedStop: stop };
+      } else if (givesLevels) {
+        fail('VALIDATION', 'This trade already has its levels. Use Correct to change them.');
+      }
       if (command.actualEntry !== undefined) recordExecution(command.actualEntry, command.quantity);
-      emit('ENTRY_ACTIVATED', true, 'ENTRY_ACTIVATED', {});
+      emit('ENTRY_ACTIVATED', true, 'ENTRY_ACTIVATED', levels);
       break;
     }
     case 'RECORD_EXECUTION': {
@@ -572,18 +653,18 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     case 'MOVE_STOP': {
       requirePrice(s.spec, command.price, 'price', 'Stop-loss');
       const price = canon(command.price);
-      if (toDec(price).equals(toDec(s.stopLoss))) fail('NO_CHANGE', 'The stop-loss is already at that price.');
+      if (toDec(price).equals(toDec(stopOf(s)))) fail('NO_CHANGE', 'The stop-loss is already at that price.');
       assertStopConsistent(s, price);
-      if (isWorse(s.direction, toDec(price), toDec(s.stopLoss)) && !command.allowWiden) {
+      if (isWorse(s.direction, toDec(price), toDec(stopOf(s))) && !command.allowWiden) {
         fail('WIDENS_RISK', 'This moves the stop further from the trade and increases risk. Confirm to continue.');
       }
       emit(
         'STOP_MOVED',
         true,
         'STOP_MOVED',
-        { previousStop: s.stopLoss, newStop: price, stopKind: 'MANUAL' },
+        { previousStop: stopOf(s), newStop: price, stopKind: 'MANUAL' },
         {
-          previousStop: formatPrice(s.spec, s.stopLoss),
+          previousStop: formatPrice(s.spec, stopOf(s)),
         },
       );
       break;
@@ -595,15 +676,15 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
       }
       requirePrice(s.spec, entry, 'price', 'Breakeven price');
       const price = canon(entry);
-      if (toDec(price).equals(toDec(s.stopLoss))) fail('NO_CHANGE', 'The stop-loss is already at breakeven.');
+      if (toDec(price).equals(toDec(stopOf(s)))) fail('NO_CHANGE', 'The stop-loss is already at breakeven.');
       assertStopConsistent(s, price);
       emit(
         'STOP_MOVED',
         true,
         'STOP_MOVED',
-        { previousStop: s.stopLoss, newStop: price, stopKind: 'BREAKEVEN' },
+        { previousStop: stopOf(s), newStop: price, stopKind: 'BREAKEVEN' },
         {
-          previousStop: formatPrice(s.spec, s.stopLoss),
+          previousStop: formatPrice(s.spec, stopOf(s)),
         },
       );
       break;
@@ -630,10 +711,10 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         if (stop.lessThanOrEqualTo(0)) fail('VALIDATION', 'That trail distance gives a stop-loss below zero.');
         if (!isOnTick(s.spec, stop)) fail('OFF_TICK', 'That trail distance does not resolve to a valid price tick.');
       }
-      if (isWorse(s.direction, stop, toDec(s.stopLoss)) || stop.equals(toDec(s.stopLoss))) {
+      if (isWorse(s.direction, stop, toDec(stopOf(s))) || stop.equals(toDec(stopOf(s)))) {
         fail(
           'TRAIL_NOT_TIGHTER',
-          `A trail can only tighten the stop. The result (${formatPrice(s.spec, stop)}) does not improve on ${formatPrice(s.spec, s.stopLoss)}.`,
+          `A trail can only tighten the stop. The result (${formatPrice(s.spec, stop)}) does not improve on ${formatPrice(s.spec, stopOf(s))}.`,
         );
       }
       assertStopConsistent(s, canon(stop));
@@ -644,14 +725,14 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         true,
         detailed ? 'STOP_TRAILED' : 'STOP_TRAILED_GENERAL',
         {
-          previousStop: s.stopLoss,
+          previousStop: stopOf(s),
           newStop: canon(stop),
           stopKind: 'TRAIL',
           ...(command.trailPoints !== undefined ? { trailPoints: canon(command.trailPoints) } : {}),
           ...(reference !== null ? { referencePrice: canon(reference) } : {}),
         },
         {
-          previousStop: formatPrice(s.spec, s.stopLoss),
+          previousStop: formatPrice(s.spec, stopOf(s)),
           ...(detailed && reference !== null && command.trailPoints !== undefined
             ? { trail: `${formatPoints(command.trailPoints)} pts from ${formatPrice(s.spec, reference)}` }
             : {}),
@@ -687,7 +768,11 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     }
     case 'BOOK_PARTIAL': {
       requirePrice(s.spec, command.exitPrice, 'exitPrice', 'Exit price');
-      const outcome = resolveOutcome(s, command.basis, command.hypotheticalEntry);
+      const outcome = resolveOutcome(
+        s,
+        command.basis ?? exitBasis(s, command.hypotheticalEntry),
+        command.hypotheticalEntry,
+      );
       let fraction: Dec;
       let quantity: string | null = null;
       if (command.quantity !== undefined) {
@@ -758,7 +843,11 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     }
     case 'CLOSE': {
       requirePrice(s.spec, command.exitPrice, 'exitPrice', 'Exit price');
-      const outcome = resolveOutcome(s, command.basis, command.hypotheticalEntry);
+      const outcome = resolveOutcome(
+        s,
+        command.basis ?? exitBasis(s, command.hypotheticalEntry),
+        command.hypotheticalEntry,
+      );
       const fraction = new Dec(1).minus(toDec(s.closedFraction));
       const quantity =
         outcome.basis === 'ADMIN_DECLARED_EXECUTION' && s.execution?.quantity
@@ -832,6 +921,12 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
       const changes: NonNullable<EventPayload['changes']> = [];
       const specifics: EventPayload = { correctionReason: command.reason };
       let probe: TradeState = s;
+      if (
+        levelsPending(s) &&
+        (command.stopLoss !== undefined || command.targets !== undefined || command.targetPrices !== undefined)
+      ) {
+        fail('LEVELS_PENDING', 'Targets and the stop-loss are set when this trade is activated.');
+      }
 
       // The published levels. Correctable at any stage; the original publication stays in the history.
       if (command.entryLow !== undefined || command.entryHigh !== undefined) {
@@ -849,7 +944,7 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
       }
       if (command.stopLoss !== undefined && canon(command.stopLoss) !== s.stopLoss) {
         const value = canon(command.stopLoss);
-        changes.push({ field: 'Stop-loss', from: formatPrice(s.spec, s.stopLoss), to: formatPrice(s.spec, value) });
+        changes.push({ field: 'Stop-loss', from: formatPrice(s.spec, stopOf(s)), to: formatPrice(s.spec, value) });
         specifics.correctedStop = value;
         probe = { ...probe, stopLoss: value };
       }
@@ -913,10 +1008,12 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
           direction: s.direction,
           entry: probe.entry,
           targets: nextTargets.map((t) => t.price),
-        });
+        }).filter((issue) => !(levelsPending(probe) && issue.field === 'targets' && issue.code === 'REQUIRED'));
         if (issues.length > 0) fail('VALIDATION', issues[0]?.message ?? 'Invalid correction', issues);
-        requirePrice(s.spec, probe.stopLoss, 'stopLoss', 'Stop-loss');
-        assertStopConsistent({ ...probe, targets: nextTargets }, probe.stopLoss);
+        if (probe.stopLoss !== null) {
+          requirePrice(s.spec, probe.stopLoss, 'stopLoss', 'Stop-loss');
+          assertStopConsistent({ ...probe, targets: nextTargets }, probe.stopLoss);
+        }
       }
 
       // When the trade became active.
@@ -1072,9 +1169,10 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
         if (s.closures.length > 0) specifics.correctedBasis = 'ADMIN_DECLARED_EXECUTION';
       }
       specifics.changes = changes;
+      // Subscribers see what changed, plainly. The reason and who made it stay in the payload and the audit log.
       emit('CORRECTION', true, 'CORRECTION', specifics, {
         reason: command.reason,
-        changes: changes.map((c) => `${c.field} ${c.from ?? 'none'} → ${c.to ?? 'none'}`).join('; '),
+        changes: changes.map(changeLine).join('\n'),
       });
       break;
     }

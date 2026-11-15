@@ -1,9 +1,17 @@
-import { type DeviceBindingView, formatDateTime, formatLocalDate, type SubscriberDetail } from '@signaldesk/domain';
+import {
+  ACTIONS,
+  type DeviceBindingView,
+  ENQUIRY_STATUS_LABELS,
+  formatDateTime,
+  formatLocalDate,
+  type SubscriberDetail,
+} from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { AccessBadge, CredentialsCard } from '@/admin/parts';
+import { EnquiryStatusChips, RenewSheet, StartSheet, TrialSheet } from '@/admin/SubscriptionSheets';
 import { api } from '@/lib/api';
 import { newKey } from '@/lib/ids';
 import { useSession } from '@/lib/session';
@@ -11,8 +19,6 @@ import { space } from '@/theme/tokens';
 import {
   Button,
   Card,
-  Chip,
-  ChipRow,
   Divider,
   ErrorState,
   errorMessage,
@@ -32,9 +38,16 @@ import {
 type Detail = SubscriberDetail;
 
 const eventLabel = (e: Detail['events'][number]) => {
-  if (e.type === 'CREATED') return `Created for ${e.durationDays} days`;
+  if (e.type === 'CREATED' || e.type === 'STARTED') return `Subscription started for ${e.durationDays} days`;
+  if (e.type === 'TRIAL_GRANTED') return `Free trial for ${e.durationDays} days`;
   if (e.type === 'ADJUSTED') return 'Dates adjusted';
-  return `Renewed for ${e.durationDays} days${e.mode === 'EXTENDED_FROM_EXPIRY' ? ', extended from expiry' : ', started fresh'}`;
+  const how =
+    e.mode === 'EXTENDED_FROM_EXPIRY'
+      ? ', extended from expiry'
+      : e.mode === 'RESTARTED_FROM_DATE'
+        ? ', from a set date'
+        : ', started fresh';
+  return `Renewed for ${e.durationDays} days${how}`;
 };
 
 export default function SubscriberScreen() {
@@ -45,7 +58,18 @@ export default function SubscriberScreen() {
     queryKey: ['admin', 'subscriber', id],
     queryFn: () => api.get<Detail>(`/admin/subscribers/${id}`),
   });
-  const [dialog, setDialog] = useState<'renew' | 'adjust' | 'reset' | 'suspend' | 'contact' | null>(null);
+  const [dialog, setDialog] = useState<'start' | 'trial' | 'renew' | 'adjust' | 'reset' | 'suspend' | 'contact' | null>(
+    null,
+  );
+  // Opening a new registration takes it off the badge for every administrator.
+  const selfRegistered = detail.data?.selfRegistered === true;
+  useEffect(() => {
+    if (selfRegistered) {
+      void api
+        .post(`/admin/subscribers/${id}/seen`)
+        .then(() => client.invalidateQueries({ queryKey: ['admin', 'inbox'] }));
+    }
+  }, [client, id, selfRegistered]);
   const refetchAll = useCallback(() => void client.invalidateQueries({ queryKey: ['admin'] }), [client]);
   const act = useMutation({
     mutationFn: (path: string) => api.post(`/admin/subscribers/${id}/${path}`),
@@ -86,22 +110,64 @@ export default function SubscriberScreen() {
               hint={s.mustChangePassword ? 'Has not set a password yet' : undefined}
             />
           </Card>
-          <Button
-            testID="subscriber-renew"
-            label="Renew"
-            icon="refresh"
-            variant="primary"
-            large
-            onPress={() => setDialog('renew')}
-          />
-          <Card padded={false} style={{ paddingHorizontal: space.lg }}>
-            <ListRow
-              testID="subscriber-adjust"
-              icon="calendar-outline"
-              title="Change dates"
-              onPress={() => setDialog('adjust')}
+          {s.selfRegistered && (
+            <Card style={{ gap: space.xs }} testID="registration">
+              <T v="strong">{`${s.firstName ?? ''} ${s.lastName ?? ''}`.trim()}</T>
+              <T v="small" c="muted">
+                {[
+                  s.age ? `Age ${s.age}` : null,
+                  s.emailVerifiedAt ? 'Email verified' : 'Email not verified',
+                  ENQUIRY_STATUS_LABELS[s.enquiryStatus],
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </T>
+            </Card>
+          )}
+          {s.actions.includes('START') && (
+            <Button
+              testID="subscriber-start"
+              label={ACTIONS.startSubscription}
+              icon="add-circle-outline"
+              variant="primary"
+              large
+              onPress={() => setDialog('start')}
             />
-            <Divider />
+          )}
+          {s.actions.includes('GRANT_TRIAL') && (
+            <Button
+              testID="subscriber-trial"
+              label={ACTIONS.grantFreeTrial}
+              icon="gift-outline"
+              large
+              onPress={() => setDialog('trial')}
+            />
+          )}
+          {s.actions.includes('RENEW') && (
+            <Button
+              testID="subscriber-renew"
+              label={ACTIONS.renewSubscription}
+              icon="refresh"
+              variant="primary"
+              large
+              onPress={() => setDialog('renew')}
+            />
+          )}
+          <Card>
+            <EnquiryStatusChips detail={s} onSaved={refetchAll} />
+          </Card>
+          <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+            {s.subscription.state !== 'NONE' && (
+              <>
+                <ListRow
+                  testID="subscriber-adjust"
+                  icon="calendar-outline"
+                  title="Change dates"
+                  onPress={() => setDialog('adjust')}
+                />
+                <Divider />
+              </>
+            )}
             <ListRow
               testID="subscriber-contact"
               icon="create-outline"
@@ -129,7 +195,7 @@ export default function SubscriberScreen() {
                 testID="subscriber-suspend"
                 danger
                 icon="pause-circle-outline"
-                title="Suspend account"
+                title={ACTIONS.suspendAccount}
                 onPress={() => setDialog('suspend')}
               />
             ) : (
@@ -173,6 +239,8 @@ export default function SubscriberScreen() {
           )}
           <BoundPhones subscriberId={s.id} />
           <Screenshots detail={s} onSaved={refetchAll} />
+          {dialog === 'start' && <StartSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
+          {dialog === 'trial' && <TrialSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'renew' && <RenewSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'adjust' && <AdjustSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
           {dialog === 'contact' && <ContactSheet detail={s} onClose={() => setDialog(null)} onDone={refetchAll} />}
@@ -188,7 +256,7 @@ export default function SubscriberScreen() {
  * The app installations bound to this subscriber. Releasing one lets another account sign in on that phone
  * and signs this subscriber out of it. Every release is in the audit log with its reason.
  */
-/** Screenshot permission for this subscriber. Only the Master Admin changes it; their app applies it at once. */
+/** Screenshot permission for this subscriber. Only the Master Admin sees and changes it; their app applies it at once. */
 function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
   const master = useSession().me?.isMasterAdmin === true;
   const toast = useToast();
@@ -202,6 +270,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
     onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
   });
   const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  if (!master) return null;
   return (
     <>
       <SectionTitle>Screenshots</SectionTitle>
@@ -209,25 +278,18 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
         <T v="small" c="muted">
           {detail.screenshotsEffective ? 'Allowed for this subscriber now.' : 'Blocked for this subscriber now.'}
         </T>
-        {master ? (
-          <Segmented<'DEFAULT' | 'BLOCK' | 'ALLOW'>
-            label="Screenshot permission"
-            value={value}
-            onChange={(v) => !save.isPending && save.mutate(v === 'DEFAULT' ? null : v === 'ALLOW')}
-            options={[
-              { value: 'DEFAULT', label: 'Default', testID: 'screens-default' },
-              { value: 'BLOCK', label: 'Block', testID: 'screens-block' },
-              { value: 'ALLOW', label: 'Allow', testID: 'screens-allow' },
-            ]}
-          />
-        ) : (
-          <T v="caption" c="subtle">
-            Only the Master Admin can change this.
-          </T>
-        )}
+        <Segmented<'DEFAULT' | 'BLOCK' | 'ALLOW'>
+          label="Screenshot permission"
+          value={value}
+          onChange={(v) => !save.isPending && save.mutate(v === 'DEFAULT' ? null : v === 'ALLOW')}
+          options={[
+            { value: 'DEFAULT', label: 'Default', testID: 'screens-default' },
+            { value: 'BLOCK', label: 'Block', testID: 'screens-block' },
+            { value: 'ALLOW', label: 'Allow', testID: 'screens-allow' },
+          ]}
+        />
         <T v="caption" c="subtle">
-          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
-          screenshot when it sees one.
+          iPhone cannot fully block screenshots.
         </T>
       </Card>
     </>
@@ -352,68 +414,6 @@ interface SheetProps {
   detail: Detail;
   onClose: () => void;
   onDone: () => void;
-}
-
-function RenewSheet({ detail, onClose, onDone }: SheetProps) {
-  const toast = useToast();
-  const [days, setDays] = useState('30');
-  const [note, setNote] = useState('');
-  const [key] = useState(newKey);
-  const running = detail.subscription.state === 'ACTIVE' || detail.subscription.state === 'SCHEDULED';
-  const renew = useMutation({
-    mutationFn: () =>
-      api.post<{ subscriber: Detail }>(`/admin/subscribers/${detail.id}/renew`, {
-        durationDays: Number(days),
-        idempotencyKey: key,
-        note: note.trim() || undefined,
-      }),
-    onSuccess: (r) => {
-      onDone();
-      toast({
-        title: `Renewed through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`,
-        tone: 'success',
-      });
-      onClose();
-    },
-  });
-  return (
-    <Sheet
-      title={`Renew ${detail.name}`}
-      onClose={onClose}
-      footer={
-        <Button
-          testID="renew-submit"
-          label={`Renew for ${days || 0} days`}
-          variant="primary"
-          large
-          disabled={!Number(days)}
-          loading={renew.isPending}
-          onPress={() => renew.mutate()}
-        />
-      }
-    >
-      <T c="muted">
-        {running
-          ? `Still active, so the new days are added after ${formatLocalDate(detail.subscription.lastValidDate as string)}. Nothing already paid for is lost.`
-          : 'Expired, so the new period starts today.'}
-      </T>
-      <ChipRow>
-        {[30, 90, 180, 365].map((d) => (
-          <Chip key={d} label={`${d} days`} on={days === String(d)} onPress={() => setDays(String(d))} />
-        ))}
-      </ChipRow>
-      <Field
-        testID="renew-days"
-        label="Days"
-        num
-        value={days}
-        onChangeText={(v) => setDays(v.replace(/\D/g, ''))}
-        keyboardType="number-pad"
-      />
-      <Field label="Note" hint="Optional. Only administrators see this." value={note} onChangeText={setNote} />
-      <FormError error={renew.error} />
-    </Sheet>
-  );
 }
 
 function AdjustSheet({ detail, onClose, onDone }: SheetProps) {

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  exitBasis,
   ACTION_FROM,
   allowedActions,
   canTransition,
+  changeLine,
+  isUpcomingSignal,
+  previewSignalSchema,
   type ClosureState,
   decide,
   DomainError,
@@ -653,7 +657,7 @@ describe('corrections', () => {
     expect(d.next.status).toBe('CLOSED');
     expect(d.events[1]?.payload.changes).toEqual([
       { field: 'Actual entry', from: null, to: '3,310.00' },
-      { field: 'Result', from: null, to: '+150 pts (declared by the administrator, unverified)' },
+      { field: 'Result', from: null, to: '+150 pts' },
     ]);
 
     // The stored state is still the replay of its events.
@@ -864,5 +868,160 @@ describe('event integrity', () => {
     expect(title).toBe('Move stop-loss to 3,350.00: BUY XAU/USD');
     expect(body).toContain('moved from 3,120.00 to 3,350.00');
     expect(body).toContain('Lock in gains');
+  });
+});
+
+describe('upcoming range trades', () => {
+  const upcoming = (overrides: Partial<TradeState> = {}) =>
+    tradeState({
+      status: 'PUBLISHED',
+      version: 1,
+      entry: { type: 'RANGE', low: '3300', high: '3310' },
+      originalStopLoss: null,
+      stopLoss: null,
+      targets: [],
+      activatedAt: null,
+      ...overrides,
+    });
+
+  it('accepts a range signal with neither target nor stop-loss, and nothing else', () => {
+    const base = {
+      instrumentId: '6b1f0a52-4f55-4b8e-9d10-222222222222',
+      direction: 'BUY',
+      entryType: 'RANGE',
+      entryLow: '3300',
+      entryHigh: '3310',
+    };
+    expect(previewSignalSchema.safeParse(base).success).toBe(true);
+    expect(isUpcomingSignal({ entryType: 'RANGE', targets: [], stopLoss: undefined })).toBe(true);
+    expect(previewSignalSchema.safeParse({ ...base, stopLoss: '3200' }).success).toBe(false);
+    expect(previewSignalSchema.safeParse({ ...base, targets: ['3400'] }).success).toBe(false);
+    expect(previewSignalSchema.safeParse({ ...base, entryType: 'SINGLE', entryHigh: '3300' }).success).toBe(false);
+    expect(
+      previewSignalSchema.safeParse({
+        ...base,
+        entryType: 'SINGLE',
+        entryHigh: '3300',
+        targets: ['3400'],
+        stopLoss: '3200',
+      }).success,
+    ).toBe(true);
+  });
+
+  it('refuses activation without the final entry, a target and a stop-loss', () => {
+    expect(code(() => run(upcoming(), { action: 'ACTIVATE' }))).toBe('LEVELS_REQUIRED');
+    expect(code(() => run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'] }))).toBe(
+      'LEVELS_REQUIRED',
+    );
+    expect(code(() => run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', stopLoss: '3200' }))).toBe(
+      'LEVELS_REQUIRED',
+    );
+  });
+
+  it('applies the BUY and SELL rules to the final levels', () => {
+    expect(
+      code(() => run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', targets: ['3250'], stopLoss: '3200' })),
+    ).toBe('VALIDATION');
+    expect(
+      code(() => run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'], stopLoss: '3350' })),
+    ).toBe('VALIDATION');
+    const sell = upcoming({ direction: 'SELL' });
+    expect(code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3200'], stopLoss: '3350' }))).toBe(
+      'NO_ERROR',
+    );
+    expect(code(() => run(sell, { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400'], stopLoss: '3350' }))).toBe(
+      'VALIDATION',
+    );
+  });
+
+  it('activates the same trade with its final levels and keeps the published range in the event', () => {
+    const d = run(upcoming(), { action: 'ACTIVATE', entryPrice: '3305', targets: ['3400', '3450'], stopLoss: '3250' });
+    expect(d.events.map((e) => e.type)).toEqual(['ENTRY_ACTIVATED']);
+    expect(d.next).toMatchObject({
+      ref: 'T-0001',
+      status: 'ACTIVE',
+      entry: { type: 'SINGLE', low: '3305', high: '3305' },
+      stopLoss: '3250',
+      originalStopLoss: '3250',
+    });
+    expect(d.next.targets.map((t) => [t.index, t.price, t.originalPrice])).toEqual([
+      [1, '3400', '3400'],
+      [2, '3450', '3450'],
+    ]);
+    expect(d.events[0]?.payload).toMatchObject({ finalEntry: '3305', activatedStop: '3250' });
+    const text = renderTemplateText(defaultTemplate('ENTRY_ACTIVATED').body, d.events[0]!.templateContext);
+    expect(text).toContain('Entry: 3,305.00');
+    expect(text).toContain('Target 1: 3,400.00');
+    expect(text).toContain('Stop-loss: 3,250.00');
+    // Replaying the event reproduces the stored trade.
+    expect(evolve(upcoming(), 'ENTRY_ACTIVATED', d.events[0]!.payload, NOW.toISOString())).toMatchObject({
+      stopLoss: '3250',
+      entry: { type: 'SINGLE', low: '3305' },
+    });
+  });
+
+  it('refuses levels on a trade that already has them', () => {
+    expect(
+      code(() =>
+        run(tradeState({ status: 'PUBLISHED', version: 1, activatedAt: null }), {
+          action: 'ACTIVATE',
+          entryPrice: '3300',
+          targets: ['3400'],
+          stopLoss: '3200',
+        }),
+      ),
+    ).toBe('VALIDATION');
+  });
+
+  it('cannot move a stop or targets it does not have, but its range can still be corrected', () => {
+    expect(code(() => run(upcoming(), { action: 'MOVE_STOP', price: '3200', allowWiden: false }))).toBe(
+      'LEVELS_PENDING',
+    );
+    expect(code(() => run(upcoming(), { action: 'MODIFY_TARGETS', targets: ['3400'] }))).toBe('LEVELS_PENDING');
+    expect(code(() => run(upcoming(), { action: 'CORRECT', reason: 'Typo', stopLoss: '3200' }))).toBe('LEVELS_PENDING');
+    const d = run(upcoming(), { action: 'CORRECT', reason: 'Typo', entryLow: '3295', entryHigh: '3310' });
+    expect(d.next.entry).toEqual({ type: 'RANGE', low: '3295', high: '3310' });
+    expect(d.next.stopLoss).toBeNull();
+  });
+
+  it('renders an upcoming trade with no empty target or stop-loss lines', () => {
+    const text = renderTemplateText(defaultTemplate('UPCOMING_TRADE').body, {
+      entry: '3,300.00 to 3,310.00',
+      stop: null,
+      target1: null,
+    });
+    expect(text).toBe('Entry zone: 3,300.00 to 3,310.00\nAwaiting activation');
+  });
+});
+
+describe('update wording for subscribers', () => {
+  it('names the new value and the old one, without the reason or the administrator', () => {
+    const d = run(tradeState(), { action: 'CORRECT', reason: 'Fat finger by the desk', stopLoss: '3130' });
+    const body = renderTemplateText(defaultTemplate('CORRECTION').body, d.events[0]!.templateContext);
+    const title = renderTemplateText(defaultTemplate('CORRECTION').title, d.events[0]!.templateContext);
+    expect(title).toBe('Updated: BUY XAU/USD');
+    expect(body).toBe('Stop-loss updated: 3,130.00 (was 3,120.00)');
+    expect(body).not.toContain('Fat finger');
+    // Kept for administrators and the audit trail.
+    expect(d.events[0]?.payload.correctionReason).toBe('Fat finger by the desk');
+    expect(changeLine({ field: 'Actual entry', from: null, to: '3,310.00' })).toBe('Actual entry: 3,310.00');
+  });
+});
+
+describe('the basis of an exit, when the administrator does not choose one', () => {
+  const state = (overrides: Record<string, unknown>) =>
+    ({
+      closureBasis: null,
+      execution: null,
+      entry: { type: 'SINGLE', low: '100', high: '100' },
+      ...overrides,
+    }) as never;
+  it('follows earlier exits, then a recorded entry, then the signal entry or the entry typed for a range', () => {
+    expect(exitBasis(state({ closureBasis: 'NONE' }), '101')).toBe('NONE');
+    expect(exitBasis(state({ execution: { entryPrice: '100' } }))).toBe('ADMIN_DECLARED_EXECUTION');
+    expect(exitBasis(state({}))).toBe('HYPOTHETICAL_OUTCOME');
+    expect(exitBasis(state({ entry: { type: 'RANGE', low: '100', high: '110' } }), '105')).toBe('HYPOTHETICAL_OUTCOME');
+    // A range with nothing to measure from records the exit without a result, never an invented one.
+    expect(exitBasis(state({ entry: { type: 'RANGE', low: '100', high: '110' } }))).toBe('NONE');
   });
 });

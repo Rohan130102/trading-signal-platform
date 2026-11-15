@@ -22,8 +22,8 @@ export type CalculationBasis = (typeof CALCULATION_BASES)[number];
 
 export const BASIS_LABELS: Record<CalculationBasis, string> = {
   NONE: 'No measurable basis',
-  HYPOTHETICAL_OUTCOME: 'Hypothetical outcome of the signal',
-  ADMIN_DECLARED_EXECUTION: 'Execution declared by the administrator (unverified)',
+  HYPOTHETICAL_OUTCOME: 'Signal result, measured from its own entry',
+  ADMIN_DECLARED_EXECUTION: 'Measured from the recorded entry, not independently verified',
   EXTERNALLY_VERIFIED: 'Externally verified execution',
 };
 
@@ -205,6 +205,8 @@ export interface PerformanceStats {
   winRateDenominator: number;
   averageWinPoints: DecimalString | null;
   averageLossPoints: DecimalString | null;
+  /** Average result per measured trade, in points. Meaningful for one instrument only, like `netPoints`. */
+  averagePoints: DecimalString | null;
   netPoints: DecimalString;
   /** Monetary figures cover only trades that have them; see `monetaryTrades`. */
   monetaryTrades: number;
@@ -240,6 +242,7 @@ export function computePerformanceStats(trades: StatsTrade[]): PerformanceStats 
     winRateDenominator: 0,
     averageWinPoints: null,
     averageLossPoints: null,
+    averagePoints: null,
     netPoints: '0',
     monetaryTrades: 0,
     grossPnl: null,
@@ -303,6 +306,9 @@ export function computePerformanceStats(trades: StatsTrade[]): PerformanceStats 
   if (stats.wins > 0) stats.averageWinPoints = canon(winPoints.dividedBy(stats.wins).toDecimalPlaces(8));
   if (stats.losses > 0) stats.averageLossPoints = canon(lossPoints.dividedBy(stats.losses).toDecimalPlaces(8));
   stats.netPoints = canon(netPoints);
+  if (stats.winRateDenominator > 0) {
+    stats.averagePoints = canon(netPoints.dividedBy(stats.winRateDenominator).toDecimalPlaces(8));
+  }
   if (stats.monetaryTrades > 0) {
     stats.grossPnl = canon(gross);
     stats.netPnl = canon(net);
@@ -310,4 +316,110 @@ export function computePerformanceStats(trades: StatsTrade[]): PerformanceStats 
   if (winMonetary > 0) stats.averageWinNet = canon(winNet.dividedBy(winMonetary).toDecimalPlaces(8));
   if (lossMonetary > 0) stats.averageLossNet = canon(lossNet.dividedBy(lossMonetary).toDecimalPlaces(8));
   return stats;
+}
+
+/* ---------- One performance report ---------- */
+
+/** Signals by state. Cancelled includes signals whose entry window ended before they became active. */
+export interface PerformanceCounts {
+  total: number;
+  closed: number;
+  active: number;
+  awaitingEntry: number;
+  cancelled: number;
+}
+
+/** Results of closed trades. `measured` is the win-rate denominator: closed trades with a result. */
+export interface PerformanceResults {
+  winRate: DecimalString | null;
+  wins: number;
+  losses: number;
+  breakevens: number;
+  measured: number;
+}
+
+/** One instrument's results, in its own points. Points of different instruments are never added together. */
+export interface InstrumentResults extends PerformanceResults {
+  symbol: string;
+  netPoints: DecimalString;
+  averagePoints: DecimalString | null;
+}
+
+/** One step of an instrument's running total, in the order trades finished. */
+export interface RunningTotalPoint {
+  ref: string;
+  at: string;
+  points: DecimalString;
+  total: DecimalString;
+}
+
+export interface ReportTrade extends StatsTrade {
+  ref: string;
+  /** When the trade finished: its close, or the last exit. */
+  finishedAt: string | null;
+}
+
+export interface PerformanceSummary {
+  counts: PerformanceCounts;
+  results: PerformanceResults;
+  instruments: InstrumentResults[];
+  /** For one instrument only; null when several are in view. */
+  running: RunningTotalPoint[] | null;
+}
+
+function resultsOf(stats: PerformanceStats): PerformanceResults {
+  return {
+    winRate: stats.winRate,
+    wins: stats.wins,
+    losses: stats.losses,
+    breakevens: stats.breakevens,
+    measured: stats.winRateDenominator,
+  };
+}
+
+/**
+ * The single performance calculation, used by the administrators' dashboard and the public results alike. Every
+ * trade counts once. A closed trade without a result counts as closed and nowhere in the win rate; nothing is
+ * invented for it. Points are summed per instrument only.
+ */
+export function summarizePerformance(trades: ReportTrade[], symbol?: string): PerformanceSummary {
+  const all = computePerformanceStats(trades);
+  const symbols = [...new Set(trades.map((t) => t.symbol))].sort();
+  const instruments = symbols.map((s) => {
+    const stats = computePerformanceStats(trades.filter((t) => t.symbol === s));
+    return { symbol: s, ...resultsOf(stats), netPoints: stats.netPoints, averagePoints: stats.averagePoints };
+  });
+  const single = symbol ?? (symbols.length === 1 ? symbols[0] : undefined);
+  let running: RunningTotalPoint[] | null = null;
+  if (single) {
+    let total = new Dec(0);
+    running = trades
+      .filter(
+        (t) =>
+          t.symbol === single &&
+          t.status === 'CLOSED' &&
+          t.aggregate !== null &&
+          t.aggregate.outcome !== 'UNRESOLVED' &&
+          t.aggregate.weightedPoints !== null &&
+          t.finishedAt !== null,
+      )
+      .sort((a, b) => (a.finishedAt as string).localeCompare(b.finishedAt as string))
+      .map((t) => {
+        const points = toDec(t.aggregate?.weightedPoints as string);
+        total = total.plus(points);
+        return { ref: t.ref, at: t.finishedAt as string, points: canon(points), total: canon(total) };
+      });
+  }
+  return {
+    counts: {
+      total: all.totalRecords,
+      closed: all.finalized,
+      active: all.open,
+      awaitingEntry: all.awaitingEntry,
+      cancelled: all.cancelled + all.expiredWithoutEntry,
+    },
+    results: resultsOf(all),
+    instruments,
+    running,
+  };
 }

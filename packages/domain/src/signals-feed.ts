@@ -15,8 +15,8 @@ export type StatusGroup = (typeof STATUS_GROUPS)[number];
 export const STATUS_GROUP_LABELS: Record<StatusGroup, string> = {
   ALL: 'All',
   OPEN: 'Open',
-  AWAITING: 'Awaiting entry',
-  LIVE: 'In trade',
+  AWAITING: 'Upcoming',
+  LIVE: 'Active',
   CLOSED: 'Finished',
 };
 

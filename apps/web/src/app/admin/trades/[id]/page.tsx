@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  type AdminEvent,
-  type AdminTradeDetail,
-  BASIS_LABELS,
-  CLOSE_REASON_LABELS,
-  formatPrice,
-} from '@signaldesk/domain';
+import { type AdminEvent, type AdminTradeDetail, CLOSE_REASON_LABELS, formatPrice } from '@signaldesk/domain';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -38,19 +32,19 @@ import { useMe } from '@/lib/session';
 
 const PRIMARY: { kind: ActionKind; label: string; icon: typeof Play; key?: string; variant?: 'primary' | 'danger' }[] =
   [
-    { kind: 'ACTIVATE', label: 'Activate trade', icon: Play, key: 'A', variant: 'primary' },
-    { kind: 'MOVE_STOP', label: 'Move stop-loss', icon: ShieldCheck, key: 'M' },
-    { kind: 'MOVE_STOP_BREAKEVEN', label: 'Stop to breakeven', icon: Flag, key: 'E' },
-    { kind: 'TRAIL_STOP', label: 'Trail stop', icon: TrendingUp, key: 'T' },
-    { kind: 'TARGET_HIT', label: 'Target reached', icon: Target, key: 'H' },
-    { kind: 'BOOK_PARTIAL', label: 'Book partial', icon: BookCheck, key: 'P' },
-    { kind: 'CLOSE', label: 'Close trade', icon: CircleCheck, key: 'C', variant: 'primary' },
-    { kind: 'URGENT', label: 'Urgent instruction', icon: Siren, key: 'U' },
-    { kind: 'MODIFY_TARGETS', label: 'Change targets', icon: PencilLine },
-    { kind: 'RECORD_EXECUTION', label: 'Record my execution', icon: Lock },
-    { kind: 'CANCEL', label: 'Cancel signal', icon: Ban, variant: 'danger' },
-    { kind: 'EXPIRE', label: 'Expired, no entry', icon: OctagonX },
-    { kind: 'CORRECT', label: 'Correct an error', icon: PencilLine },
+    { kind: 'ACTIVATE', label: 'Activate Trade', icon: Play, key: 'A', variant: 'primary' },
+    { kind: 'MOVE_STOP', label: 'Update Stop-Loss', icon: ShieldCheck, key: 'M' },
+    { kind: 'MOVE_STOP_BREAKEVEN', label: 'Stop to Breakeven', icon: Flag, key: 'E' },
+    { kind: 'TRAIL_STOP', label: 'Trail Stop', icon: TrendingUp, key: 'T' },
+    { kind: 'TARGET_HIT', label: 'Target Reached', icon: Target, key: 'H' },
+    { kind: 'BOOK_PARTIAL', label: 'Book Partial', icon: BookCheck, key: 'P' },
+    { kind: 'CLOSE', label: 'Close Trade', icon: CircleCheck, key: 'C', variant: 'primary' },
+    { kind: 'URGENT', label: 'Urgent Instruction', icon: Siren, key: 'U' },
+    { kind: 'MODIFY_TARGETS', label: 'Change Targets', icon: PencilLine },
+    { kind: 'RECORD_EXECUTION', label: 'Record Entry', icon: Lock },
+    { kind: 'CANCEL', label: 'Cancel Signal', icon: Ban, variant: 'danger' },
+    { kind: 'EXPIRE', label: 'Expired, No Entry', icon: OctagonX },
+    { kind: 'CORRECT', label: 'Correct Trade', icon: PencilLine },
   ];
 
 export default function AdminTradePage() {
@@ -167,8 +161,7 @@ export default function AdminTradePage() {
             />
             {t.execution && (
               <p className="mt-3 border-t border-line pt-3 text-[13px] text-muted">
-                <Lock className="mr-1 inline size-3.5" aria-hidden /> Declared execution (private): entry{' '}
-                <span className="num text-text">{formatPrice(t, t.execution.entryPrice)}</span>
+                Your entry <span className="num text-text">{formatPrice(t, t.execution.entryPrice)}</span>
                 {t.execution.quantity && (
                   <>
                     , quantity{' '}
@@ -177,13 +170,13 @@ export default function AdminTradePage() {
                     </span>
                   </>
                 )}
-                . Not independently verified.
+                . Only administrators see this.
               </p>
             )}
           </Card>
           {aggregate && (
             <Card>
-              <CardHeader title="Result" description={BASIS_LABELS[aggregate.basis]} />
+              <CardHeader title="Result" />
               <dl className="grid grid-cols-2 border-t border-line sm:grid-cols-4">
                 <Stat label="Closed" value={percent(aggregate.closedFraction)} />
                 <Stat
@@ -261,6 +254,9 @@ export default function AdminTradePage() {
                       <Badge className="self-start">
                         <Lock className="size-3" aria-hidden /> Internal, not sent
                       </Badge>
+                    )}
+                    {e.payload.correctionReason && (
+                      <p className="text-xs text-muted">Reason (administrators only): {e.payload.correctionReason}</p>
                     )}
                     <p className="text-xs text-subtle">{e.actorName ? `By ${e.actorName}` : 'By the system'}</p>
                   </div>

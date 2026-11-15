@@ -57,7 +57,7 @@ const SAMPLE: TemplateContext = {
   exit: '3,450.00',
   portion: '50%',
   remaining: '50%',
-  movement: '+150 pts (hypothetical)',
+  movement: '+150 pts',
   reason: 'Target achieved',
   trail: '50 pts from 3,400.00',
   message: 'Sample instruction text.',

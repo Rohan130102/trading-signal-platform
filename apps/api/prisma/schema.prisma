@@ -108,6 +108,9 @@ enum SubscriptionEventType {
   CREATED
   RENEWED
   ADJUSTED
+  /// A new paid window for someone with no access, an expired one, or a running trial.
+  STARTED
+  TRIAL_GRANTED
 }
 
 model User {
@@ -131,6 +134,18 @@ model User {
   isMasterAdmin         Boolean    @default(false) @map("is_master_admin")
   /// Subscribers only. Null follows the platform default.
   screenshotsAllowed    Boolean?   @map("screenshots_allowed")
+  /// Self-registration. Older accounts, created by an administrator, have none of these.
+  firstName             String?    @map("first_name")
+  lastName              String?    @map("last_name")
+  age                   Int?
+  emailVerifiedAt       DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  selfRegisteredAt      DateTime?  @map("self_registered_at") @db.Timestamptz(3)
+  privacyAcceptedAt     DateTime?  @map("privacy_accepted_at") @db.Timestamptz(3)
+  /// When an administrator first opened this registration. Null counts towards the New Registrations badge.
+  registrationSeenAt    DateTime?  @map("registration_seen_at") @db.Timestamptz(3)
+  /// NOT_CONTACTED, INITIATED, UNDER_DISCUSSION or RESOLVED. Separate from access.
+  enquiryStatus         String     @default("NOT_CONTACTED") @map("enquiry_status")
+  enquiryUpdatedAt      DateTime?  @map("enquiry_updated_at") @db.Timestamptz(3)
   notes                 String?
   createdById           String?    @map("created_by_id") @db.Uuid
   createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -157,6 +172,15 @@ model User {
   tradesRemoved     TradeRemoval[]
   announcementsMade AnnouncementRecord[]        @relation("AnnouncementCreatedBy")
   announcementsEdit AnnouncementRecord[]        @relation("AnnouncementUpdatedBy")
+  trialGrants       TrialGrant[]                @relation("TrialGrantUser")
+  trialsGranted     TrialGrant[]                @relation("TrialGrantActor")
+  enquiries         SubscriptionEnquiry[]
+  emails            EmailOutbox[]
+  challenges        EmailChallenge[]
+  resetRequests     PasswordResetRequest[]      @relation("ResetRequestUser")
+  resetsIssued      PasswordResetRequest[]      @relation("ResetRequestIssuedBy")
+  resetsCompleted   PasswordResetRequest[]      @relation("ResetRequestCompletedBy")
+  notices           UserNotice[]
 
   @@index([role, status])
   @@index([email])
@@ -201,6 +225,8 @@ model Subscription {
   userId    String   @unique @map("user_id") @db.Uuid
   startsAt  DateTime @map("starts_at") @db.Timestamptz(3)
   expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  /// PAID or TRIAL: what the current window is. Access is the same.
+  kind      String   @default("PAID")
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -466,7 +492,9 @@ model PushSubscription {
 /// One logical push to one device for one event: the unique key makes fan-out idempotent.
 model PushDelivery {
   id                 String     @id @default(uuid()) @db.Uuid
-  eventId            String     @map("event_id") @db.Uuid
+  /// Exactly one of eventId and noticeId is set.
+  eventId            String?    @map("event_id") @db.Uuid
+  noticeId           String?    @map("notice_id") @db.Uuid
   pushSubscriptionId String     @map("push_subscription_id") @db.Uuid
   userId             String     @map("user_id") @db.Uuid
   status             PushStatus @default(PENDING)
@@ -484,10 +512,12 @@ model PushDelivery {
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  event            SignalEvent      @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  event            SignalEvent?     @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  notice           UserNotice?      @relation(fields: [noticeId], references: [id], onDelete: Cascade)
   pushSubscription PushSubscription @relation(fields: [pushSubscriptionId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, pushSubscriptionId])
+  @@unique([noticeId, pushSubscriptionId])
   @@index([status, nextAttemptAt])
   @@map("push_deliveries")
 }
@@ -548,6 +578,21 @@ model AppSettings {
   aboutBody                 String    @default("") @map("about_body")
   /// When demonstration data was last cleared. Shown beside public results.
   dataResetAt               DateTime? @map("data_reset_at") @db.Timestamptz(3)
+  /// Where subscription enquiries go. Set by the Master Admin only.
+  supportWhatsapp           String    @default("+919987255414") @map("support_whatsapp")
+  supportEmail              String    @default("singhrohan130102@gmail.com") @map("support_email")
+  signupOpen                Boolean   @default(true) @map("signup_open")
+  defaultTrialDays          Int       @default(7) @map("default_trial_days")
+  /// The SMTP account entered by the Super Admin. The password is encrypted and never returned by the API.
+  emailEnabled              Boolean   @default(false) @map("email_enabled")
+  smtpHost                  String    @default("") @map("smtp_host")
+  smtpPort                  Int       @default(587) @map("smtp_port")
+  smtpSecurity              String    @default("STARTTLS") @map("smtp_security")
+  smtpUsername              String    @default("") @map("smtp_username")
+  smtpPasswordEnc           String?   @map("smtp_password_enc")
+  emailFromName             String    @default("") @map("email_from_name")
+  emailFromAddress          String    @default("") @map("email_from_address")
+  emailTestedAt             DateTime? @map("email_tested_at") @db.Timestamptz(3)
   updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("app_settings")
@@ -723,4 +768,135 @@ model DeviceBinding {
 
   @@index([userId, releasedAt])
   @@map("device_bindings")
+}
+
+/// A free trial an administrator granted. Never created by registration itself.
+model TrialGrant {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  durationDays   Int       @map("duration_days")
+  startsAt       DateTime  @map("starts_at") @db.Timestamptz(3)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(3)
+  note           String?
+  actorId        String    @map("actor_id") @db.Uuid
+  idempotencyKey String    @unique @map("idempotency_key")
+  /// The welcome was shown on some device. It is never shown again for this grant.
+  acknowledgedAt DateTime? @map("acknowledged_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user  User @relation("TrialGrantUser", fields: [userId], references: [id], onDelete: Restrict)
+  actor User @relation("TrialGrantActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("trial_grants")
+}
+
+/// Outgoing email other than sign-in codes. SENT means the provider accepted it.
+model EmailOutbox {
+  id                BigInt    @id @default(autoincrement())
+  kind              String
+  toAddress         String    @map("to_address")
+  replyTo           String?   @map("reply_to")
+  subject           String
+  bodyText          String    @map("body_text")
+  /// PENDING, SENDING, SENT or DEAD.
+  status            String    @default("PENDING")
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  lockedAt          DateTime? @map("locked_at") @db.Timestamptz(3)
+  providerMessageId String?   @map("provider_message_id")
+  lastError         String?   @map("last_error")
+  dedupeKey         String?   @unique @map("dedupe_key")
+  userId            String?   @map("user_id") @db.Uuid
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt            DateTime? @map("sent_at") @db.Timestamptz(3)
+
+  user      User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  enquiries SubscriptionEnquiry[]
+
+  @@map("email_outbox")
+}
+
+model SubscriptionEnquiry {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  /// WHATSAPP or EMAIL.
+  channel             String
+  /// SUBSCRIPTION or RENEWAL.
+  purpose             String
+  whatsappUnavailable Boolean  @default(false) @map("whatsapp_unavailable")
+  emailId             BigInt?  @map("email_id")
+  idempotencyKey      String   @unique @map("idempotency_key")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user  User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  email EmailOutbox? @relation(fields: [emailId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("subscription_enquiries")
+}
+
+/// Proof of email ownership for sign-up and recovery. Only a keyed hash of the code is kept.
+model EmailChallenge {
+  id             String    @id @default(uuid()) @db.Uuid
+  /// REGISTRATION or PASSWORD_RESET.
+  purpose        String
+  email          String
+  userId         String?   @map("user_id") @db.Uuid
+  details        Json?
+  codeHash       String?   @map("code_hash")
+  codeExpiresAt  DateTime? @map("code_expires_at") @db.Timestamptz(3)
+  attempts       Int       @default(0)
+  sendCount      Int       @default(0) @map("send_count")
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
+  verifiedAt     DateTime? @map("verified_at") @db.Timestamptz(3)
+  setupTokenHash String?   @unique @map("setup_token_hash")
+  setupExpiresAt DateTime? @map("setup_expires_at") @db.Timestamptz(3)
+  consumedAt     DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([purpose, email, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("email_challenges")
+}
+
+model PasswordResetRequest {
+  id            String    @id @default(uuid()) @db.Uuid
+  userId        String    @map("user_id") @db.Uuid
+  email         String
+  verifiedAt    DateTime  @map("verified_at") @db.Timestamptz(3)
+  /// OPEN, PASSWORD_ISSUED, COMPLETED or DISMISSED. At most one open request per person (partial index).
+  status        String    @default("OPEN")
+  issuedAt      DateTime? @map("issued_at") @db.Timestamptz(3)
+  issuedById    String?   @map("issued_by_id") @db.Uuid
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(3)
+  completedById String?   @map("completed_by_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user        User  @relation("ResetRequestUser", fields: [userId], references: [id], onDelete: Restrict)
+  issuedBy    User? @relation("ResetRequestIssuedBy", fields: [issuedById], references: [id], onDelete: Restrict)
+  completedBy User? @relation("ResetRequestCompletedBy", fields: [completedById], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("password_reset_requests")
+}
+
+/// A message to one person about their own account. Carries no signal content.
+model UserNotice {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  kind      String
+  title     String
+  body      String
+  dedupeKey String    @unique @map("dedupe_key")
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  readAt    DateTime? @map("read_at") @db.Timestamptz(3)
+
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries PushDelivery[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("user_notices")
 }

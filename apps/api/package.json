@@ -27,6 +27,7 @@
     "@signaldesk/domain": "0.1.0",
     "argon2": "0.45.2",
     "helmet": "8.3.0",
+    "nodemailer": "10.2.1",
     "otplib": "13.6.0",
     "pg": "8.23.1",
     "qrcode": "1.5.4",
@@ -43,9 +44,9 @@
     "@types/qrcode": "1.5.6",
     "@types/web-push": "3.6.4",
     "@types/ws": "8.18.2",
+    "embedded-postgres": "18.6.0-beta.19",
     "prisma": "7.10.1",
     "typescript": "5.9.3",
-    "vitest": "5.1.0",
-    "embedded-postgres": "18.6.0-beta.19"
+    "vitest": "5.1.0"
   }
 }

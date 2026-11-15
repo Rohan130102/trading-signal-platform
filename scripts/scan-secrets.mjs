@@ -12,6 +12,10 @@ const FORBIDDEN_FILES = [
   /service-account.*\.json$/i,
 ];
 
+/** Public certificates that must be in the repository. Each may hold one certificate and nothing else. */
+const PUBLIC_CERTIFICATES = new Set(['apps/mobile/code-signing/certificate.pem']);
+const ONLY_A_CERTIFICATE = /^-----BEGIN CERTIFICATE-----\n[A-Za-z0-9+/=\n]+-----END CERTIFICATE-----\n?$/;
+
 const PATTERNS = [
   ['private key block', /-----BEGIN [A-Z ]*PRIVATE KEY-----/],
   ['GitHub token', /\b(ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{20,}/],
@@ -34,6 +38,12 @@ const files = [
 
 const problems = [];
 for (const file of files) {
+  if (PUBLIC_CERTIFICATES.has(file)) {
+    if (!ONLY_A_CERTIFICATE.test(readFileSync(file, 'utf8'))) {
+      problems.push(`${file}: must contain one public certificate and nothing else`);
+    }
+    continue;
+  }
   if (FORBIDDEN_FILES.some((rule) => rule.test(file))) {
     problems.push(`${file}: this kind of file must not be committed`);
     continue;

@@ -8,9 +8,9 @@ import { ADMIN_STATE, adminState } from './helpers.js';
 setup('administrator first sign-in', async ({ page }) => {
   const { login, temp } = adminState();
   await page.goto('/login');
-  await page.getByLabel('Login ID').fill(login);
+  await page.getByLabel('Email or username').fill(login);
   await page.getByLabel('Password', { exact: true }).fill(temp);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
 
   await expect(page.getByRole('heading', { name: 'Choose your password' })).toBeVisible();
   await page.getByLabel('Temporary password').fill(temp);
@@ -27,7 +27,7 @@ setup('administrator first sign-in', async ({ page }) => {
   await page.getByRole('button', { name: 'Turn on' }).click();
 
   await expect(page.getByRole('heading', { name: 'Save your recovery codes' })).toBeVisible();
-  await expect(page.locator('li').first()).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  await expect(page.getByRole('main').locator('li').first()).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
   await page.getByRole('button', { name: 'I have saved them' }).click();
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();

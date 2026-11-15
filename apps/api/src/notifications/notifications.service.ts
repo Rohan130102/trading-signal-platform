@@ -276,6 +276,7 @@ export class NotificationsService {
           updatedAt: true,
           eventId: true,
           event: { select: { title: true, tradeId: true } },
+          notice: { select: { title: true } },
         },
       }),
     ]);
@@ -361,8 +362,8 @@ export class NotificationsService {
         error: f.lastError,
         at: f.updatedAt.toISOString(),
         eventId: f.eventId,
-        title: f.event.title,
-        tradeId: f.event.tradeId,
+        title: f.event?.title ?? f.notice?.title ?? '',
+        tradeId: f.event?.tradeId ?? null,
       })),
     };
   }

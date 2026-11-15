@@ -62,8 +62,9 @@ test('subscriber screens fit the screen', async ({ page }, info) => {
   });
 
   for (const [path, name] of [
-    ['/app', 'feed'],
-    ['/app/active', 'active'],
+    ['/app', 'signals'],
+    ['/app/alerts', 'alerts'],
+    ['/app/news', 'news'],
     ['/app/history', 'history'],
     [`/app/trades/${trade.id}`, 'trade'],
     [`/app/trades/${closing.id}`, 'trade-closed'],
@@ -106,6 +107,7 @@ test.describe('administrator', () => {
       ['/admin/notifications', 'admin-health'],
       ['/admin/audit', 'admin-audit'],
       ['/admin/settings', 'admin-settings'],
+      ['/admin/settings?tab=email', 'admin-settings-email'],
     ] as const) {
       await page.goto(path);
       await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible();
@@ -151,7 +153,7 @@ test.describe('administrator', () => {
     await page.screenshot({ path: resolve(dir, `${info.project.name}-admin-publish-dialog.png`) });
     await page.getByRole('button', { name: 'Close' }).click();
     await page.goto(`/admin/trades/${partial.id}`);
-    await page.getByRole('button', { name: 'Close trade' }).click();
+    await page.getByRole('button', { name: 'Close Trade' }).click();
     await page
       .getByRole('dialog')
       .getByLabel('Exit price')

@@ -27,13 +27,29 @@
 2. The session then has at most one required step, in this order: replace temporary password, enrol MFA (admin), verify MFA (admin). Until complete, only the routes for that step work, including at the WebSocket.
 3. An unknown login ID runs the same password check as a known one, and returns the same error, so neither the message nor the timing reveals which IDs exist.
 
+## Sign-up and recovery
+
+- **Email codes.** Six random digits, valid five minutes, five tries per code, a new code at most once a minute, each new code replacing the last. Only an HMAC of the code keyed with `APP_ENCRYPTION_KEY` and bound to its challenge is stored, so a copy of the table cannot be used to try codes offline. A right code is cleared at once and cannot be replayed. Wrong tries are counted atomically before the comparison.
+- **Limits.** Code emails per address per hour, new challenges and code checks per client address per hour (`EMAIL_CODE_IP_LIMIT_PER_HOUR`).
+- **No enumeration.** Sign-up answers the same for a taken address, which gets an email saying it already has an account instead of a code. Recovery answers the same for an unknown address and sends it nothing.
+- **Setup token.** Proving the address returns a 15-minute, single-use token for creating the password. Its use is claimed atomically, so two requests cannot create two accounts.
+- **Recovery is administrator-managed.** A proved address files one request. An administrator issues a temporary password, shown once, stored only as a hash, valid 24 hours; the old password and every session stop working, and the person must replace it before anything else. The audit log records who issued it and never the password.
+- **No paid access from sign-up.** A new account has no subscription and no trial; both come only from an administrator.
+- **Emails never carry a password.** Codes are sent at once and never stored readable; other email is queued in the database.
+- **The email account entered on the configuration screen.** Only the Master Admin can read or change it, or send a test.
+  The password is encrypted with `APP_ENCRYPTION_KEY` (AES-256-GCM) before it is stored, is never returned by any endpoint
+  (the screen learns only whether one is saved), and never appears in the audit log, which records which fields changed.
+  `GET /admin/settings` returns the platform settings only, never the email account.
+
 ## Secrets
 
-| Secret               | Where it lives                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_ENCRYPTION_KEY` | Secret manager. **Losing it means every administrator must re-enrol MFA** (`npm run admin:reset`). There is no rotation tool yet. |
-| `VAPID_PRIVATE_KEY`  | Secret manager. Changing the pair invalidates every device's subscription.                                                        |
-| `DATABASE_URL`       | Secret manager. Use the restricted role from `deploy/app-role.sql`.                                                               |
+| Secret                                    | Where it lives                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ENCRYPTION_KEY`                      | Secret manager. **Losing it means every administrator must re-enrol MFA** (`npm run admin:reset`). There is no rotation tool yet. |
+| `VAPID_PRIVATE_KEY`                       | Secret manager. Changing the pair invalidates every device's subscription.                                                        |
+| `DATABASE_URL`                            | Secret manager. Use the restricted role from `deploy/app-role.sql`.                                                               |
+| `SMTP_PASS`                               | Secret manager, or the server's `.env` only. With Gmail, use an app password, never the account password.                         |
+| Email account on the configuration screen | Database, encrypted with `APP_ENCRYPTION_KEY`. Never returned or logged. Losing the key means entering the password again.        |
 
 `.env` is ignored by git. `scripts/setup-env.mjs` creates a local one with mode 600. No default password exists anywhere:
 `npm run admin:create` prints a temporary one once. Nothing logs passwords, tokens, request bodies or signal text.
@@ -78,13 +94,39 @@ A logged screenshot records only the fact, the screen and the time, capped at 30
 development bundle can switch capture back on for automated visual checks (`EXPO_PUBLIC_E2E_ALLOW_CAPTURE=1`); it is
 ignored in every preview and production build, where `__DEV__` is false.
 
+## What each subscriber may see
+
+One rule, enforced by the server for every list, detail, search, page, unread count, live update and push notification:
+a subscriber sees what was published while they were entitled. Their entitlement periods come from the recorded
+history of their subscription and trials: each window holds from its start until it expired or a later change
+replaced it. A gap between two memberships stays a gap, so renewing never opens what was published while access had
+lapsed. A trade published before they joined stays out with all its later updates, so nobody receives an update
+without the signal it belongs to. Announcements follow the same rule, except Maintenance notices, which stay on the
+board for everyone signed in. An old identifier typed into a URL or an API call answers "not found". With the ALL
+history scope (Configuration, Signals), everything is shown.
+
+## The Master Admin's functions
+
+Configuration, administrators, the email account, the support contact, compliance approvals, screenshot permissions
+and removing trades from subscriber screens belong to the Master Admin. The API refuses them to everyone else with the
+same 403 as any other refusal, which names no role. Other administrators do not see these pages, links or fields at all,
+and typing their address leads to the dashboard. The audit log they see leaves out these actions.
+
 ## Announcements
 
 Plain text only: control characters are removed and nothing is rendered as HTML. A link button accepts only `https://`
 addresses without credentials, is checked by the server and the database, and opens in the browser after a
 confirmation.
 
-## Known limits
+## App updates
+
+New app code can reach phones without a new APK, so the update channel is guarded like the APK itself. Every
+update answer is signed (RSA-SHA256) with a private key held only in the server's `.env`; the app carries the
+certificate and rejects anything else, and each downloaded file must match a hash inside the signed manifest. The
+endpoints are public because the same code ships in every APK; they serve only folders named like a publish time,
+files by the hash the manifest gave them, and nothing outside the update folder. Anyone with the server's `.env` (or
+SSH access) could publish code to phones, the same people who could already change the API. If the key leaks,
+remove it from `.env` at once (updates stop) and ship a new APK with a new certificate.
 
 - The general request limit is per instance and held in memory. Sign-in throttling is shared through PostgreSQL.
 - A session gets its own request allowance only after it has passed authentication, so subscribers sharing a mobile network's public address do not use up each other's. A made-up credential earns nothing and counts against its address.

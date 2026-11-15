@@ -33,6 +33,8 @@ apps/mobile/dist/
 *.p8
 *.p12
 *.pem
+# The public certificate the app uses to check update signatures. Its private key never enters the repository.
+!apps/mobile/code-signing/certificate.pem
 *.key
 *.mobileprovision
 *.cer

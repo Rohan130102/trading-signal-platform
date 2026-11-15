@@ -18,6 +18,7 @@ export default function MfaVerify() {
   const ready = useRecovery ? code.trim().length >= 6 : code.length === 6;
   return (
     <AuthFrame
+      focused
       title="Enter your code"
       description={
         useRecovery ? 'Each recovery code works once.' : 'Open your authenticator app and type the six digits it shows.'

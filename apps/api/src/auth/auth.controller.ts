@@ -2,6 +2,9 @@ import { Controller, Get, HttpCode, Post, Req, Res } from '@nestjs/common';
 import {
   changePasswordSchema,
   daysRemaining,
+  type EnquiryStatus,
+  type SubscriptionKind,
+  trialToGreet,
   lastValidLocalDate,
   loginSchema,
   mfaCodeSchema,
@@ -15,6 +18,8 @@ import type { Request, Response } from 'express';
 import type { z } from 'zod';
 import { AllowIncompleteSession, Auth, type AuthContext, ClientIp, Public, Summary, ZBody } from '../common/http.js';
 import { isProduction } from '../config/env.js';
+import { PrismaService } from '../db/prisma.service.js';
+import { splitName } from '../enquiries/enquiries.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { AuthService } from './auth.service.js';
 import { SESSION_COOKIE } from './session.guard.js';
@@ -28,6 +33,7 @@ export class AuthController {
   constructor(
     private readonly auth: AuthService,
     private readonly settings: SettingsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post('login')
@@ -93,6 +99,27 @@ export class AuthController {
     const tz = settings.businessTimezone;
     const now = new Date();
     const sub = auth.subscription;
+    const row = await this.prisma.user.findUniqueOrThrow({
+      where: { id: auth.user.id },
+      select: {
+        name: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+        loginId: true,
+        enquiryStatus: true,
+        subscription: { select: { kind: true, startsAt: true, expiresAt: true } },
+        trialGrants: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    const kind = (row.subscription?.kind as SubscriptionKind | undefined) ?? null;
+    const grant = trialToGreet(
+      row.trialGrants[0] ?? null,
+      row.subscription ? { ...row.subscription, kind: kind as SubscriptionKind } : null,
+      now,
+    );
+    const subscriber = auth.user.role === 'SUBSCRIBER';
     return {
       id: auth.user.id,
       name: auth.user.name,
@@ -102,6 +129,7 @@ export class AuthController {
       mfaEnabled: auth.user.mfaEnabledAt !== null,
       subscription: {
         state: subscriptionState(sub, now),
+        kind,
         startsAt: sub?.startsAt.toISOString() ?? null,
         expiresAt: sub?.expiresAt.toISOString() ?? null,
         lastValidDate: sub ? lastValidLocalDate(sub.expiresAt, tz) : null,
@@ -110,10 +138,22 @@ export class AuthController {
       },
       access: { allowed: auth.access.allowed, reason: auth.access.reason },
       support: {
+        serviceName: settings.serviceName,
+        whatsapp: settings.supportWhatsapp,
+        email: settings.supportEmail,
         contact: settings.supportContact,
         renewalInstructions: settings.renewalInstructions,
-        serviceName: settings.serviceName,
       },
+      enquiryStatus: row.enquiryStatus as EnquiryStatus,
+      profile: subscriber ? { ...splitName(row), email: row.email ?? row.loginId, mobile: row.phone ?? '' } : null,
+      trialGreeting:
+        subscriber && grant
+          ? {
+              grantId: grant.id,
+              durationDays: grant.durationDays,
+              lastValidDate: lastValidLocalDate(grant.expiresAt, tz),
+            }
+          : null,
       onboardedAt: auth.user.onboardedAt?.toISOString() ?? null,
       isMasterAdmin: auth.user.isMasterAdmin,
       security: {

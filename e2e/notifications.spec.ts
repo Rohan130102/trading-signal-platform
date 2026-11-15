@@ -87,7 +87,7 @@ test.describe('notifications in the browser', () => {
     const api = await adminApi();
     const sub = await createSubscriberViaApi(api);
     await signInFirstTime(page, sub);
-    await page.goto('/app');
+    await page.goto('/app/alerts');
     await page.evaluate(async () => {
       await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
@@ -155,13 +155,13 @@ test.describe('notifications in the browser', () => {
     const sub = await createSubscriberViaApi(api);
     await signInFirstTime(page, sub);
     await page.goto('/app');
-    await expect(page.getByRole('heading', { name: 'Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
     await page.evaluate(async () => {
       await navigator.serviceWorker.register('/sw.js');
       await navigator.serviceWorker.ready;
     });
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
     const cached = await page.evaluate(async () => {
       const names = await caches.keys();
       const urls: string[] = [];
@@ -181,9 +181,9 @@ test.describe('notifications in the browser', () => {
       await navigator.serviceWorker.ready;
     });
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Feed' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
     await context.setOffline(true);
-    await page.goto('/app/active').catch(() => undefined);
+    await page.goto('/app/history').catch(() => undefined);
     await expect(page.getByRole('heading', { name: 'You are offline' })).toBeVisible();
     await context.setOffline(false);
   });

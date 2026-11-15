@@ -173,3 +173,32 @@ with a reason and the typed word `REMOVE`. The audit entry records who, why, and
 figures, internal and public, keep counting removed trades, and the public page states how many there are, so removing a
 losing trade can never improve the results. A removed trade accepts no lifecycle action, so nothing can alert
 subscribers about a trade they cannot open, until it is put back.
+
+## Sign-up, subscriptions and trials
+
+Three facts about a subscriber are kept apart: **identity** (`users.email_verified_at`, `status`), **enquiry progress**
+(`users.enquiry_status`: not contacted, started, under discussion, resolved) and **access** (the one `subscriptions` window,
+with `kind` PAID or TRIAL). `evaluateSignalAccess` still decides access alone, for REST, the WebSocket and push alike, so a
+trial gives exactly a subscription's access and an expired account can sign in but receives nothing private.
+
+- **Sign-up** is details, then an email code, then a password. The account exists only after the password, and starts with
+  no access. Its login ID is the email address.
+- **Enquiries** open WhatsApp (recorded only as "link opened") or send an email from the server (recorded as accepted or
+  failed by the provider). The support number and address are settings, read on every request.
+- **Starting, renewing and trials** all write the same window and a `subscription_events` row, in one transaction with
+  a row lock on the person, an idempotency key, an audit entry and a notice. A trial is also a `trial_grants` row, which
+  carries the one-time welcome.
+- **Notices** are messages about a person's own account: a `user_notices` row, a push to their signed-in devices through
+  the same delivery pipeline as signals, and an email through the `email_outbox`. They carry no signal content, so they
+  reach people without access.
+- **Email** goes through one adapter (`EMAIL_TRANSPORT`). Codes are sent at once and never stored; everything else is
+  queued in the transaction of the change it reports and sent by the worker with retries.
+
+## Upcoming range trades
+
+A range signal may be published without a target or stop-loss. It is an ordinary `PUBLISHED` trade whose `stop_loss` is
+null and whose `targets` are empty; the database allows that only for a range that has never been active.
+`ACTIVATE` then requires the final entry, at least one target and a stop-loss, validated by the same rules as a new
+signal, and records them on the `ENTRY_ACTIVATED` event; the trade's entry becomes that single price. The original range
+stays in the `SIGNAL_PUBLISHED` event, so the timeline reads as two stages of one trade. Actions that need a stop or
+targets are not offered until then.

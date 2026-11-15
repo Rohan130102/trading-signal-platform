@@ -26,6 +26,28 @@ are validated at startup: a process with bad configuration refuses to start and 
 Production requires `NODE_ENV=production`, `https://` in every `APP_ORIGINS` entry, and `TRUST_PROXY_HOPS` equal to the number of
 proxies in front of the API. Keep `PUBLIC_PERFORMANCE_ENABLED=false` unless compliance review says otherwise.
 
+## Email
+
+Sign-up codes, recovery codes, subscription enquiries to support and account messages are sent by email. Without it, the
+sign-up form still takes the person's details, but no code can be sent: the website then says so and offers to send the
+details to the team on WhatsApp (or by email when there is no WhatsApp number). Nothing pretends to be sent.
+
+**The usual way: the configuration screen.** The Super Admin opens Configuration, Email (website or app), picks Gmail,
+Outlook or Other, enters the sending address and its password (for Gmail an app password), saves, and sends a test email.
+No server change or restart is needed. The password is encrypted with `APP_ENCRYPTION_KEY` and never shown again.
+
+**Or on the server**, with the settings below. Details saved on the configuration screen take precedence; the file
+transport, used in development and tests, takes precedence over both.
+
+| Setting                                 | Notes                                                                                                           |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `EMAIL_TRANSPORT`                       | `smtp` for real delivery, `disabled` (default) for none. `file` is for development and is refused in production |
+| `EMAIL_FROM`                            | The sender, such as `Signal Desk <no-reply@yourdomain>`                                                         |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | Gmail: `smtp.gmail.com`, `587`, `false` (STARTTLS, required)                                                    |
+| `SMTP_USER`, `SMTP_PASS`                | Keep the password in a secret manager or the server's `.env` only                                               |
+
+"Sent" in the app means the provider accepted the message. Whether it reached an inbox is not observable.
+
 ## Native app settings
 
 | Setting                      | Default                           | Notes                                                                             |
@@ -75,6 +97,52 @@ docker compose exec api sh -c 'cd apps/api && node dist/scripts/create-admin.js 
 It prints a temporary password once. Sign in, replace it, enrol MFA and save the recovery codes.
 
 Then fill in **Settings**: support contact, legal entity, disclosures, timezone. Review the default point values under **Instruments**.
+
+## On an Oracle Cloud Always Free server
+
+This stack runs on one Ampere A1 VM (arm64, 2 OCPU / 12 GB, Ubuntu 24.04), within Oracle's Always Free allowance. Things
+that differ from a plain Ubuntu host:
+
+- **Two firewalls.** Open TCP 80 and 443 in the VCN's security list, and in the VM's own iptables: Oracle's image ends the
+  INPUT chain with a REJECT rule, so insert an ACCEPT for 80 and 443 before it and save with `netfilter-persistent save`.
+- **Capacity.** Free-tier accounts often get "Out of capacity" for A1 shapes. Retrying works eventually; Pay As You Go
+  accounts get capacity more easily and keep the same free allowance.
+- **A free name for HTTPS.** Caddy needs a DNS name for its certificate; a DuckDNS name pointing at the VM's public IP
+  works. Set it as `DOMAIN` in `.env`.
+- **Backups on the host.** `deploy/backup.sh` expects `pg_dump` on the host. With everything in containers, run
+  `docker compose exec -T postgres pg_dump …` and pipe it through the same `openssl enc` command, from cron. Keep the
+  passphrase and a copy of the backups somewhere other than the VM, and rehearse a restore into a scratch database.
+- **Moving an existing database in.** `pg_dump --format=custom --no-owner --no-privileges` from the old host, then
+  `pg_restore --no-owner --no-privileges` into the empty `postgres` service before `migrate` runs. Copy the old
+  `APP_ENCRYPTION_KEY` into `.env` too, or MFA secrets and the saved email password cannot be decrypted.
+
+## App updates
+
+The API serves over-the-air updates for the native app ([MOBILE.md](MOBILE.md#updates-without-a-new-apk)). To switch
+them on:
+
+1. Generate the key pair once: `npx expo-updates codesigning:generate --key-output-directory <private folder>
+--certificate-output-directory code-signing --certificate-validity-duration-years 10 --certificate-common-name
+"SignalDesk app updates"` in `apps/mobile`. Commit only `code-signing/certificate.pem`. Keep `private-key.pem`
+   off the server's disk except in `.env`, and keep one copy somewhere safe: without it, phones need a new APK.
+2. Put it in `.env` as one line: `APP_UPDATES_SIGNING_KEY=` followed by `base64 < private-key.pem | tr -d '\n'`.
+   Create `app-updates/` next to `docker-compose.yml`, owned by the user who publishes. `docker compose up -d api`.
+3. Build an APK that contains the certificate (any build after it was committed). Older APKs never check.
+
+To publish, copy one export into `app-updates/android/<runtime version>/` under a temporary name and rename it into
+place, so a half-copied update is never served:
+
+```bash
+RUNTIME=$(cat runtime-version.txt); STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+ssh server "mkdir -p ~/signaldesk/app-updates/android/$RUNTIME"
+tar --no-xattrs -C update -c . | ssh server "mkdir ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && tar -x -C ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && mv ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP ~/signaldesk/app-updates/android/$RUNTIME/$STAMP"
+```
+
+The newest folder (by its UTC name) is what phones get. Files already inside the APK are not downloaded again, so an
+update that changes only screens and wording costs a phone about the size of the app's code (5 MB today). To withdraw an update, publish a newer empty folder holding
+only a file named `rollback`: phones go back to the code inside their APK. Deleting a folder brings back the one
+before it for phones that have not yet downloaded it. Keep older folders for a day or two; a phone that started
+downloading one finishes from it.
 
 ## Without containers
 

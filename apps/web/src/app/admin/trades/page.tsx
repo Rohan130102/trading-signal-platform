@@ -341,7 +341,9 @@ export default function AdminTradesPage() {
                         ? `${formatPrice(t, t.entryLow)} – ${formatPrice(t, t.entryHigh)}`
                         : formatPrice(t, t.entryLow)}
                     </td>
-                    <td className="num px-4 py-2.5 text-stop">{formatPrice(t, t.stopLoss)}</td>
+                    <td className="num px-4 py-2.5 text-stop">
+                      {t.stopLoss === null ? <span className="text-subtle">—</span> : formatPrice(t, t.stopLoss)}
+                    </td>
                     <td className="num px-4 py-2.5">
                       {t.aggregate?.weightedPoints ? (
                         signedPoints(t.aggregate.weightedPoints)

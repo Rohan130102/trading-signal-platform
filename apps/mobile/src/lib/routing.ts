@@ -8,7 +8,9 @@ export type SessionPhase =
   | { phase: 'unreachable' }
   | { phase: 'signed-in'; me: MeResponse };
 
-const PUBLIC = new Set(['disclosures']);
+const PUBLIC = new Set(['disclosures', 'about']);
+/** The ways in, for someone not signed in. */
+const SIGNED_OUT = new Set(['login', 'signup', 'forgot-password']);
 
 /**
  * Where someone belongs, decided from the server's answer. This only chooses screens: the API refuses
@@ -18,7 +20,7 @@ export function gateRedirect(state: SessionPhase, segments: readonly string[]): 
   const first = segments[0] ?? '';
   if (state.phase === 'starting' || state.phase === 'loading' || state.phase === 'unreachable') return null;
   if (PUBLIC.has(first)) return null;
-  if (state.phase === 'signed-out') return first === '(auth)' && segments[1] === 'login' ? null : '/login';
+  if (state.phase === 'signed-out') return first === '(auth)' && SIGNED_OUT.has(segments[1] ?? '') ? null : '/login';
 
   const { me } = state;
   const step =
@@ -36,7 +38,8 @@ export function gateRedirect(state: SessionPhase, segments: readonly string[]): 
     if (first === 'trades' && segments[1]) return `/admin/trades/${segments[1]}`;
     return '/dashboard';
   }
-  if (!me.access.allowed) return first === 'access-ended' ? null : '/access-ended';
+  // Signed in without access: the status screen, or the welcome straight after sign-up.
+  if (!me.access.allowed) return first === 'access-ended' || first === 'welcome' ? null : '/access-ended';
   if (first === '(subscriber)' || first === 'trades' || first === 'onboarding') return null;
   return '/feed';
 }

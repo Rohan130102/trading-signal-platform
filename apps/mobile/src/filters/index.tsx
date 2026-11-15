@@ -229,6 +229,7 @@ export function FilterSheet({
   onApply,
   onClose,
   extra,
+  groups = STATUS_GROUPS,
 }: {
   visible: boolean;
   value: SignalFilter;
@@ -236,6 +237,8 @@ export function FilterSheet({
   onApply: (filter: SignalFilter) => void;
   onClose: () => void;
   extra?: ReactNode;
+  /** The statuses this list offers. Signals shows live trades only; finished ones are in History. */
+  groups?: readonly StatusGroup[];
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => {
@@ -272,7 +275,7 @@ export function FilterSheet({
           Status
         </T>
         <View style={styles.wrap}>
-          {STATUS_GROUPS.map((group) => (
+          {groups.map((group) => (
             <Chip
               key={group}
               testID={`status-${group}`}
@@ -318,6 +321,7 @@ export function FilterBar({
   extraCount = 0,
   extraChips,
   sheetExtra,
+  groups,
 }: {
   value: SignalFilter;
   onChange: (filter: SignalFilter) => void;
@@ -325,6 +329,7 @@ export function FilterBar({
   extraCount?: number;
   extraChips?: ReactNode;
   sheetExtra?: ReactNode;
+  groups?: readonly StatusGroup[];
 }) {
   const c = useColors();
   const [picker, setPicker] = useState(false);
@@ -424,6 +429,7 @@ export function FilterBar({
         value={value}
         instruments={instruments}
         extra={sheetExtra}
+        groups={groups}
         onClose={() => setSheet(false)}
         onApply={(next) => {
           setSheet(false);

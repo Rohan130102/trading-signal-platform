@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
+  ACTIONS,
   type AdminTradeDetail,
   composeSignal,
   defaultSignalTemplateKind,
@@ -64,6 +65,8 @@ interface FormState {
   custom: boolean;
   targets: [string, string, string];
   stopLoss: string;
+  /** A range announced ahead: targets and stop-loss are set when it is activated. */
+  levelsLater: boolean;
   priority: Priority;
   templateId: string;
   commentary: string;
@@ -82,6 +85,7 @@ const EMPTY: FormState = {
   custom: false,
   targets: ['', '', ''],
   stopLoss: '',
+  levelsLater: false,
   priority: 'NORMAL',
   templateId: '',
   commentary: '',
@@ -232,9 +236,9 @@ function Compose() {
       entryLow: computed.entry?.low ?? '',
       entryHigh: computed.entry?.high ?? '',
       targets: computed.targets,
-      stopLoss: computed.stopLoss,
+      stopLoss: computed.upcoming ? undefined : computed.stopLoss,
       priority: form.priority,
-      templateId: form.templateId || null,
+      templateId: computed.upcoming ? null : form.templateId || null,
       commentary: form.commentary.trim() || undefined,
     }),
     [computed, form],
@@ -242,7 +246,8 @@ function Compose() {
   // Same contents, same key: a double tap or a retry after a lost response cannot publish twice.
   const defaultMode = platform.data?.signalStartMode ?? 'AWAITING_ENTRY';
   const defaultWindow = platform.data?.entryExpiryMinutesDefault ?? 0;
-  const startsActive = form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE';
+  const startsActive =
+    !computed.upcoming && (form.startAs === 'DEFAULT' ? defaultMode === 'ACTIVE' : form.startAs === 'ACTIVE');
   const fieldsKey = `${JSON.stringify(fields)}#${cycle}#${form.startAs}#${form.window}`;
   const idempotencyKey = useMemo(() => {
     void fieldsKey;
@@ -260,7 +265,7 @@ function Compose() {
     mutationFn: (confirmDuplicate: boolean) =>
       api.post<{ tradeId: string; replayed: boolean; trade: AdminTradeDetail }>('/admin/signals', {
         ...fields,
-        activateOnPublish: form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
+        activateOnPublish: computed.upcoming || form.startAs === 'DEFAULT' ? undefined : form.startAs === 'ACTIVE',
         entryExpiresAt: deadline,
         idempotencyKey,
         confirmDuplicate,
@@ -307,10 +312,10 @@ function Compose() {
   const allTemplates = useMemo(() => templates.data?.templates ?? [], [templates.data]);
   const signalTemplates = allTemplates.filter((t) => t.active && isTemplateForDirection(t.kind, form.direction));
   const chosenTemplate = useMemo(() => {
-    if (form.templateId) return allTemplates.find((t) => t.id === form.templateId);
-    const kind = defaultSignalTemplateKind(form.direction, form.priority);
+    if (form.templateId && !computed.upcoming) return allTemplates.find((t) => t.id === form.templateId);
+    const kind = defaultSignalTemplateKind(form.direction, form.priority, computed.upcoming);
     return allTemplates.find((t) => t.kind === kind && t.isDefault);
-  }, [allTemplates, form.direction, form.priority, form.templateId]);
+  }, [allTemplates, computed.upcoming, form.direction, form.priority, form.templateId]);
 
   const previewEvent = useMemo(
     () =>
@@ -448,98 +453,122 @@ function Compose() {
             </View>
           )}
           <Card style={{ gap: space.md }} testID="compose-levels">
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-              <T v="label" c="muted" style={{ textTransform: 'uppercase' }}>
-                {form.custom ? 'Your levels' : 'Calculated levels'}
-              </T>
-              {spec && !form.custom && (
-                <T v="caption" c="subtle" num>
-                  {`${formatPoints(spec.defaultTargetPoints)} / ${formatPoints(spec.defaultStopPoints)} pts`}
-                </T>
-              )}
-            </View>
-            {form.custom ? (
-              <View style={{ gap: space.md }}>
-                {form.targets.map((value, i) => (
-                  <PriceField
-                    key={i}
-                    testID={`custom-target-${i + 1}`}
-                    label={i === 0 ? 'Target 1' : `Target ${i + 1} (optional)`}
-                    value={value}
-                    onChange={(next) => {
-                      const targets = [...form.targets] as FormState['targets'];
-                      targets[i] = next;
-                      set('targets', targets);
-                    }}
-                  />
-                ))}
-                <PriceField
-                  testID="custom-stop"
-                  label="Stop-loss"
-                  value={form.stopLoss}
-                  onChange={(value) => set('stopLoss', value)}
-                />
-              </View>
-            ) : spec && form.direction && computed.entry && computed.targets.length > 0 ? (
-              <Levels
-                big
-                precision={spec.pricePrecision}
-                targets={computed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const }))}
-                stopLoss={computed.stopLoss}
+            {form.entryType === 'RANGE' && (
+              <Segmented<'NOW' | 'LATER'>
+                label="When to set targets and stop-loss"
+                value={form.levelsLater ? 'LATER' : 'NOW'}
+                onChange={(v) => set('levelsLater', v === 'LATER')}
+                options={[
+                  { value: 'NOW', label: 'Levels now', testID: 'compose-levels-now' },
+                  { value: 'LATER', label: 'At activation', testID: 'compose-levels-later' },
+                ]}
               />
-            ) : (
-              <T c="muted">
-                {form.direction
-                  ? 'Enter an entry price and the target and stop-loss appear here.'
-                  : 'Choose BUY or SELL, then enter a price.'}
-              </T>
             )}
-            {computed.risk && (
+            {computed.upcoming ? (
+              <T c="muted" testID="compose-upcoming">
+                Subscribers see an upcoming trade with this entry zone. Enter the final entry, targets and stop-loss
+                when you activate it.
+              </T>
+            ) : (
               <>
-                <Divider />
-                <T v="small" c="muted" num testID="compose-risk">
-                  {`Stop ${formatPoints(computed.risk.stopPoints)} pts`}
-                  {computed.risk.targets
-                    .map(
-                      (t) =>
-                        ` · Target ${t.index} ${formatPoints(t.points)} pts${t.rewardToRisk ? ` (1:${t.rewardToRisk})` : ''}`,
-                    )
-                    .join('')}
-                </T>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <T v="label" c="muted" style={{ textTransform: 'uppercase' }}>
+                    {form.custom ? 'Your levels' : 'Calculated levels'}
+                  </T>
+                  {spec && !form.custom && (
+                    <T v="caption" c="subtle" num>
+                      {`${formatPoints(spec.defaultTargetPoints)} / ${formatPoints(spec.defaultStopPoints)} pts`}
+                    </T>
+                  )}
+                </View>
+                {form.custom ? (
+                  <View style={{ gap: space.md }}>
+                    {form.targets.map((value, i) => (
+                      <PriceField
+                        key={i}
+                        testID={`custom-target-${i + 1}`}
+                        label={i === 0 ? 'Target 1' : `Target ${i + 1} (optional)`}
+                        value={value}
+                        onChange={(next) => {
+                          const targets = [...form.targets] as FormState['targets'];
+                          targets[i] = next;
+                          set('targets', targets);
+                        }}
+                      />
+                    ))}
+                    <PriceField
+                      testID="custom-stop"
+                      label="Stop-loss"
+                      value={form.stopLoss}
+                      onChange={(value) => set('stopLoss', value)}
+                    />
+                  </View>
+                ) : spec && form.direction && computed.entry && computed.targets.length > 0 ? (
+                  <Levels
+                    big
+                    precision={spec.pricePrecision}
+                    targets={computed.targets.map((price, i) => ({ index: i + 1, price, status: 'OPEN' as const }))}
+                    stopLoss={computed.stopLoss}
+                  />
+                ) : (
+                  <T c="muted">
+                    {form.direction
+                      ? 'Enter an entry price and the target and stop-loss appear here.'
+                      : 'Choose BUY or SELL, then enter a price.'}
+                  </T>
+                )}
+                {computed.risk && (
+                  <>
+                    <Divider />
+                    <T v="small" c="muted" num testID="compose-risk">
+                      {`Stop ${formatPoints(computed.risk.stopPoints)} pts`}
+                      {computed.risk.targets
+                        .map(
+                          (t) =>
+                            ` · Target ${t.index} ${formatPoints(t.points)} pts${t.rewardToRisk ? ` (1:${t.rewardToRisk})` : ''}`,
+                        )
+                        .join('')}
+                    </T>
+                  </>
+                )}
+                {issue && issue.field !== 'entryLow' && issue.field !== 'entryHigh' && (
+                  <T v="small" c="stop" testID="compose-issue">
+                    {issue.message}
+                  </T>
+                )}
+                <ToggleRow
+                  testID="compose-custom"
+                  label={ACTIONS.editLevelsManually}
+                  value={form.custom}
+                  onChange={(value) => {
+                    if (value && computed.auto) {
+                      const targets = [...computed.auto.targets, '', '', ''].slice(0, 3) as FormState['targets'];
+                      setForm((f) => ({ ...f, custom: true, targets, stopLoss: computed.auto?.stopLoss ?? '' }));
+                    } else {
+                      set('custom', value);
+                    }
+                  }}
+                />
               </>
             )}
-            {issue && issue.field !== 'entryLow' && issue.field !== 'entryHigh' && (
-              <T v="small" c="stop" testID="compose-issue">
-                {issue.message}
-              </T>
-            )}
-            <ToggleRow
-              testID="compose-custom"
-              label="Set levels by hand"
-              value={form.custom}
-              onChange={(value) => {
-                if (value && computed.auto) {
-                  const targets = [...computed.auto.targets, '', '', ''].slice(0, 3) as FormState['targets'];
-                  setForm((f) => ({ ...f, custom: true, targets, stopLoss: computed.auto?.stopLoss ?? '' }));
-                } else {
-                  set('custom', value);
-                }
-              }}
-            />
           </Card>
           <Card style={{ gap: space.md }}>
-            <T v="small" c="muted">
-              Starts as
-            </T>
-            <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
-              label="Starts as"
-              value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
-              onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
-              options={[
-                { value: 'AWAITING_ENTRY', label: 'Awaiting entry', testID: 'compose-start-waiting' },
-                { value: 'ACTIVE', label: 'Active now', testID: 'compose-start-active' },
-              ]}
-            />
+            {!computed.upcoming && (
+              <>
+                <T v="small" c="muted">
+                  Starts as
+                </T>
+                <Segmented<'AWAITING_ENTRY' | 'ACTIVE'>
+                  label="Starts as"
+                  value={startsActive ? 'ACTIVE' : 'AWAITING_ENTRY'}
+                  onChange={(v) => set('startAs', v === defaultMode ? 'DEFAULT' : v)}
+                  options={[
+                    { value: 'AWAITING_ENTRY', label: 'Awaiting entry', testID: 'compose-start-waiting' },
+                    { value: 'ACTIVE', label: 'Active now', testID: 'compose-start-active' },
+                  ]}
+                />
+              </>
+            )}
             {startsActive ? (
               <T v="caption" c="subtle">
                 Active as soon as it is published. That is not a fill.

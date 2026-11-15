@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LiveAlertBanner, type ShownAlert } from '@/alerts/LiveAlertBanner';
+import { useUpdateChecks, useUpdateReady } from '@/lib/app-updates';
 import { API } from '@/lib/config';
 import { listenForNotifications, syncPushToken } from '@/lib/push';
 import { connectQueryToDevice, createQueryClient } from '@/lib/query';
@@ -15,7 +16,7 @@ import { gateRedirect, resolveDeepLink } from '@/lib/routing';
 import { SessionProvider, useSession } from '@/lib/session';
 import { ThemeProvider, useColors, useTheme } from '@/theme';
 import { space } from '@/theme/tokens';
-import { Button, EmptyState, Loading, Logo, T, ToastProvider } from '@/ui';
+import { Button, EmptyState, Loading, Logo, T, ToastProvider, useToast } from '@/ui';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -75,11 +76,12 @@ function App() {
   // The first-use tour, once, after the first full sign-in. A notification being opened goes first, and it
   // waits until the subscriber's tabs are on screen: pushed during a redirect it would be replaced at once.
   // Remembered per person, so someone signing in after another on the same phone still gets their tour.
+  // A trial's welcome goes first: one thing at a time, and the tour follows once the welcome is closed.
   const touredFor = useRef<string | null>(null);
   const onTabs = segments[0] === '(subscriber)';
   useEffect(() => {
     if (!settled || !onTabs || pending || !me || me.role !== 'SUBSCRIBER' || !me.access.allowed) return;
-    if (me.onboardedAt || touredFor.current === me.id) return;
+    if (me.onboardedAt || me.trialGreeting || touredFor.current === me.id) return;
     // A moment's wait lets a screen that navigates on success (setting a password) finish first; if the
     // route changes again meanwhile, this is cancelled and scheduled afresh.
     const timer = setTimeout(() => {
@@ -109,8 +111,12 @@ function App() {
           <Stack.Screen name="(subscriber)" options={{ headerShown: false, animation: 'fade' }} />
           <Stack.Screen name="(admin)" options={{ headerShown: false, animation: 'fade' }} />
           <Stack.Screen name="access-ended" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="welcome" options={{ headerShown: false, animation: 'fade' }} />
+          <Stack.Screen name="admin/registrations" options={{ title: 'New Registrations' }} />
+          <Stack.Screen name="admin/password-resets" options={{ title: 'Password Resets' }} />
           <Stack.Screen name="compose" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="disclosures" options={{ title: 'Risk and privacy' }} />
+          <Stack.Screen name="about" options={{ title: 'About us' }} />
           <Stack.Screen name="trades/[id]" options={{ title: '' }} />
           <Stack.Screen name="admin/trades/[id]" options={{ title: '' }} />
           <Stack.Screen name="admin/subscribers/[id]" options={{ title: '' }} />
@@ -125,7 +131,7 @@ function App() {
           <Stack.Screen name="admin/announcements" options={{ title: 'Announcements' }} />
           <Stack.Screen name="admin/history" options={{ title: 'History' }} />
           <Stack.Screen name="admin/admins" options={{ title: 'Administrators' }} />
-          <Stack.Screen name="admin/settings" options={{ title: 'Platform settings' }} />
+          <Stack.Screen name="admin/settings" options={{ title: 'Configuration' }} />
           <Stack.Screen
             name="onboarding"
             options={{ presentation: 'fullScreenModal', headerShown: false, animation: 'fade' }}
@@ -133,6 +139,7 @@ function App() {
         </Stack>
         <NotificationBridge onOpen={setPending} />
         <LiveAlerts admin={me?.role === 'ADMIN'} />
+        <UpdateNotice />
         {API.problem && <Blocking title="This build cannot start" body={API.problem} />}
         {!API.problem && (state.phase === 'loading' || state.phase === 'starting') && <Starting />}
         {!API.problem && state.phase === 'unreachable' && <Unreachable />}
@@ -147,6 +154,30 @@ function NotificationBridge({ onOpen }: { onOpen: (path: string) => void }) {
   const arrived = useRef(pushArrived);
   arrived.current = pushArrived;
   useEffect(() => listenForNotifications(onOpen, (arrival) => arrived.current(arrival)), [onOpen]);
+  return null;
+}
+
+/**
+ * A new version downloaded in the background is mentioned once. It starts by itself next time; restarting now is
+ * the person's choice, never forced, and the notice waits while they are composing or taking the tour.
+ */
+function UpdateNotice() {
+  useUpdateChecks();
+  const { ready, restart } = useUpdateReady();
+  const toast = useToast();
+  const pathname = usePathname();
+  const told = useRef(false);
+  useEffect(() => {
+    if (!ready || told.current || pathname === '/compose' || pathname === '/onboarding') return;
+    told.current = true;
+    toast({
+      tone: 'info',
+      title: 'New version ready',
+      body: 'It starts the next time you open the app.',
+      action: { label: 'Restart now', onPress: restart },
+      duration: 10_000,
+    });
+  }, [pathname, ready, restart, toast]);
   return null;
 }
 

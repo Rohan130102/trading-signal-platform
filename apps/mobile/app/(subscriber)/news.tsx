@@ -59,8 +59,8 @@ export default function News() {
           ) : board.isError ? (
             <ErrorState error={board.error} onRetry={() => void board.refetch()} />
           ) : (
-            <EmptyState icon="megaphone-outline" title="No announcements">
-              Market notes, schedule changes and other news from the desk appear here.
+            <EmptyState icon="megaphone-outline" title="No announcements yet">
+              New announcements will appear here.
             </EmptyState>
           )
         }

@@ -1,10 +1,18 @@
 import type { DraftInput } from './contracts.js';
 import type { EventPayload, EventSnapshot, TargetState } from './lifecycle.js';
 import type { InstrumentSpec } from './instrument.js';
-import type { CalculationBasis, PerformanceStats, TradeAggregate } from './pnl.js';
+import type { CalculationBasis, PerformanceSummary, TradeAggregate } from './pnl.js';
 import type { Direction, EntryType } from './signal.js';
 import type { CloseReason, EventCategory, EventType, Priority, TradeStatus } from './status.js';
-import type { AccessDenial, Role, SubscriptionState, UserStatus } from './subscription.js';
+import type {
+  AccessDenial,
+  Role,
+  SubscriberAction,
+  SubscriptionKind,
+  SubscriptionState,
+  UserStatus,
+} from './subscription.js';
+import type { EnquiryChannel, EnquiryOutcome, EnquiryStatus } from './support.js';
 import type { TemplateTone } from './templates.js';
 
 /** Response shapes. The API constructs these explicitly; nothing else crosses the boundary. */
@@ -48,8 +56,9 @@ export interface TradeSummary {
   entryType: EntryType;
   entryLow: string;
   entryHigh: string;
-  stopLoss: string;
-  originalStopLoss: string;
+  /** Null for an upcoming trade, which has no stop-loss or target until it is activated. */
+  stopLoss: string | null;
+  originalStopLoss: string | null;
   targets: TargetState[];
   status: TradeStatus;
   priority: Priority;
@@ -142,6 +151,8 @@ export interface AdminTradeDetail extends Omit<TradeSummary, never> {
 
 export interface SubscriptionView {
   state: SubscriptionState;
+  /** Null when there has never been a subscription or trial. */
+  kind: SubscriptionKind | null;
   startsAt: string | null;
   expiresAt: string | null;
   /** Inclusive last calendar date in the business timezone. */
@@ -160,13 +171,29 @@ export interface MeResponse {
   mfaEnabled: boolean;
   subscription: SubscriptionView;
   access: { allowed: boolean; reason: AccessDenial | null };
-  support: { contact: string; renewalInstructions: string; serviceName: string };
+  support: SupportContact;
+  /** Where this person's subscription enquiry stands. Separate from access. */
+  enquiryStatus: EnquiryStatus;
+  /** What goes into an enquiry. Null for administrators. */
+  profile: { firstName: string; lastName: string; email: string; mobile: string } | null;
+  /** A newly granted trial not yet welcomed on any device. */
+  trialGreeting: { grantId: string; durationDays: number; lastValidDate: string } | null;
   /** When this person finished or skipped the first-use tour. Null shows it. */
   onboardedAt: string | null;
   /** Registers and manages administrators and changes platform rules. */
   isMasterAdmin: boolean;
   /** The platform's rule for this person, set by the Master Admin. Applied by the app as far as the OS allows. */
   security: { screenshotsAllowed: boolean };
+}
+
+/** Read from settings on every request, so a change by the Master Admin applies at once. */
+export interface SupportContact {
+  serviceName: string;
+  whatsapp: string;
+  email: string;
+  /** Free text kept from earlier versions, such as office hours. */
+  contact: string;
+  renewalInstructions: string;
 }
 
 /** What anyone may read, signed in or not. */
@@ -178,49 +205,60 @@ export interface PublicInfo {
   riskDisclosure: string;
   privacyNotice: string;
   supportContact: string;
+  supportWhatsapp: string;
+  supportEmail: string;
   publicResultsAvailable: boolean;
   /** The About section of the public page. */
   aboutBody: string;
   /** When demonstration data was last cleared. Results start after it. */
   dataResetAt: string | null;
+  /** The Super Admin allows sign-up. */
+  signupOpen: boolean;
+  /** Sign-up is open and a code can be emailed. When false the sign-up screen says so before asking anything. */
+  signupAvailable: boolean;
 }
 
 /** One finished trade on the public page. Times are when the desk published, activated and closed it. */
+/** A finished signal as anyone may see it: no prices, no position sizes. */
 export interface PublicTradeRecord {
   ref: string | null;
   symbol: string;
   direction: Direction | null;
   status: TradeStatus;
   publishedAt: string | null;
-  /** When the desk marked the signal active. Not a fill, and not a subscriber's execution. */
-  activatedAt: string | null;
-  /** Time of the last recorded exit. */
-  exitedAt: string | null;
-  closedAt: string | null;
-  basis: CalculationBasis | null;
+  /** When the trade finished: its close, or the last exit. */
+  finishedAt: string | null;
   weightedPoints: string | null;
   outcome: TradeAggregate['outcome'] | null;
-  /** The record was corrected after publication. The history shows what changed and why. */
+  /** The record was corrected after publication. */
   corrected: boolean;
 }
 
-export interface PublicPerformanceResponse {
+export interface PublicPerformanceResponse extends PerformanceSummary {
   measurementPeriod: { from: string | null; to: string | null };
-  lifecycle: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
-  hypothetical: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
-  declared: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
   records: PublicTradeRecord[];
-  /** Finished trades taken off subscriber screens. They are still counted in every figure above. */
-  removedFromScreens: number;
-  symbols: string[];
-  pointsComparable: boolean;
   dataResetAt: string | null;
-  methodology: { version: string; statements: string[]; definitions: { term: string; meaning: string }[] };
   disclosures: {
     riskDisclosure: string;
     regulatoryStatement: string;
     approval: { jurisdiction: string; scope: string; documentReference: string; expiresAt: string };
   };
+}
+
+/** A finished signal on the administrators' dashboard. */
+export interface FinishedTrade extends TradeSummary {
+  /** Exit price, averaged over partial exits by the share each closed. */
+  exit: string | null;
+  points: string | null;
+  outcome: TradeAggregate['outcome'] | null;
+  finishedAt: string | null;
+  corrected: boolean;
+}
+
+/** The administrators' Performance page: one report, from the same calculation as the public results. */
+export interface PerformanceReport extends PerformanceSummary {
+  trades: FinishedTrade[];
+  truncated: boolean;
 }
 
 export interface DraftRow {
@@ -355,6 +393,13 @@ export interface NotificationHealth {
 export interface SubscriberRow {
   id: string;
   name: string;
+  firstName: string | null;
+  lastName: string | null;
+  age: number | null;
+  /** Self-registered accounts only. Accounts an administrator created have none. */
+  emailVerifiedAt: string | null;
+  selfRegistered: boolean;
+  enquiryStatus: EnquiryStatus;
   email: string | null;
   phone: string | null;
   loginId: string;
@@ -383,6 +428,72 @@ export interface SubscriberDetail extends SubscriberRow {
   }[];
   devices: { id: string; deviceLabel: string | null; createdAt: string; lastAcceptedAt: string | null }[];
   sessions: { id: string; deviceLabel: string | null; lastSeenAt: string }[];
+  /** Which subscription actions apply now. */
+  actions: SubscriberAction[];
+  trials: { id: string; durationDays: number; lastValidDate: string; note: string | null; createdAt: string }[];
+  enquiries: { id: string; channel: EnquiryChannel; outcome: EnquiryOutcome; createdAt: string }[];
+}
+
+export interface RegistrationRow {
+  id: string;
+  name: string;
+  email: string | null;
+  mobile: string | null;
+  age: number | null;
+  registeredAt: string;
+  emailVerified: boolean;
+  enquiryStatus: EnquiryStatus;
+  subscription: SubscriptionView;
+  /** Not yet opened by an administrator. */
+  isNew: boolean;
+}
+
+export interface RegistrationsPage {
+  registrations: RegistrationRow[];
+  total: number;
+  unseen: number;
+  page: number;
+  pageSize: number;
+}
+
+export const PASSWORD_RESET_STATUSES = ['OPEN', 'PASSWORD_ISSUED', 'COMPLETED', 'DISMISSED'] as const;
+export type PasswordResetStatus = (typeof PASSWORD_RESET_STATUSES)[number];
+
+export interface PasswordResetRow {
+  id: string;
+  userId: string;
+  name: string;
+  email: string;
+  loginId: string;
+  requestedAt: string;
+  emailVerified: boolean;
+  status: PasswordResetStatus;
+  issuedAt: string | null;
+  completedAt: string | null;
+}
+
+/** Counts behind the administrator's badges. */
+export interface AdminInbox {
+  newRegistrations: number;
+  openPasswordResets: number;
+}
+
+/** A message to one person about their own account, such as a subscription starting. */
+export interface UserNotice {
+  id: string;
+  kind: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  read: boolean;
+}
+
+/** The answer to a sign-up or recovery step. The same whether or not an account exists. */
+export interface ChallengeResponse {
+  challengeId: string;
+  email: string;
+  resendAvailableAt: string;
+  expiresAt: string;
 }
 
 export interface SubscribersPage {
@@ -390,19 +501,6 @@ export interface SubscribersPage {
   total: number;
   page: number;
   pageSize: number;
-}
-
-export interface PerformanceReport {
-  lifecycle: PerformanceStats;
-  byBasis: { basis: CalculationBasis; stats: PerformanceStats }[];
-  byInstrument: { symbol: string; byBasis: { basis: CalculationBasis; stats: PerformanceStats }[] }[];
-  records: (TradeSummary & { aggregate: TradeAggregate | null; corrected: boolean })[];
-  truncated: boolean;
-  quoteCurrency: string | null;
-  pointsComparable: boolean;
-  methodology: { version: string; statements: string[] };
-  /** Finished trades taken off subscriber screens. Counted in every figure above. */
-  removedFromScreens: number;
 }
 
 export interface InstrumentRow extends InstrumentSpec {

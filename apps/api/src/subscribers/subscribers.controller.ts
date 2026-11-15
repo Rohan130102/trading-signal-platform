@@ -3,13 +3,21 @@ import {
   accountActionSchema,
   adjustSubscriptionSchema,
   createSubscriberSchema,
+  enquiryStatusSchema,
+  grantTrialSchema,
+  listRegistrationsQuery,
   listSubscribersQuery,
+  passwordResetsQuery,
   renewSubscriptionSchema,
   screenshotPermissionSchema,
+  startSubscriptionSchema,
   updateSubscriberSchema,
 } from '@signaldesk/domain';
 import type { z } from 'zod';
 import { AdminOnly, Auth, type AuthContext, MasterOnly, RequestId, Summary, ZBody, ZQuery } from '../common/http.js';
+import { PrismaService } from '../db/prisma.service.js';
+import { EnquiriesService } from '../enquiries/enquiries.service.js';
+import { PasswordResetsService } from '../registration/password-resets.service.js';
 import { SubscribersService } from './subscribers.service.js';
 
 type AccountAction = z.infer<typeof accountActionSchema>;
@@ -17,7 +25,10 @@ type AccountAction = z.infer<typeof accountActionSchema>;
 @Controller('admin/subscribers')
 @AdminOnly()
 export class SubscribersController {
-  constructor(private readonly subscribers: SubscribersService) {}
+  constructor(
+    private readonly subscribers: SubscribersService,
+    private readonly enquiries: EnquiriesService,
+  ) {}
 
   @Get()
   @Summary('Search and filter subscribers')
@@ -73,6 +84,47 @@ export class SubscribersController {
     @ZBody(renewSubscriptionSchema) body: z.infer<typeof renewSubscriptionSchema>,
   ) {
     return this.subscribers.renew(id, body, { id: auth.user.id, requestId });
+  }
+
+  @Post(':id/start')
+  @Summary('Start a paid subscription for any number of days: for no access, an expired one, or a running trial')
+  start(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(startSubscriptionSchema) body: z.output<typeof startSubscriptionSchema>,
+  ) {
+    return this.subscribers.start(id, body, { id: auth.user.id, requestId });
+  }
+
+  @Post(':id/trial')
+  @Summary('Grant a free trial for any number of days. Never automatic; a second trial needs allowRepeat.')
+  trial(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(grantTrialSchema) body: z.output<typeof grantTrialSchema>,
+  ) {
+    return this.subscribers.grantTrial(id, body, { id: auth.user.id, requestId });
+  }
+
+  @Put(':id/enquiry')
+  @Summary('Move a subscription enquiry along: started, under discussion, resolved')
+  async enquiry(
+    @Auth() auth: AuthContext,
+    @RequestId() requestId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @ZBody(enquiryStatusSchema) body: z.output<typeof enquiryStatusSchema>,
+  ) {
+    await this.enquiries.setStatus(id, body.status, { id: auth.user.id, requestId });
+    return this.subscribers.detail(id);
+  }
+
+  @Post(':id/seen')
+  @HttpCode(200)
+  @Summary('Take a new registration off the badge')
+  seen(@Param('id', ParseUUIDPipe) id: string) {
+    return this.subscribers.markSeen(id);
   }
 
   @Post(':id/adjust')
@@ -134,5 +186,60 @@ export class SubscribersController {
   @Summary('Sign the subscriber out everywhere')
   revoke(@Auth() auth: AuthContext, @RequestId() requestId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.subscribers.revokeSessions(id, { id: auth.user.id, requestId });
+  }
+}
+
+@Controller('admin')
+@AdminOnly()
+export class RegistrationsAdminController {
+  constructor(
+    private readonly subscribers: SubscribersService,
+    private readonly resets: PasswordResetsService,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  @Get('registrations')
+  @Summary('People who signed themselves up, newest first, with search and filters')
+  registrations(@ZQuery(listRegistrationsQuery) query: z.output<typeof listRegistrationsQuery>) {
+    return this.subscribers.registrations(query);
+  }
+
+  @Get('inbox')
+  @Summary('Counts for the administrator badges: unseen registrations and open password resets')
+  async inbox() {
+    const [newRegistrations, openPasswordResets] = await Promise.all([
+      this.prisma.user.count({
+        where: { role: 'SUBSCRIBER', selfRegisteredAt: { not: null }, registrationSeenAt: null },
+      }),
+      this.prisma.passwordResetRequest.count({ where: { status: 'OPEN' } }),
+    ]);
+    return { newRegistrations, openPasswordResets };
+  }
+
+  @Get('password-resets')
+  @Summary('Password reset requests from people who proved their email address')
+  passwordResets(@ZQuery(passwordResetsQuery) query: z.output<typeof passwordResetsQuery>) {
+    return this.resets.list(query.status);
+  }
+
+  @Post('password-resets/:id/issue')
+  @HttpCode(200)
+  @Summary('Issue a temporary password, shown this once. Signs them out everywhere; they must replace it.')
+  issue(@Auth() auth: AuthContext, @RequestId() requestId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.resets.issue(id, { id: auth.user.id, requestId });
+  }
+
+  @Post('password-resets/:id/complete')
+  @HttpCode(200)
+  @Summary('Mark a request as done')
+  complete(@Auth() auth: AuthContext, @RequestId() requestId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.resets.close(id, 'COMPLETED', { id: auth.user.id, requestId });
+  }
+
+  @Post('password-resets/:id/dismiss')
+  @HttpCode(200)
+  @Summary('Close a request without issuing a password')
+  dismiss(@Auth() auth: AuthContext, @RequestId() requestId: string, @Param('id', ParseUUIDPipe) id: string) {
+    return this.resets.close(id, 'DISMISSED', { id: auth.user.id, requestId });
   }
 }

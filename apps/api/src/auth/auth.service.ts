@@ -30,7 +30,7 @@ const COMMON_PASSWORDS = new Set([
   'letmein1234',
 ]);
 
-const INVALID = new AppError(401, 'INVALID_CREDENTIALS', 'That login ID or password is not right.');
+const INVALID = new AppError(401, 'INVALID_CREDENTIALS', 'That email, username or password is not right.');
 const THROTTLED = new AppError(429, 'TOO_MANY_ATTEMPTS', 'Too many attempts. Wait 15 minutes and try again.');
 
 function fingerprint(value: string): string {
@@ -153,7 +153,7 @@ export class AuthService {
     ]);
     if (idFailures >= MAX_FAILURES_PER_ID || ipFailures >= MAX_FAILURES_PER_IP) throw THROTTLED;
 
-    const user = await this.prisma.user.findUnique({ where: { loginId } });
+    const user = await this.findByIdentifier(loginId);
     // An unknown login does the same work as a known one, so timing does not reveal which IDs exist.
     this.dummyHash ??= this.hashPassword('not-a-real-password');
     const matches = await argon2.verify(user?.passwordHash ?? (await this.dummyHash), password);
@@ -201,6 +201,20 @@ export class AuthService {
       );
     });
     return { token, ttlMs: ttl };
+  }
+
+  /**
+   * A login ID first, as before. Failing that, an email address signs in the one account that has it: every
+   * self-registered account, and older accounts whose contact email is unique.
+   */
+  private async findByIdentifier(identifier: string) {
+    const byLogin = await this.prisma.user.findUnique({ where: { loginId: identifier } });
+    if (byLogin || !identifier.includes('@')) return byLogin;
+    const byEmail = await this.prisma.user.findMany({
+      where: { email: { equals: identifier, mode: 'insensitive' } },
+      take: 2,
+    });
+    return byEmail.length === 1 ? (byEmail[0] ?? null) : null;
   }
 
   async logout(sessionId: string, actorId: string): Promise<void> {
@@ -255,6 +269,13 @@ export class AuthService {
         where: { id: user.id },
         data: { passwordHash, mustChangePassword: false, tempPasswordExpiresAt: null },
       });
+      // Replacing a recovery password finishes that recovery request.
+      if (user.mustChangePassword) {
+        await tx.passwordResetRequest.updateMany({
+          where: { userId: user.id, status: 'PASSWORD_ISSUED' },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+      }
       await this.revokeAllSessions(user.id, tx, auth.sessionId);
       await this.audit.record(
         { actorId: user.id, action: 'PASSWORD_CHANGED', targetType: 'user', targetId: user.id },

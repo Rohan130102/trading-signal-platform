@@ -3,6 +3,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
+import { useFocusOnLoad } from '@/components/auth/parts';
 import { AuthFrame } from '@/components/shell/auth-frame';
 import { Button, Field, FormError, Input } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -13,6 +14,7 @@ export default function SetPasswordPage() {
   const client = useQueryClient();
   const me = useMe();
   const [current, setCurrent] = useState('');
+  const firstField = useFocusOnLoad<HTMLInputElement>();
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<unknown>(null);
@@ -41,6 +43,7 @@ export default function SetPasswordPage() {
 
   return (
     <AuthFrame
+      focused
       title="Choose your password"
       description="The password you were given is temporary. Choose one only you know."
     >
@@ -51,7 +54,7 @@ export default function SetPasswordPage() {
               {...c}
               type="password"
               autoComplete="current-password"
-              autoFocus
+              ref={firstField}
               value={current}
               onChange={(e) => setCurrent(e.target.value)}
             />

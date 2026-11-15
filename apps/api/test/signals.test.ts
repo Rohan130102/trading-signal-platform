@@ -478,7 +478,10 @@ describe('lifecycle over HTTP', () => {
     expect(after.aggregate.weightedPoints).toBe('100');
     const event = after.events.at(-1);
     expect(event.type).toBe('CORRECTION');
-    expect(event.body).toContain('Exit was mistyped');
+    // Subscribers see the new value and the old one; the reason is kept for administrators only.
+    expect(event.body).toContain(`Exit price updated: ${(entry + 100).toLocaleString('en-US')}.00`);
+    expect(event.body).not.toContain('Exit was mistyped');
+    expect(event.payload.correctionReason).toBe('Exit was mistyped');
     expect(event.payload.changes[0].field).toBe('Exit price');
   });
 
@@ -524,9 +527,9 @@ describe('lifecycle over HTTP', () => {
     expect(Number(stored.trade.e)).toBe(low + 50);
 
     const report = (await admin().get('/admin/performance')).body;
-    const record = report.records.find((r: { id: string }) => r.id === trade.id);
+    const record = report.trades.find((r: { id: string }) => r.id === trade.id);
     expect(record.corrected).toBe(true);
-    expect(record.aggregate).toMatchObject({ weightedPoints: '150', outcome: 'WIN' });
+    expect(record).toMatchObject({ points: '150', outcome: 'WIN' });
   });
 
   it('corrects the levels, targets and times of a closed trade', async () => {
@@ -805,33 +808,47 @@ describe('performance report currencies', () => {
       confirm: true,
     });
 
+    // Points are kept per instrument and never added across instruments; no money is shown on the dashboard.
     const all = (await admin().get('/admin/performance')).body;
-    expect(all.quoteCurrency).toBeNull();
-    expect(all.pointsComparable).toBe(false);
-    expect(all.byBasis.find((b: { basis: string }) => b.basis === 'ADMIN_DECLARED_EXECUTION').stats.netPnl).toBeNull();
+    expect(JSON.stringify(all)).not.toMatch(/netPnl|grossPnl/);
+    expect(all.running).toBeNull();
+    const eurRow = all.instruments.find((i: { symbol: string }) => i.symbol === created.body.symbol);
+    expect(eurRow).toMatchObject({ wins: 1, measured: 1, netPoints: '5' });
+    expect(all).not.toHaveProperty('netPoints');
 
     const one = (await admin().get(`/admin/performance?symbol=${encodeURIComponent(created.body.symbol)}`)).body;
-    expect(one.quoteCurrency).toBe('EUR');
-    expect(one.byBasis.find((b: { basis: string }) => b.basis === 'ADMIN_DECLARED_EXECUTION').stats.netPnl).toBe('5');
+    expect(one.counts.total).toBe(1);
+    expect(one.running.map((p: { total: string }) => p.total)).toEqual(['5']);
   });
 });
 
 describe('performance report', () => {
-  it('counts every record, separates bases and refuses to show money it cannot support', async () => {
+  it('counts every record once, in one set of results', async () => {
     const report = (await admin().get('/admin/performance')).body;
-    expect(report.lifecycle.totalRecords).toBeGreaterThan(0);
-    expect(report.lifecycle.winRateDenominator).toBe(
-      report.lifecycle.wins + report.lifecycle.losses + report.lifecycle.breakevens,
-    );
-    expect(report.lifecycle.finalized).toBe(report.lifecycle.winRateDenominator + report.lifecycle.unresolved);
-    expect(report.lifecycle.cancelled).toBeGreaterThan(0);
-    const bases = report.byBasis.map((b: { basis: string }) => b.basis);
-    expect(bases).toEqual(['HYPOTHETICAL_OUTCOME', 'ADMIN_DECLARED_EXECUTION']);
-    const hypothetical = report.byBasis[0].stats;
-    expect(hypothetical.netPnl).toBeNull();
-    expect(report.methodology.version).toBe('pnl-v1');
+    const { counts, results } = report;
+    expect(counts.total).toBeGreaterThan(0);
+    expect(counts.cancelled).toBeGreaterThan(0);
+    expect(results.measured).toBe(results.wins + results.losses + results.breakevens);
+    expect(results.measured).toBeLessThanOrEqual(counts.closed);
+    // The instruments add up to the whole, with no trade in two places.
+    const sum = (key: 'wins' | 'losses' | 'measured') =>
+      report.instruments.reduce((n: number, i: Record<string, number>) => n + (i[key] ?? 0), 0);
+    expect(sum('wins')).toBe(results.wins);
+    expect(sum('losses')).toBe(results.losses);
+    expect(sum('measured')).toBe(results.measured);
+    expect(JSON.stringify(report)).not.toMatch(/byBasis|HYPOTHETICAL_OUTCOME|ADMIN_DECLARED/);
     const filtered = (await admin().get('/admin/performance?symbol=BTC/USD')).body;
-    expect(filtered.lifecycle.totalRecords).toBe(0);
+    expect(filtered.counts.total).toBe(0);
+  });
+
+  it('a closed trade is in the results the moment it closes, with no other step', async () => {
+    const before = (await admin().get('/admin/performance')).body;
+    const trade = await activeTrade();
+    await act(trade, 'CLOSE', { exitPrice: String(Number(trade.entryLow) + 30), reason: 'MANUAL', confirm: true });
+    const after = (await admin().get('/admin/performance')).body;
+    expect(after.counts.closed).toBe(before.counts.closed + 1);
+    expect(after.results.wins).toBe(before.results.wins + 1);
+    expect(after.trades[0]).toMatchObject({ id: trade.id, outcome: 'WIN', points: expect.stringMatching(/^[1-9]/) });
   });
 
   it('a superseded exit never counts towards results', async () => {
@@ -854,8 +871,8 @@ describe('performance report', () => {
     ).body.trade;
     expect(fixed.aggregate.outcome).toBe('WIN');
     const report = (await admin().get('/admin/performance')).body;
-    const record = report.records.find((r: { id: string }) => r.id === trade.id);
+    const record = report.trades.find((r: { id: string }) => r.id === trade.id);
     expect(record.corrected).toBe(true);
-    expect(record.aggregate.outcome).toBe('WIN');
+    expect(record.outcome).toBe('WIN');
   });
 });

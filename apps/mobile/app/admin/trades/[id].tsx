@@ -2,7 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   type AdminEvent,
   type AdminTradeDetail,
-  BASIS_LABELS,
   CLOSE_REASON_LABELS,
   formatDateTime,
   formatPrice,
@@ -42,19 +41,19 @@ import {
 } from '@/ui';
 
 const ACTIONS: { kind: ActionKind; label: string; icon: IconName; tone?: 'primary' | 'danger' }[] = [
-  { kind: 'ACTIVATE', label: 'Activate', icon: 'play', tone: 'primary' },
-  { kind: 'MOVE_STOP', label: 'Move stop', icon: 'shield-checkmark-outline' },
+  { kind: 'ACTIVATE', label: 'Activate Trade', icon: 'play', tone: 'primary' },
+  { kind: 'MOVE_STOP', label: 'Update Stop-Loss', icon: 'shield-checkmark-outline' },
   { kind: 'MOVE_STOP_BREAKEVEN', label: 'Breakeven', icon: 'flag-outline' },
-  { kind: 'TRAIL_STOP', label: 'Trail stop', icon: 'trending-up' },
-  { kind: 'TARGET_HIT', label: 'Target reached', icon: 'locate-outline' },
-  { kind: 'BOOK_PARTIAL', label: 'Book partial', icon: 'checkmark-done-outline' },
-  { kind: 'CLOSE', label: 'Close trade', icon: 'checkmark-circle-outline', tone: 'primary' },
+  { kind: 'TRAIL_STOP', label: 'Trail Stop', icon: 'trending-up' },
+  { kind: 'TARGET_HIT', label: 'Target Reached', icon: 'locate-outline' },
+  { kind: 'BOOK_PARTIAL', label: 'Book Partial', icon: 'checkmark-done-outline' },
+  { kind: 'CLOSE', label: 'Close Trade', icon: 'checkmark-circle-outline', tone: 'primary' },
   { kind: 'URGENT', label: 'Urgent', icon: 'warning-outline' },
-  { kind: 'MODIFY_TARGETS', label: 'Change targets', icon: 'create-outline' },
-  { kind: 'RECORD_EXECUTION', label: 'My execution', icon: 'lock-closed-outline' },
-  { kind: 'CANCEL', label: 'Cancel signal', icon: 'ban-outline', tone: 'danger' },
-  { kind: 'EXPIRE', label: 'Expired, no entry', icon: 'close-circle-outline' },
-  { kind: 'CORRECT', label: 'Correct an error', icon: 'build-outline' },
+  { kind: 'MODIFY_TARGETS', label: 'Change Targets', icon: 'create-outline' },
+  { kind: 'RECORD_EXECUTION', label: 'My Execution', icon: 'lock-closed-outline' },
+  { kind: 'CANCEL', label: 'Cancel Signal', icon: 'ban-outline', tone: 'danger' },
+  { kind: 'EXPIRE', label: 'Expired, No Entry', icon: 'close-circle-outline' },
+  { kind: 'CORRECT', label: 'Correct Trade', icon: 'build-outline' },
 ];
 
 function LockIcon() {
@@ -181,7 +180,7 @@ export default function AdminTrade() {
                 <View style={styles.identity}>
                   <LockIcon />
                   <T v="small" c="muted" num style={{ flex: 1 }}>
-                    {`Declared execution (private): entry ${formatPrice(t, t.execution.entryPrice)}${t.execution.quantity ? `, quantity ${t.execution.quantity} ${t.unitLabel}` : ''}. Not independently verified.`}
+                    {`Your entry ${formatPrice(t, t.execution.entryPrice)}${t.execution.quantity ? `, quantity ${t.execution.quantity} ${t.unitLabel}` : ''}. Only administrators see this.`}
                   </T>
                 </View>
               </>
@@ -206,9 +205,6 @@ export default function AdminTrade() {
             <>
               <SectionTitle>Result</SectionTitle>
               <Card style={{ gap: space.md }} testID="trade-result">
-                <T v="small" c="muted">
-                  {BASIS_LABELS[t.aggregate.basis]}
-                </T>
                 <View style={styles.stats}>
                   <Stat label="Closed" value={percent(t.aggregate.closedFraction)} />
                   <Stat

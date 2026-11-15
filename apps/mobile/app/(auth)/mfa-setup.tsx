@@ -43,6 +43,7 @@ export default function MfaSetup() {
     const text = recovery.join('\n');
     return (
       <AuthFrame
+        focused
         title="Save your recovery codes"
         description="If you lose your phone, each of these lets you sign in once. They will not be shown again."
       >
@@ -82,6 +83,7 @@ export default function MfaSetup() {
 
   return (
     <AuthFrame
+      focused
       title="Set up two-step verification"
       description="Administrator accounts need a code from an authenticator app, such as Google Authenticator or 1Password."
     >
@@ -118,7 +120,7 @@ export default function MfaSetup() {
           </View>
           <Card>
             <T v="small" c="muted">
-              Or enter this key by hand
+              Or enter this key manually
             </T>
             <T testID="mfa-secret" num selectable style={{ marginTop: 4 }}>
               {setup.data.secret}

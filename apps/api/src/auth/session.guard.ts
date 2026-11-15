@@ -49,7 +49,8 @@ export class SessionGuard implements CanActivate {
       this.reflector.getAllAndOverride<boolean>(MASTER_ONLY, targets) &&
       !(session.user.role === 'ADMIN' && session.user.isMasterAdmin)
     ) {
-      throw forbidden('MASTER_ADMIN_REQUIRED', 'Only the Master Admin can do this.');
+      // The same answer as any other refusal: it says nothing about who could do this.
+      throw forbidden();
     }
 
     if (this.reflector.getAllAndOverride<boolean>(REQUIRES_SIGNAL_ACCESS, targets) && !session.access.allowed) {

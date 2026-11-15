@@ -1,13 +1,25 @@
 'use client';
 
-import type { DeviceBindingView, SubscriberDetail } from '@signaldesk/domain';
+import { ACTIONS, type DeviceBindingView, ENQUIRY_STATUS_LABELS, type SubscriberDetail } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, KeyRound, LogOut, PauseCircle, PlayCircle, RefreshCw, CalendarClock } from 'lucide-react';
+import {
+  ArrowLeft,
+  BadgeCheck,
+  CalendarClock,
+  Gift,
+  KeyRound,
+  LogOut,
+  PauseCircle,
+  PlayCircle,
+  PlusCircle,
+  RefreshCw,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { AccessBadge, CredentialsCard } from '@/components/admin/subscriber-parts';
+import { EnquiryStatusField, RenewDialog, StartDialog, TrialDialog } from '@/components/admin/subscription-dialogs';
 import {
   Button,
   Card,
@@ -30,9 +42,17 @@ import { useMe } from '@/lib/session';
 type Detail = SubscriberDetail;
 
 const EVENT_LABEL = (e: Detail['events'][number]) => {
-  if (e.type === 'CREATED') return `Created for ${e.durationDays} days`;
+  if (e.type === 'CREATED') return `Subscription started for ${e.durationDays} days`;
+  if (e.type === 'STARTED') return `Subscription started for ${e.durationDays} days`;
+  if (e.type === 'TRIAL_GRANTED') return `Free trial for ${e.durationDays} days`;
   if (e.type === 'ADJUSTED') return 'Dates adjusted';
-  return `Renewed for ${e.durationDays} days${e.mode === 'EXTENDED_FROM_EXPIRY' ? ', extended from expiry' : ', started fresh'}`;
+  const how =
+    e.mode === 'EXTENDED_FROM_EXPIRY'
+      ? ', extended from expiry'
+      : e.mode === 'RESTARTED_FROM_DATE'
+        ? ', from a set date'
+        : ', started fresh';
+  return `Renewed for ${e.durationDays} days${how}`;
 };
 
 export default function SubscriberPage() {
@@ -42,8 +62,17 @@ export default function SubscriberPage() {
     queryKey: ['admin', 'subscriber', id],
     queryFn: () => api.get<Detail>(`/admin/subscribers/${id}`),
   });
-  const [dialog, setDialog] = useState<'renew' | 'adjust' | 'reset' | 'suspend' | null>(null);
+  const [dialog, setDialog] = useState<'start' | 'trial' | 'renew' | 'adjust' | 'reset' | 'suspend' | null>(null);
   const refresh = () => void client.invalidateQueries({ queryKey: ['admin'] });
+  // Opening a new registration takes it off the badge for every administrator.
+  const selfRegistered = detail.data?.selfRegistered === true;
+  useEffect(() => {
+    if (selfRegistered) {
+      void api
+        .post(`/admin/subscribers/${id}/seen`)
+        .then(() => client.invalidateQueries({ queryKey: ['admin', 'inbox'] }));
+    }
+  }, [client, id, selfRegistered]);
   const act = useMutation({
     mutationFn: (path: string) => api.post(`/admin/subscribers/${id}/${path}`),
     onSuccess: (_r, path) => {
@@ -100,6 +129,7 @@ export default function SubscriberPage() {
               />
             </dl>
           </Card>
+          {s.selfRegistered && <Registration detail={s} />}
           <Contact detail={s} onSaved={refresh} />
           <Card>
             <CardHeader title="Subscription history" />
@@ -145,12 +175,26 @@ export default function SubscriberPage() {
           <Card>
             <CardHeader title="Actions" />
             <div className="flex flex-col gap-1.5 border-t border-line p-3">
-              <Button variant="primary" className="w-full justify-start" onClick={() => setDialog('renew')}>
-                <RefreshCw className="size-4" aria-hidden /> Renew
-              </Button>
-              <Button className="w-full justify-start" onClick={() => setDialog('adjust')}>
-                <CalendarClock className="size-4" aria-hidden /> Change dates
-              </Button>
+              {s.actions.includes('START') && (
+                <Button variant="primary" className="w-full justify-start" onClick={() => setDialog('start')}>
+                  <PlusCircle className="size-4" aria-hidden /> {ACTIONS.startSubscription}
+                </Button>
+              )}
+              {s.actions.includes('GRANT_TRIAL') && (
+                <Button className="w-full justify-start" onClick={() => setDialog('trial')}>
+                  <Gift className="size-4" aria-hidden /> {ACTIONS.grantFreeTrial}
+                </Button>
+              )}
+              {s.actions.includes('RENEW') && (
+                <Button variant="primary" className="w-full justify-start" onClick={() => setDialog('renew')}>
+                  <RefreshCw className="size-4" aria-hidden /> {ACTIONS.renewSubscription}
+                </Button>
+              )}
+              {s.subscription.state !== 'NONE' && (
+                <Button className="w-full justify-start" onClick={() => setDialog('adjust')}>
+                  <CalendarClock className="size-4" aria-hidden /> Change dates
+                </Button>
+              )}
               <Button className="w-full justify-start" onClick={() => setDialog('reset')}>
                 <KeyRound className="size-4" aria-hidden /> Reset password
               </Button>
@@ -163,7 +207,7 @@ export default function SubscriberPage() {
               </Button>
               {s.status === 'ACTIVE' ? (
                 <Button variant="danger" className="w-full justify-start" onClick={() => setDialog('suspend')}>
-                  <PauseCircle className="size-4" aria-hidden /> Suspend account
+                  <PauseCircle className="size-4" aria-hidden /> {ACTIONS.suspendAccount}
                 </Button>
               ) : (
                 <Button
@@ -176,9 +220,14 @@ export default function SubscriberPage() {
               )}
             </div>
           </Card>
+          <Card className="mt-4 p-4">
+            <EnquiryStatusField detail={s} onSaved={refresh} />
+          </Card>
           <Screenshots detail={s} onSaved={refresh} />
         </aside>
       </div>
+      {dialog === 'start' && <StartDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
+      {dialog === 'trial' && <TrialDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === 'renew' && <RenewDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === 'adjust' && <AdjustDialog detail={s} onClose={() => setDialog(null)} onDone={refresh} />}
       {dialog === 'reset' && <ResetDialog detail={s} onClose={() => setDialog(null)} />}
@@ -187,7 +236,61 @@ export default function SubscriberPage() {
   );
 }
 
-/** The Master Admin's choice for this subscriber. Everyone else sees what applies. */
+/** What they entered at sign-up, and how their enquiries went. */
+function Registration({ detail }: { detail: Detail }) {
+  const outcome = {
+    LINK_OPENED: 'WhatsApp opened',
+    EMAIL_QUEUED: 'Email sending',
+    EMAIL_SENT: 'Email sent to support',
+    EMAIL_FAILED: 'Email failed',
+  } as const;
+  return (
+    <Card>
+      <CardHeader
+        title="Registration"
+        action={
+          detail.emailVerifiedAt ? (
+            <span className="flex items-center gap-1 text-[13px] text-success">
+              <BadgeCheck className="size-4" aria-hidden /> Email verified
+            </span>
+          ) : undefined
+        }
+      />
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line px-4 py-3 text-sm sm:grid-cols-4 sm:px-5">
+        <div>
+          <dt className="text-xs text-muted">First name</dt>
+          <dd>{detail.firstName}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Last name</dt>
+          <dd>{detail.lastName}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Age</dt>
+          <dd className="num">{detail.age}</dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted">Enquiry</dt>
+          <dd>{ENQUIRY_STATUS_LABELS[detail.enquiryStatus]}</dd>
+        </div>
+      </dl>
+      {detail.enquiries.length > 0 && (
+        <ul className="border-t border-line">
+          {detail.enquiries.map((e) => (
+            <li key={e.id} className="flex justify-between gap-3 px-4 py-2 text-[13px] sm:px-5">
+              <span>{outcome[e.outcome]}</span>
+              <time dateTime={e.createdAt} className="text-subtle">
+                {formatDateTime(e.createdAt)}
+              </time>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+/** The Master Admin's choice for this subscriber. Nobody else sees it. */
 function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
   const master = useMe().data?.isMasterAdmin === true;
   const save = useMutation({
@@ -200,6 +303,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
     onError: (e) => toast.error((e as ApiError).message),
   });
   const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  if (!master) return null;
   return (
     <Card className="mt-4">
       <CardHeader
@@ -207,12 +311,12 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
         description={detail.screenshotsEffective ? 'Allowed for this subscriber.' : 'Blocked for this subscriber.'}
       />
       <div className="flex flex-col gap-2 border-t border-line p-3">
-        <Field label="Permission" hint={master ? undefined : 'Only the Master Admin can change this.'}>
+        <Field label="Permission">
           {(c) => (
             <Select
               {...c}
               value={value}
-              disabled={!master || save.isPending}
+              disabled={save.isPending}
               onChange={(e) => save.mutate(e.target.value === 'DEFAULT' ? null : e.target.value === 'ALLOW')}
             >
               <option value="DEFAULT">Platform default</option>
@@ -221,10 +325,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
             </Select>
           )}
         </Field>
-        <p className="text-xs leading-relaxed text-subtle">
-          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
-          screenshot when it sees one. Web browsers cannot block them.
-        </p>
+        <p className="text-xs text-subtle">iPhone and web browsers cannot fully block screenshots.</p>
       </div>
     </Card>
   );
@@ -362,65 +463,6 @@ function Contact({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
         </Button>
       </form>
     </Card>
-  );
-}
-
-function RenewDialog({ detail, onClose, onDone }: { detail: Detail; onClose: () => void; onDone: () => void }) {
-  const [days, setDays] = useState('30');
-  const [note, setNote] = useState('');
-  const [key] = useState(newKey);
-  const running = detail.subscription.state === 'ACTIVE' || detail.subscription.state === 'SCHEDULED';
-  const renew = useMutation({
-    mutationFn: () =>
-      api.post<{ subscriber: Detail }>(`/admin/subscribers/${detail.id}/renew`, {
-        durationDays: Number(days),
-        idempotencyKey: key,
-        note: note.trim() || undefined,
-      }),
-    onSuccess: (r) => {
-      onDone();
-      toast.success(`Renewed through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`);
-      onClose();
-    },
-  });
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    renew.mutate();
-  };
-  return (
-    <Dialog
-      open
-      onOpenChange={(o) => !o && onClose()}
-      title={`Renew ${detail.name}`}
-      description={
-        running
-          ? `Still active, so the new days are added after ${formatLocalDate(detail.subscription.lastValidDate as string)}. Nothing already paid for is lost.`
-          : 'Expired, so the new period starts today.'
-      }
-    >
-      <form onSubmit={submit} className="flex flex-col gap-4">
-        <Field label="Days to add">
-          {(c) => (
-            <Input
-              {...c}
-              className="num"
-              type="number"
-              min={1}
-              autoFocus
-              value={days}
-              onChange={(e) => setDays(e.target.value)}
-            />
-          )}
-        </Field>
-        <Field label="Note" hint="Optional, for your records.">
-          {(c) => <Input {...c} value={note} onChange={(e) => setNote(e.target.value)} />}
-        </Field>
-        <FormError error={renew.error} />
-        <Button type="submit" variant="primary" size="lg" loading={renew.isPending} disabled={!(Number(days) >= 1)}>
-          Renew
-        </Button>
-      </form>
-    </Dialog>
   );
 }
 

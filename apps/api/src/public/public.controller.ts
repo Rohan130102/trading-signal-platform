@@ -1,7 +1,8 @@
 import { Controller, Get, Header } from '@nestjs/common';
-import { performanceQuery } from '@signaldesk/domain';
+import { performanceQuery, signupAvailable } from '@signaldesk/domain';
 import type { z } from 'zod';
 import { notFound, Public, Summary, ZQuery } from '../common/http.js';
+import { EmailTransport } from '../email/email-transport.js';
 import { PerformanceService } from '../performance/performance.service.js';
 import { SettingsService } from '../settings/settings.service.js';
 
@@ -11,6 +12,7 @@ export class PublicController {
   constructor(
     private readonly settings: SettingsService,
     private readonly performance: PerformanceService,
+    private readonly email: EmailTransport,
   ) {}
 
   @Get('info')
@@ -27,9 +29,13 @@ export class PublicController {
       riskDisclosure: s.riskDisclosure,
       privacyNotice: s.privacyNotice,
       supportContact: s.supportContact,
+      supportWhatsapp: s.supportWhatsapp,
+      supportEmail: s.supportEmail,
       publicResultsAvailable: gate.enabled,
       aboutBody: s.aboutBody,
       dataResetAt: s.dataResetAt?.toISOString() ?? null,
+      signupOpen: s.signupOpen,
+      signupAvailable: signupAvailable(s.signupOpen, await this.email.status()),
     };
   }
 

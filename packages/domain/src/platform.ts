@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { LIVE_STATUSES, type TradeStatus } from './status.js';
 
 /**
  * Platform rules the Master Admin sets in the app instead of in the code, and the small pure decisions that
@@ -69,27 +68,83 @@ export function screenshotsAllowedFor(override: boolean | null | undefined, plat
   return override ?? platformDefault;
 }
 
-/**
- * Whether a trade belongs in one subscriber's lists: it was published during their membership, or it was
- * still live at some point during it. Live trades are always shown, because a member should see every
- * instruction that is still in force. `from` null means no restriction.
- */
-export function visibleToMember(
-  trade: { status: TradeStatus; publishedAt: Date | string | null; closedAt: Date | string | null },
-  from: Date | null,
-): boolean {
-  if (!from) return true;
-  if (LIVE_STATUSES.includes(trade.status)) return true;
-  const at = (value: Date | string | null) => (value === null ? null : new Date(value).getTime());
-  const published = at(trade.publishedAt);
-  const closed = at(trade.closedAt);
-  return (published !== null && published >= from.getTime()) || (closed !== null && closed >= from.getTime());
+/** A period during which a member was entitled to content. `to` is exclusive. */
+export interface EntitlementPeriod {
+  from: Date;
+  to: Date;
 }
 
-/** The earliest start of any of a subscriber's membership periods. Null when they never had one. */
-export function membershipStart(starts: (Date | null | undefined)[]): Date | null {
-  const times = starts.filter((d): d is Date => d instanceof Date).map((d) => d.getTime());
-  return times.length === 0 ? null : new Date(Math.min(...times));
+/** One recorded change to a member's window: when it was made, and the window it set. */
+export interface WindowChange {
+  at: Date;
+  startsAt: Date;
+  expiresAt: Date;
+}
+
+/**
+ * The periods a member was entitled to content. Each recorded window holds from its start until it expires or the
+ * next change replaces it, whichever comes first. A gap between two memberships stays a gap, so renewing never
+ * opens what was published while access had lapsed. Without any recorded change, the current window is used.
+ */
+export function entitlementPeriods(
+  changes: WindowChange[],
+  current?: { startsAt: Date; expiresAt: Date } | null,
+): EntitlementPeriod[] {
+  const sorted = [...changes].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const raw: EntitlementPeriod[] =
+    sorted.length === 0
+      ? current
+        ? [{ from: current.startsAt, to: current.expiresAt }]
+        : []
+      : sorted.map((change, i) => {
+          const next = sorted[i + 1];
+          const end = next && next.at.getTime() < change.expiresAt.getTime() ? next.at : change.expiresAt;
+          return { from: change.startsAt, to: end };
+        });
+  const periods = raw
+    .filter((p) => p.to.getTime() > p.from.getTime())
+    .sort((a, b) => a.from.getTime() - b.from.getTime());
+  const merged: EntitlementPeriod[] = [];
+  for (const period of periods) {
+    const last = merged[merged.length - 1];
+    if (last && period.from.getTime() <= last.to.getTime()) {
+      if (period.to.getTime() > last.to.getTime()) last.to = period.to;
+    } else {
+      merged.push({ from: period.from, to: period.to });
+    }
+  }
+  return merged;
+}
+
+/** Whether a moment falls in any of the periods. `periods` null means no restriction (administrators). */
+export function withinPeriods(at: Date | string | null, periods: EntitlementPeriod[] | null): boolean {
+  if (periods === null) return true;
+  if (at === null) return false;
+  const t = new Date(at).getTime();
+  return periods.some((p) => t >= p.from.getTime() && t < p.to.getTime());
+}
+
+/**
+ * Whether a trade belongs in one member's screens: it was published while they were entitled. A trade published
+ * before, or during a lapse, stays out with all its later updates, so nobody receives an update without the signal
+ * it belongs to. The same rule applies to lists, details, alerts, live updates and push notifications.
+ */
+export function visibleToMember(trade: { publishedAt: Date | string | null }, periods: EntitlementPeriod[] | null) {
+  return withinPeriods(trade.publishedAt, periods);
+}
+
+/** Announcement categories everyone signed in may read, whenever they were published: notices about the service. */
+export const PUBLIC_ANNOUNCEMENT_CATEGORIES = ['MAINTENANCE'] as const;
+
+/** Subscriber announcements follow the same rule as trades; service notices are open to everyone signed in. */
+export function announcementVisibleToMember(
+  announcement: { category: string; publishedAt: Date | string | null },
+  periods: EntitlementPeriod[] | null,
+): boolean {
+  return (
+    (PUBLIC_ANNOUNCEMENT_CATEGORIES as readonly string[]).includes(announcement.category) ||
+    withinPeriods(announcement.publishedAt, periods)
+  );
 }
 
 /* ---------- Requests ---------- */

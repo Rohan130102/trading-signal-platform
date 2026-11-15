@@ -1,32 +1,35 @@
 'use client';
 
 import { clsx } from 'clsx';
-import { Activity, History as HistoryIcon, Rss, UserRound } from 'lucide-react';
+import { Activity, Bell, History as HistoryIcon, Megaphone, UserRound } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { type ReactNode, useEffect } from 'react';
 import { ConnectionBanner, LivePill } from '@/components/shell/connection-banner';
-import { AccessEnded, SessionGate } from '@/components/shell/session-gate';
+import { SessionGate } from '@/components/shell/session-gate';
+import { Notices, SubscriptionStatus } from '@/components/subscriber/status';
+import { TrialGreeting } from '@/components/subscriber/trial-greeting';
 import { Logo } from '@/components/ui';
 import { registerServiceWorker } from '@/lib/push';
 import { RealtimeProvider, useRealtime, useStartRealtimeFromHead } from '@/lib/realtime';
 
+/** The same five places as the phone app, in the same order. */
 const NAV = [
-  { href: '/app', label: 'Feed', icon: Rss, exact: true },
-  { href: '/app/active', label: 'Active', icon: Activity },
-  { href: '/app/history', label: 'History', icon: HistoryIcon },
-  { href: '/app/account', label: 'Account', icon: UserRound },
+  { href: '/app', label: 'Signals', icon: Activity, badge: false },
+  { href: '/app/alerts', label: 'Alerts', icon: Bell, badge: true },
+  { href: '/app/news', label: 'News', icon: Megaphone, badge: false },
+  { href: '/app/history', label: 'History', icon: HistoryIcon, badge: false },
+  { href: '/app/account', label: 'Account', icon: UserRound, badge: false },
 ];
 
 function Shell({ children, serviceName }: { children: ReactNode; serviceName: string }) {
   const pathname = usePathname();
   const { unread } = useRealtime();
-  useStartRealtimeFromHead(pathname !== '/app');
+  // Alerts reads the stream from where it left off; every other page starts live from now.
+  useStartRealtimeFromHead(pathname !== '/app/alerts');
   const isActive = (item: (typeof NAV)[number]) =>
-    item.exact
-      ? pathname === item.href
-      : pathname.startsWith(item.href) || (item.href === '/app/active' && pathname.startsWith('/app/trades'));
-  const unreadBadge = unread > 0 && pathname !== '/app';
+    item.href === '/app' ? pathname === '/app' || pathname.startsWith('/app/trades') : pathname.startsWith(item.href);
+  const unreadBadge = unread > 0 && pathname !== '/app/alerts';
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -54,7 +57,7 @@ function Shell({ children, serviceName }: { children: ReactNode; serviceName: st
                 )}
               >
                 {item.label}
-                {item.exact && unreadBadge && (
+                {item.badge && unreadBadge && (
                   <span className="num ml-1.5 rounded bg-primary px-1 text-[11px] font-semibold text-primary-text">
                     {unread}
                     <span className="sr-only"> unread</span>
@@ -70,13 +73,14 @@ function Shell({ children, serviceName }: { children: ReactNode; serviceName: st
         <ConnectionBanner />
       </header>
       <main id="main" className="mx-auto w-full max-w-3xl flex-1 px-4 pb-24 pt-5 sm:pb-10">
+        <Notices />
         {children}
       </main>
       <nav
         aria-label="Main"
         className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden"
       >
-        <ul className="grid grid-cols-4">
+        <ul className="grid grid-cols-5">
           {NAV.map((item) => {
             const Icon = item.icon;
             return (
@@ -91,7 +95,7 @@ function Shell({ children, serviceName }: { children: ReactNode; serviceName: st
                 >
                   <Icon className="size-5" aria-hidden />
                   {item.label}
-                  {item.exact && unreadBadge && (
+                  {item.badge && unreadBadge && (
                     <span className="num absolute left-1/2 top-1.5 ml-1.5 rounded bg-primary px-1 text-[10px] font-semibold text-primary-text">
                       {unread}
                       <span className="sr-only"> unread</span>
@@ -115,9 +119,10 @@ export default function SubscriberLayout({ children }: { children: ReactNode }) 
         me.access.allowed ? (
           <RealtimeProvider>
             <Shell serviceName={me.support.serviceName}>{children}</Shell>
+            <TrialGreeting me={me} />
           </RealtimeProvider>
         ) : (
-          <AccessEnded me={me} />
+          <SubscriptionStatus me={me} />
         )
       }
     </SessionGate>

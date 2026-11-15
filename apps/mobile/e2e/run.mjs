@@ -8,7 +8,7 @@
 // The app is used as a person would use it. The API is called directly only to play the other party:
 // the administrator publishing while a subscriber watches, for example.
 import { randomUUID } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,6 +146,21 @@ async function act(trade, action, body = {}) {
   return result.trade;
 }
 
+/**
+ * Opens an item on the administrator's More screen. The list is longer than a phone screen, and it keeps its
+ * scroll position, so the item may be above or below what is showing.
+ */
+async function tapMore(id) {
+  const sel = { id };
+  await d.waitFor({ id: 'more' }, 20_000);
+  try {
+    await d.scrollTo(sel, { maxSwipes: 5 });
+  } catch {
+    await d.scrollTo(sel, { maxSwipes: 8, up: true });
+  }
+  await d.tap(sel);
+}
+
 async function launch() {
   await d.shell('am', 'force-stop', PACKAGE);
   await delay(400);
@@ -173,14 +188,15 @@ async function signOutIfNeeded() {
     }
     if (has('tab-more')) {
       await d.tap({ id: 'tab-more' });
-      await d.tap({ id: 'more-account' });
+      await tapMore('more-account');
       await d.scrollTo({ id: 'sign-out' }, { maxSwipes: 15 });
       await d.tap({ id: 'sign-out' });
       await d.waitFor({ id: 'login-id' }, 15_000);
       return;
     }
-    if (nodes.some((n) => /^Sign out$/.test(n.text) || n.desc === 'Sign out')) {
-      await d.tap({ any: /^Sign out$/ });
+    // A screen with no tabs: setting a password, or the status screen of an account without access.
+    if (nodes.some((n) => /^(Sign|Log) out$/.test(n.text) || /^(Sign|Log) out$/.test(n.desc))) {
+      await d.tap({ any: /^(Sign|Log) out$/ });
       await d.waitFor({ id: 'login-id' }, 15_000);
       return;
     }
@@ -193,6 +209,15 @@ async function login(id, password) {
   await d.type({ id: 'login-id' }, id);
   await d.type({ id: 'login-password' }, password);
   await d.hideKeyboard();
+  // Reported, not hidden: if the screen was still settling after a sign-out, the first field can lose its text.
+  const typed = (await d.query({ id: 'login-id' }))?.text;
+  if (typed !== id) {
+    console.warn(`  the sign-in field held "${typed}" after typing ${id}; typing it again`);
+    await d.type({ id: 'login-id' }, id);
+    await d.hideKeyboard();
+  }
+  // The brand sits above the form, so on a short screen the button can be below the fold.
+  await d.scrollTo({ id: 'login-submit' });
   await d.tap({ id: 'login-submit' });
 }
 
@@ -232,8 +257,9 @@ J['sign-in-errors'] = async () => {
   await signOutIfNeeded();
   await d.screenshot('login');
   await d.hideKeyboard();
+  await d.scrollTo({ id: 'login-submit' });
   await d.tap({ id: 'login-submit' });
-  await expectText('Enter your login ID');
+  await expectText('Enter your email or username');
   await login(state.subscriber.loginId, 'definitely-wrong-password');
   const error = await d.waitFor({ id: 'form-error' });
   await d.screenshot('login-error');
@@ -245,6 +271,7 @@ J['sign-in-errors'] = async () => {
 
 J['disclosures-before-sign-in'] = async () => {
   await signOutIfNeeded();
+  await d.scrollTo({ id: 'login-disclosures' });
   await d.tap({ id: 'login-disclosures' });
   await expectText('Risk disclosure');
   await expectText(/substantial risk/);
@@ -369,10 +396,12 @@ J['subscriber-live-signal'] = async () => {
   assert((await cardCount('3,300.00')) === 1, 'The update did not become a second card');
   await d.screenshot('feed-update');
 
-  // Only open trades, through the filter sheet.
+  // Only active trades, through the filter sheet: this one was activated above. Signals lists live trades
+  // only; finished ones are in History.
   await d.tap({ id: 'filter-button' });
   await d.waitFor({ id: 'filter-sheet' });
-  await d.tap({ id: 'status-OPEN' });
+  assert(!(await d.has({ id: 'status-CLOSED' })), 'Signals offers no Finished filter');
+  await d.tap({ id: 'status-LIVE' });
   await d.screenshot('filter-sheet');
   await d.tap({ id: 'filter-apply' });
   await d.waitGone({ id: 'filter-sheet' });
@@ -390,8 +419,8 @@ J['subscriber-live-signal'] = async () => {
     confirm: true,
   });
   await d.scrollTo({ id: 'outcome' });
-  await expectText('Favourable');
-  await expectText(/not what any subscriber achieved/);
+  await expectText('Win');
+  assert(!(await d.has({ any: /hypothetical|declared|verified/i })), 'No internal labels on the trade');
   await d.screenshot('trade-closed');
   const closed = await d.text();
   assert(!/USD\b.*\d+\.\d\d (USD)/.test(closed) && !/Net result/.test(closed), 'A subscriber sees no money figures');
@@ -543,7 +572,8 @@ J['subscriber-expiry-and-renewal'] = async () => {
     idempotencyKey: randomUUID(),
   });
   // The open connection is closed by the server, and the app follows without being touched.
-  await expectText('Your subscription has ended', 30_000);
+  await expectText('Your Subscription Has Expired', 30_000);
+  await expectText('Enquire About Renewal');
   await d.screenshot('access-ended');
   const text = await d.text();
   assert(!/XAU\/USD|3,\d{3}\.\d\d/.test(text), 'Nothing private stays on screen');
@@ -551,8 +581,11 @@ J['subscriber-expiry-and-renewal'] = async () => {
     durationDays: 30,
     idempotencyKey: randomUUID(),
   });
-  await d.tap({ id: 'access-check' });
-  await d.waitFor({ id: 'feed-list' }, 20_000);
+  // Coming back to the app checks the account again (it is also checked every minute while open).
+  await d.shell('input', 'keyevent', 'KEYCODE_HOME');
+  await delay(1500);
+  await d.shell('am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${APP_URL}'`, PACKAGE);
+  await d.waitFor({ id: 'feed-list' }, 30_000);
   await d.waitFor({ id: 'live-live' }, 20_000);
 };
 
@@ -580,6 +613,10 @@ J['admin-publish-and-manage-trade'] = async () => {
   await expectText(money(Number(entry) + 150));
   await expectText(money(Number(entry) - 180));
   await d.screenshot('compose-filled');
+  // New signals start as Awaiting entry unless the desk changes that default; this one is published active.
+  await d.scrollTo({ id: 'compose-start-active' });
+  await d.tap({ id: 'compose-start-active' });
+  await expectText('Active as soon as it is published');
   await d.tap({ id: 'compose-review' });
   await d.waitFor({ id: 'compose-publish' });
   await expectText('Review before publishing');
@@ -598,7 +635,7 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.waitFor({ id: 'admin-trade' }, 15_000);
   await d.screenshot('admin-trade');
 
-  // Published means active: there is nothing to activate. A declared fill and quantity can still be recorded.
+  // Published active: there is nothing to activate. A declared fill and quantity can still be recorded.
   await expectText('Active');
   assert(!(await d.has({ id: 'do-ACTIVATE' })), 'There is no separate activation step');
   await d.scrollTo({ id: 'do-RECORD_EXECUTION' }).catch(() => undefined);
@@ -610,7 +647,7 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.screenshot('action-record-execution');
   await d.tap({ id: 'action-submit' });
   await d.waitFor({ id: 'do-MOVE_STOP' }, 15_000);
-  await expectText(/Declared execution \(private\)/);
+  await expectText(/Only administrators see this/);
 
   // Move the stop tighter.
   const tighter = String(Number(entry) - 100);
@@ -663,8 +700,11 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.type({ id: 'exit-price' }, String(Number(entry) + 100));
   await d.hideKeyboard();
   await d.waitFor({ id: 'exit-preview' });
-  await d.tap({ id: 'basis-ADMIN_DECLARED_EXECUTION' });
+  // No choice to make: with the admin's entry recorded, the result is measured from it.
+  assert(!(await d.has({ any: /based on|basis/i })), 'The close form asks nothing about a basis');
   await expectText('+100 pts');
+  // The money line sits below the fees and comment fields.
+  await d.scrollTo({ any: /100\.00 USD/ });
   await expectText('100.00 USD');
   await d.screenshot('action-partial');
   await d.tap({ id: 'action-submit' });
@@ -736,14 +776,15 @@ J['admin-custom-levels-and-validation'] = async () => {
   await d.waitFor({ id: 'dashboard' });
   // Work in progress comes back.
   await d.tap({ id: 'tab-new-signal' });
-  await d.waitFor({ id: 'compose-custom' });
+  await d.waitFor({ id: 'compose-levels' });
+  await d.scrollTo({ id: 'custom-stop' });
   await expectText('3400', 5000);
   await d.tap({ id: 'compose-save-draft' });
   await expectText('Draft saved');
   await d.tap({ id: 'compose-close' });
   await d.waitFor({ id: 'dashboard' });
   await d.tap({ id: 'tab-more' });
-  await d.tap({ id: 'more-drafts' });
+  await tapMore('more-drafts');
   await d.waitFor({ id: 'drafts' });
   await expectText(/entry 3300/);
   await d.screenshot('drafts');
@@ -772,8 +813,10 @@ J['admin-subscribers'] = async () => {
   await d.screenshot('subscriber-created');
   await d.tap({ id: 'subscriber-open' });
   await d.waitFor({ id: 'subscriber-detail' });
-  await expectText('Created for 90 days');
   await d.screenshot('subscriber-detail');
+  // The history is below the subscription, enquiry and actions.
+  await d.scrollTo({ any: /Subscription started for 90 days/ });
+  await d.scrollTo({ id: 'subscriber-renew' }, { up: true });
   const res = await fetch(`${API}/auth/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -787,11 +830,12 @@ J['admin-subscribers'] = async () => {
   assert(res.ok, 'The password shown really works');
 
   await d.tap({ id: 'subscriber-renew' });
-  await d.waitFor({ id: 'renew-days' });
+  await d.waitFor({ id: 'renew-sheet' });
   await d.screenshot('subscriber-renew');
   await d.tap({ id: 'renew-submit' });
-  await d.waitGone({ id: 'renew-days' }, 15_000);
-  await expectText(/Renewed for 30 days/);
+  await d.waitGone({ id: 'renew-sheet' }, 15_000);
+  await d.scrollTo({ any: /Renewed for 30 days/ });
+  await d.scrollTo({ id: 'subscriber-adjust' }, { up: true });
 
   await d.tap({ id: 'subscriber-adjust' });
   await d.waitFor({ id: 'adjust-date' });
@@ -799,7 +843,8 @@ J['admin-subscribers'] = async () => {
   await d.hideKeyboard();
   await d.tap({ id: 'adjust-submit' });
   await d.waitGone({ id: 'adjust-date' }, 15_000);
-  await expectText('Dates adjusted');
+  await d.scrollTo({ any: /Dates adjusted/ });
+  await d.scrollTo({ id: 'subscriber-reset' }, { up: true });
 
   await d.tap({ id: 'subscriber-reset' });
   await d.tap({ id: 'reset-submit' });
@@ -827,14 +872,15 @@ J['admin-other-screens'] = async () => {
   await d.waitFor({ id: 'more' });
   await d.screenshot('more');
 
-  await d.tap({ id: 'more-performance' });
+  await tapMore('more-performance');
   await d.waitFor({ id: 'performance' });
-  await expectText('Internal analytics');
-  await expectText('Every record');
+  await expectText('Total signals');
+  await expectText('Win rate');
+  assert(!(await d.has({ any: /hypothetical|declared|verified|basis/i })), 'One set of results, no categories');
   await d.screenshot('performance');
   await d.back();
 
-  await d.tap({ id: 'more-health' });
+  await tapMore('more-health');
   await d.waitFor({ id: 'health' });
   await expectText(/Running|Not responding/);
   const text = await d.text();
@@ -842,7 +888,7 @@ J['admin-other-screens'] = async () => {
   await d.screenshot('health');
   await d.back();
 
-  await d.tap({ id: 'more-announcement' });
+  await tapMore('more-announcement');
   await d.waitFor({ id: 'announcement' });
   await d.type({ id: 'announcement-title' }, 'Holiday hours');
   await d.type({ id: 'announcement-message' }, 'Markets closed Friday.');
@@ -859,7 +905,7 @@ J['admin-other-screens'] = async () => {
     feed.events.some((e) => e.type === 'ANNOUNCEMENT' && /Markets closed/.test(e.body + JSON.stringify(e.payload))),
     'The announcement reached the server',
   );
-  await d.tap({ id: 'more-account' });
+  await tapMore('more-account');
   await d.waitFor({ id: 'account' });
   await d.screenshot('admin-account');
   await d.back();
@@ -1062,6 +1108,13 @@ J['subscriber-hide-and-restore'] = async () => {
   await d.waitFor({ id: 'history-list' });
   await d.type({ id: 'history-search' }, trade.ref);
   await d.hideKeyboard();
+  // Hidden trades are listed under their own filter.
+  await d.tap({ id: 'filter-button' });
+  await d.waitFor({ id: 'filter-sheet' });
+  await d.scrollTo({ id: 'hidden-only' });
+  await d.tap({ id: 'hidden-only' });
+  await d.tap({ id: 'filter-apply' });
+  await d.waitGone({ id: 'filter-sheet' });
   await d.waitFor({ id: `history-${trade.ref}` });
   await expectText(/hidden by you/i);
   await d.screenshot('history-hidden');
@@ -1162,7 +1215,7 @@ J['admin-instruments-announcements-history'] = async () => {
   await signInAdmin();
   await d.tap({ id: 'tab-more' });
   await d.waitFor({ id: 'more' });
-  await d.tap({ id: 'more-instruments' });
+  await tapMore('more-instruments');
   await d.waitFor({ id: 'instrument-list' });
   await d.screenshot('admin-instruments');
   await d.type({ id: 'instrument-filter' }, 'XAU');
@@ -1174,7 +1227,7 @@ J['admin-instruments-announcements-history'] = async () => {
   await d.back();
   await d.waitFor({ id: 'instrument-list' });
   await d.back();
-  await d.tap({ id: 'more-announcements' });
+  await tapMore('more-announcements');
   await d.waitFor({ id: 'admin-announcements' });
   await d.screenshot('admin-announcements');
   await d.tap({ id: 'announcements-new' });
@@ -1191,11 +1244,230 @@ J['admin-instruments-announcements-history'] = async () => {
   await expectText('Markets are closed today');
   await d.screenshot('admin-announcement-drafts');
   await d.back();
-  await d.tap({ id: 'more-history' });
+  await tapMore('more-history');
   await d.waitFor({ id: 'admin-history' });
   await expectText('Nothing published is deleted');
   await d.screenshot('admin-history');
   await d.back();
+};
+
+/** The newest email to this address, as the API wrote it. */
+function inbox(address) {
+  return readdirSync(state.mailDir)
+    .filter((f) => f.endsWith('.json'))
+    .sort()
+    .map((f) => JSON.parse(readFileSync(join(state.mailDir, f), 'utf8')))
+    .filter((m) => m.to.toLowerCase() === address.toLowerCase());
+}
+async function codeFor(address, after = 0) {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const mail = inbox(address).slice(after).at(-1);
+    const code = mail && /\b(\d{6})\b/.exec(mail.text)?.[1];
+    if (code) return code;
+    await delay(300);
+  }
+  throw new Error(`No code emailed to ${address}`);
+}
+
+/** The code screen's resend countdown, plus a little. */
+const OTP_WAIT_MS = 62_000;
+const signUpEmail = `meera.${Date.now().toString(36)}@example.test`;
+const signUpPassword = 'quiet meadow lantern 42';
+
+J['admin-configuration-and-free-days'] = async () => {
+  // A member who already pays, made by the desk on the server.
+  const loginId = `paid${Date.now().toString(36)}`;
+  await server('POST', '/admin/subscribers', {
+    name: 'Ravi Paid',
+    loginId,
+    durationDays: 30,
+    idempotencyKey: randomUUID(),
+  });
+  await signInAdmin();
+  await d.tap({ id: 'tab-more' });
+  await tapMore('more-settings');
+  await d.waitFor({ id: 'config-tab-general' });
+  await d.screenshot('config-general');
+  // The tabs scroll sideways; the first four fit on a phone screen.
+  for (const tab of ['contact', 'email', 'signup']) {
+    await d.waitFor({ id: `config-tab-${tab}` });
+  }
+  await d.tap({ id: 'config-tab-email' });
+  // The test stack sends email to files, which counts as the server's own settings.
+  await expectText(/Using the server.s email settings/, 15_000);
+  await d.screenshot('config-email');
+  await d.tap({ id: 'config-tab-signup' });
+  await d.waitFor({ id: 'config-signup-open' });
+  await d.screenshot('config-signup');
+  await d.back();
+
+  await d.tap({ id: 'tab-subscribers' });
+  await d.waitFor({ id: 'subscribers-list' });
+  await d.type({ id: 'subscribers-search' }, loginId);
+  await d.hideKeyboard();
+  await d.tap({ id: `subscriber-${loginId}` }, 20_000);
+  await d.waitFor({ id: 'subscriber-detail' });
+  await d.scrollTo({ id: 'subscriber-trial' });
+  await d.tap({ id: 'subscriber-trial' });
+  await d.waitFor({ id: 'trial-sheet' });
+  await expectText(/They already have access/);
+  await expectText('Add 7 free days');
+  await d.screenshot('trial-free-days');
+  await d.tap({ id: 'trial-submit' });
+  await d.waitGone({ id: 'trial-sheet' }, 15_000);
+  // The member's page now counts the free days after the paid ones.
+  await expectText('37', 15_000);
+  await d.screenshot('trial-free-days-added');
+  const page = await server('GET', `/admin/subscribers?q=${encodeURIComponent(loginId)}`);
+  const id = page.subscribers[0]?.id;
+  assert(id, 'The member is listed');
+  const detail = await server('GET', `/admin/subscribers/${id}`);
+  assert(detail.subscription.daysRemaining === 37, 'The 7 days come after the 30 paid ones');
+  assert(detail.subscription.kind === 'PAID', 'A paying member stays a paying member');
+  await d.back();
+};
+
+J['sign-up'] = async () => {
+  await signOutIfNeeded();
+  await freePhone();
+  // One way to create an account: the button under the login form. No Sign Up tab.
+  assert(!(await d.has({ id: 'tab-signup' })), 'No Sign Up tab');
+  await d.scrollTo({ id: 'login-create' });
+  await d.screenshot('login');
+  await d.tap({ id: 'login-create' });
+  await d.waitFor({ id: 'signup-first' });
+  assert(await d.has({ any: /Step 1 of 3/ }), 'Sign-up shows its three steps');
+  await d.screenshot('signup-empty');
+  await d.scrollTo({ id: 'signup-submit' });
+  await d.hideKeyboard();
+  await d.tap({ id: 'signup-submit' });
+  await expectText('Enter your first name');
+  await expectText('Enter a valid mobile number');
+  await d.screenshot('signup-errors');
+  await d.scrollTo({ id: 'signup-first' }, { up: true });
+  await d.type({ id: 'signup-first' }, 'Meera');
+  await d.type({ id: 'signup-last' }, 'Iyer');
+  await d.type({ id: 'signup-email' }, signUpEmail);
+  await d.type({ id: 'signup-mobile' }, '98765 43210');
+  assert(!(await d.has({ any: /Enter a valid mobile number/ })), 'A corrected field no longer shows its old error');
+  await d.hideKeyboard();
+  await d.scrollTo({ id: 'signup-age' });
+  await d.type({ id: 'signup-age' }, '31');
+  await d.hideKeyboard();
+  await d.scrollTo({ id: 'signup-consent' });
+  await d.tap({ id: 'signup-consent' });
+  await d.scrollTo({ id: 'signup-submit' });
+  await d.tap({ id: 'signup-submit' });
+  await d.waitFor({ id: 'otp-code' }, 20_000);
+  await d.screenshot('signup-code');
+  // The resend countdown changes the screen every second, and Android's screen reader tool only reads a still
+  // screen. Its own behaviour is checked in test/onboarding.test.tsx; here the journey waits it out.
+  await delay(OTP_WAIT_MS);
+  await d.type({ id: 'otp-code' }, '000000');
+  await d.hideKeyboard();
+  await d.tap({ id: 'otp-verify' });
+  await expectText(/not right/);
+  await d.type({ id: 'otp-code' }, await codeFor(signUpEmail));
+  await d.hideKeyboard();
+  await d.tap({ id: 'otp-verify' });
+  await d.waitFor({ id: 'signup-password' }, 20_000);
+  await d.type({ id: 'signup-password' }, signUpPassword);
+  await d.type({ id: 'signup-confirm' }, signUpPassword);
+  await d.hideKeyboard();
+  await expectText(/Passwords match/);
+  await d.screenshot('signup-password');
+  await d.tap({ id: 'signup-create-password' });
+  await expectText('Account Created Successfully', 25_000);
+  await expectText('No Active Subscription');
+  await d.screenshot('signup-welcome');
+  await d.tap({ id: 'enquiry-email' });
+  await expectText('Your enquiry was emailed to support.', 20_000);
+  await d.screenshot('signup-enquiry-emailed');
+  await d.tap({ id: 'welcome-later' });
+  await expectText('Enquiry Started', 15_000);
+  assert(!(await d.has({ id: 'feed-list' })), 'No signals without a subscription');
+  await d.screenshot('status-enquiry-started');
+};
+
+J['trial-welcome'] = async () => {
+  const { registrations } = await server('GET', `/admin/registrations?q=${encodeURIComponent(signUpEmail)}`);
+  assert(registrations.length === 1, 'The new sign-up is listed for administrators');
+  await server('POST', `/admin/subscribers/${registrations[0].id}/trial`, {
+    durationDays: 5,
+    idempotencyKey: randomUUID(),
+  });
+  await launch();
+  await expectText("You've received a 5-Day Free Trial", 30_000);
+  await d.screenshot('trial-welcome');
+  await d.tap({ id: 'trial-explore' });
+  // The first-use tour follows the welcome, never on top of it.
+  await d.waitFor({ id: 'tour-skip' }, 20_000);
+  await d.tap({ id: 'tour-skip' });
+  await d.waitFor({ id: 'feed-list' }, 20_000);
+  await expectText('Your Free Trial Is Ready!');
+  await d.screenshot('trial-feed');
+  await launch();
+  await d.waitFor({ id: 'feed-list' }, 30_000);
+  await delay(2000);
+  assert(!(await d.has({ id: 'trial-explore' })), 'The welcome is shown once');
+};
+
+J['upcoming-trade'] = async () => {
+  if (!(await d.has({ id: 'feed-list' }))) await signInSubscriber();
+  const low = nextEntry + 400;
+  nextEntry += 500;
+  const trade = await publish({
+    entryType: 'RANGE',
+    entryLow: String(low),
+    entryHigh: String(low + 20),
+    targets: [],
+    stopLoss: undefined,
+  });
+  await dismissAlert(15_000).catch(() => undefined);
+  await expectText('Upcoming trade', 15_000);
+  await expectText('Awaiting activation');
+  await d.screenshot('upcoming-card');
+  await act(trade, 'ACTIVATE', {
+    entryPrice: String(low + 10),
+    targets: [String(low + 160)],
+    stopLoss: String(low - 170),
+  });
+  await dismissAlert(15_000).catch(() => undefined);
+  await act(trade, 'CORRECT', { reason: 'Typed the stop wrongly', stopLoss: String(low - 160) });
+  await dismissAlert(15_000).catch(() => undefined);
+  await launch();
+  await d.waitFor({ id: 'feed-list' }, 30_000);
+  await d.tap({ id: `signal-${trade.ref}` });
+  await expectText(/Stop-loss updated/, 15_000);
+  assert(!(await d.has({ any: /Typed the stop wrongly/ })), 'The correction reason stays with administrators');
+  await d.screenshot('upcoming-activated-updated');
+  await d.back();
+};
+
+J['forgot-password'] = async () => {
+  await signOutIfNeeded();
+  await d.scrollTo({ id: 'login-forgot' });
+  await d.tap({ id: 'login-forgot' });
+  await d.waitFor({ id: 'reset-email' });
+  const before = inbox(signUpEmail).length;
+  await d.type({ id: 'reset-email' }, signUpEmail);
+  await d.hideKeyboard();
+  await d.tap({ id: 'reset-send' });
+  await d.waitFor({ id: 'otp-code' }, 20_000);
+  await delay(OTP_WAIT_MS);
+  await d.type({ id: 'otp-code' }, await codeFor(signUpEmail, before));
+  await d.hideKeyboard();
+  await d.tap({ id: 'otp-verify' });
+  await expectText('Password Reset Requested', 20_000);
+  await d.screenshot('reset-requested');
+  const { requests } = await server('GET', '/admin/password-resets');
+  assert(
+    requests.some((r) => r.email === signUpEmail),
+    'The request reaches administrators',
+  );
+  await d.tap({ id: 'reset-back' });
+  await d.waitFor({ id: 'login-id' });
 };
 
 /**

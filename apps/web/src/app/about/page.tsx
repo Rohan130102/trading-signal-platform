@@ -72,7 +72,7 @@ export default async function AboutPage() {
   const about = info.aboutBody || info.serviceDescription;
   return (
     <div className="flex min-h-dvh flex-col">
-      <PublicHeader name={info.serviceName} />
+      <PublicHeader name={info.serviceName} signupOpen={info.signupOpen} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 sm:px-6">
         <section className="pb-10 pt-8 sm:pt-14">
           <p className="text-sm font-medium text-muted">About us</p>
@@ -139,22 +139,15 @@ export default async function AboutPage() {
           </h2>
           {results ? (
             <>
-              <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted">
-                Every signal the desk published, measured the same way. Past results do not indicate future results and
-                do not represent what any subscriber achieved.
+              <p className="mt-1 max-w-3xl text-sm text-muted">
+                Every signal published, measured from its entry. Past results do not indicate future results.
               </p>
               <div className="mt-5">
                 <PerformanceExplorer initial={results} />
               </div>
             </>
           ) : (
-            <div className="mt-4 rounded-xl border border-line bg-surface p-5 sm:p-6">
-              <p className="font-semibold">Results are not published yet</p>
-              <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
-                Showing past trading results publicly is regulated. They appear here only after a documented compliance
-                review, and then every signal is included: favourable, unfavourable, cancelled and expired.
-              </p>
-            </div>
+            <p className="mt-2 text-sm text-muted">Results are not published yet.</p>
           )}
         </section>
 

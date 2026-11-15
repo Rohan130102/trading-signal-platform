@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BellOff, BellRing, Share, SquarePlus } from 'lucide-react';
+import { BellOff, BellRing, ChevronRight, Info, LifeBuoy, Share, ShieldAlert, SquarePlus } from 'lucide-react';
 import Link from 'next/link';
 import { type FormEvent, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -18,6 +18,7 @@ import {
   Segmented,
   Switch,
 } from '@/components/ui';
+import { SupportContact } from '@/components/subscriber/status';
 import { api, ApiError } from '@/lib/api';
 import { formatDateTime, formatLocalDate } from '@/lib/format';
 import { usePush } from '@/lib/push';
@@ -330,11 +331,42 @@ export default function AccountPage() {
             </Button>
           </div>
         </Card>
-        <p className="text-[13px] text-muted">
-          <Link href="/disclosures" className="underline underline-offset-2">
-            Risk disclosure and privacy
-          </Link>
-        </p>
+        <Card>
+          <CardHeader title="Help and information" />
+          <ul className="border-t border-line">
+            {[
+              { href: '/about', icon: Info, title: 'About us', subtitle: 'Who we are and how the desk works' },
+              {
+                href: '/disclosures',
+                icon: ShieldAlert,
+                title: 'Risk disclosure and privacy',
+                subtitle: 'Please read before acting on any signal',
+              },
+            ].map(({ href, icon: Icon, title, subtitle }) => (
+              <li key={href} className="border-b border-line last:border-b-0">
+                <Link href={href} className="flex items-center gap-3 px-4 py-3 hover:bg-neutral-soft sm:px-5">
+                  <Icon className="size-5 shrink-0 text-muted" aria-hidden />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium">{title}</span>
+                    <span className="block text-[13px] text-muted">{subtitle}</span>
+                  </span>
+                  <ChevronRight className="size-4 text-subtle" aria-hidden />
+                </Link>
+              </li>
+            ))}
+            {me.data && (
+              <li className="px-4 py-3 sm:px-5">
+                <span className="mb-2 flex items-center gap-3 text-sm font-medium">
+                  <LifeBuoy className="size-5 shrink-0 text-muted" aria-hidden />
+                  Support
+                </span>
+                <div className="pl-8">
+                  <SupportContact me={me.data} />
+                </div>
+              </li>
+            )}
+          </ul>
+        </Card>
       </div>
       <ChangePassword open={passwordOpen} onOpenChange={setPasswordOpen} />
     </>

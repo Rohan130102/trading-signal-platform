@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { WEB_ORIGIN } from './e2e/ports.js';
 
 /**
  * Runs against production builds and a real PostgreSQL. Build first: npm run build
@@ -15,7 +16,7 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [['list'], ['json', { outputFile: 'test-results/e2e.json' }]],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: WEB_ORIGIN,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

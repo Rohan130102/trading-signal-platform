@@ -6,16 +6,16 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 ## Conventions
 
-| Topic                   | Rule                                                                                                                                                                                                                                                                                          |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base path               | `/api/v1`. Health checks are at `/health/live` and `/health/ready`, outside it.                                                                                                                                                                                                               |
-| Authentication          | Browsers: session cookie, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Native apps: `Authorization: Bearer`, from `POST /auth/token`. Routes are private unless explicitly public. A bearer token is never combined with a cookie: if one is sent and invalid, the request is refused. |
-| State-changing requests | Must carry an allowed `Origin` header, otherwise `403 BAD_ORIGIN`. A request with a bearer token and no `Origin` is exempt, as is `POST /auth/token` with no `Origin`.                                                                                                                        |
-| Prices and quantities   | Strings, such as `"3300.50"`. Never JSON numbers.                                                                                                                                                                                                                                             |
-| Unknown fields          | Rejected with `422`.                                                                                                                                                                                                                                                                          |
-| Idempotency             | Writes that could be repeated take an `idempotencyKey` (UUID). Repeating returns the original result.                                                                                                                                                                                         |
-| Concurrency             | Trade commands take `expectedVersion`. A stale version returns `409 STALE_VERSION`.                                                                                                                                                                                                           |
-| Caching                 | Everything is `Cache-Control: no-store` except `/public/info`.                                                                                                                                                                                                                                |
+| Topic                   | Rule                                                                                                                                                                                                                                                                                                 |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base path               | `/api/v1`. Health checks are at `/health/live` and `/health/ready`, outside it.                                                                                                                                                                                                                      |
+| Authentication          | Browsers: session cookie, `HttpOnly`, `SameSite=Lax`, `Secure` in production. Native apps: `Authorization: Bearer`, from `POST /auth/token`. Routes are private unless explicitly public. A bearer token is never combined with a cookie: if one is sent and invalid, the request is refused.        |
+| State-changing requests | Must carry an allowed `Origin` header, otherwise `403 BAD_ORIGIN`. A request with a bearer token and no `Origin` is exempt, as are the native sign-in, sign-up and recovery steps (`/auth/token`, `/auth/register*` except `/auth/register/complete`, `/auth/password-reset*`), which use no cookie. |
+| Prices and quantities   | Strings, such as `"3300.50"`. Never JSON numbers.                                                                                                                                                                                                                                                    |
+| Unknown fields          | Rejected with `422`.                                                                                                                                                                                                                                                                                 |
+| Idempotency             | Writes that could be repeated take an `idempotencyKey` (UUID). Repeating returns the original result.                                                                                                                                                                                                |
+| Concurrency             | Trade commands take `expectedVersion`. A stale version returns `409 STALE_VERSION`.                                                                                                                                                                                                                  |
+| Caching                 | Everything is `Cache-Control: no-store` except `/public/info`.                                                                                                                                                                                                                                       |
 
 ## Errors
 
@@ -47,6 +47,18 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 | `/push/*`, `/me/*`                           | Signed in                    | Web and native devices, and notification preferences |
 | `/admin/*`                                   | Administrator with MFA       | Everything else                                      |
 
+## Sign-up and recovery
+
+Public, rate limited per address and per client. The answer is the same whether or not an address has an account.
+
+| Route                                             | Purpose                                                                                                                                                                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /auth/register`                             | `{ firstName, lastName, email, mobile, age, consent }`. Emails a 6-digit code. Returns `{ challengeId, email, resendAvailableAt, expiresAt }`. `403 SIGNUP_CLOSED` while sign-up is paused. `GET /public/info` says so in advance: `signupOpen`, `signupAvailable` |
+| `POST /auth/register/resend`                      | A new code, at most once a minute. The old code stops working                                                                                                                                                                                                      |
+| `POST /auth/register/verify`                      | `{ challengeId, code }`. Five tries per code, five minutes. Returns a single-use `setupToken` (15 minutes)                                                                                                                                                         |
+| `POST /auth/register/complete`, `/complete-token` | `{ setupToken, password }`. Creates the account with no access and signs in: a cookie (web) or `{ token, expiresAt }` (native)                                                                                                                                     |
+| `POST /auth/password-reset`, `/resend`, `/verify` | Prove the address; `verify` files one request for the administrators and returns `{ status: 'REQUESTED' }`                                                                                                                                                         |
+
 ## Native apps
 
 | Route                  | Purpose                                                                                              |
@@ -57,14 +69,17 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 ## Subscriber experience
 
-| Route                                                               | Purpose                                                                                                                                                       |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /signals`                                                      | Trades with up to four latest updates, newest activity first. `symbols`, `direction`, `status` (`ALL`, `OPEN`, `AWAITING`, `LIVE`, `CLOSED`), cursor `before` |
-| `GET /notifications`, `POST /notifications/read`                    | Every broadcast event with read state; mark all (`{ all, upToSeq }`), some (`{ eventIds }`) or one trade (`{ tradeId }`)                                      |
-| `GET /announcements`                                                | Published, unexpired, not hidden; pinned first                                                                                                                |
-| `POST /me/hidden`, `DELETE /me/hidden/:type/:id`                    | Hide or show a trade or announcement for the caller only                                                                                                      |
-| `GET /me/device`, `POST /me/onboarding`, `POST /me/security-events` | This phone's binding; tour finished; an observed screen capture                                                                                               |
-| `POST /push/opened`                                                 | A notification was opened on this device                                                                                                                      |
+| Route                                                               | Purpose                                                                                                                                                                      |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /signals`                                                      | Trades with up to four latest updates, newest activity first. `symbols`, `direction`, `status` (`ALL`, `OPEN`, `AWAITING`, `LIVE`, `CLOSED`), cursor `before`                |
+| `GET /notifications`, `POST /notifications/read`                    | Every broadcast event with read state; mark all (`{ all, upToSeq }`), some (`{ eventIds }`) or one trade (`{ tradeId }`)                                                     |
+| `GET /announcements`                                                | Published, unexpired, not hidden; pinned first. Only what was published while the subscriber was entitled, plus Maintenance notices                                          |
+| `POST /me/hidden`, `DELETE /me/hidden/:type/:id`                    | Hide or show a trade or announcement for the caller only                                                                                                                     |
+| `GET /me/device`, `POST /me/onboarding`, `POST /me/security-events` | This phone's binding; tour finished; an observed screen capture                                                                                                              |
+| `POST /me/enquiries`, `GET /me/enquiries/:id`                       | A subscription enquiry `{ channel: WHATSAPP \| EMAIL, purpose, whatsappUnavailable, idempotencyKey }`. Outcome `LINK_OPENED`, `EMAIL_QUEUED`, `EMAIL_SENT` or `EMAIL_FAILED` |
+| `GET /me/notices`, `POST /me/notices/read`                          | Messages about the caller's own account, such as a subscription starting                                                                                                     |
+| `POST /me/trial-greeting/:grantId`                                  | The trial welcome was shown; no device shows it again                                                                                                                        |
+| `POST /push/opened`                                                 | A notification was opened on this device                                                                                                                                     |
 
 `POST /auth/token` now takes `installationId` and `platform`. A subscriber without an installation identifier gets
 `426 APP_UPDATE_REQUIRED`; one bound to another account gets `403 DEVICE_BOUND`.
@@ -82,6 +97,16 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 | `/admin/trade-removals` (+ `/restore`)                                                                     | Master Admin only. Remove finished trades from subscriber screens: reason, typed `REMOVE`, confirmed count              |
 | `PUT /admin/subscribers/:id/screenshots`                                                                   | Master Admin only. `{ screenshotsAllowed: true \| false \| null }`, null follows the platform default                   |
 | `PUT /admin/settings`                                                                                      | Master Admin only. Service text and platform rules                                                                      |
+| `PUT /admin/settings/support`                                                                              | Master Admin only. `{ supportWhatsapp, supportEmail }`, audited with before and after                                   |
+| `GET /admin/settings/email`                                                                                | Master Admin only. The email account, with `passwordSet` instead of the password, and `status`                          |
+| `PUT /admin/settings/email`                                                                                | Master Admin only. Saves the account; an empty `password` keeps the saved one. Audited without the password             |
+| `POST /admin/settings/email/test`                                                                          | Master Admin only. `{ to }`. Sends one email with the saved account; a failure answers `EMAIL_TEST_FAILED` in words     |
+| `GET /admin/registrations`, `GET /admin/inbox`                                                             | Self-registered people with filters; counts behind the New Registrations and Password Resets badges                     |
+| `POST /admin/subscribers/:id/start`                                                                        | Any number of days, optional `activationDate`. Refused on running paid access; `confirmShorter` to cut a trial short    |
+| `POST /admin/subscribers/:id/trial`                                                                        | Free days for any member, up to 90. Running access is extended after its last day; otherwise a trial starts             |
+| `POST /admin/subscribers/:id/renew`                                                                        | Now also takes `activationDate`, used when the subscription has expired                                                 |
+| `PUT /admin/subscribers/:id/enquiry`, `POST /admin/subscribers/:id/seen`                                   | Move an enquiry along; take a registration off the badge                                                                |
+| `/admin/password-resets` (+ `/:id/issue`, `/complete`, `/dismiss`)                                         | Recovery requests. `issue` returns a 24-hour temporary password once and signs the person out everywhere                |
 | `/me/history/clear`, `/me/history/restore`                                                                 | A subscriber clears finished trades from their own lists, or brings them back                                           |
 
 ## Trade commands
@@ -125,3 +150,20 @@ Instrument and direction cannot be corrected.
 | 4400          | Bad message                        | Fix the client                                          |
 | 4408          | Too many connections for this user | Close a tab                                             |
 | Anything else | Network or restart                 | Reconnect with backoff, sending the last `seq` you hold |
+
+## Performance
+
+`GET /admin/performance?symbol=&from=&to=` and, behind the compliance gate, `GET /public/performance` return the same
+report, built by one function (`summarizePerformance`):
+
+- `counts`: `total`, `closed`, `active`, `awaitingEntry`, `cancelled` (cancelled includes expired, no entry).
+- `results`: `winRate`, `wins`, `losses`, `breakevens`, `measured`. The win rate is wins over `measured`: closed trades
+  with a result. A closed trade without one counts as closed and nowhere else; nothing is invented for it.
+- `instruments`: the same per instrument, with `netPoints` and `averagePoints`. Points are never added across
+  instruments.
+- `running`: the running total of points, for one instrument only; otherwise `null`.
+- `trades` (admin) or `records` (public, no prices): finished signals, newest first.
+
+A trade counts the moment it closes. Removed trades still count. An exit names no basis: the server measures it from
+the administrator's recorded entry if there is one, else the signal's entry, or for a range the entry typed when
+closing; without any of these the exit is recorded without a result.

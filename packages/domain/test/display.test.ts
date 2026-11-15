@@ -26,8 +26,8 @@ describe('shared display helpers', () => {
   });
 
   it('never leaves a figure without its basis', () => {
-    expect(basisShort('HYPOTHETICAL_OUTCOME')).toBe('hypothetical');
-    expect(basisShort('ADMIN_DECLARED_EXECUTION')).toContain('unverified');
+    expect(basisShort('HYPOTHETICAL_OUTCOME')).toBe('signal result');
+    expect(basisShort('ADMIN_DECLARED_EXECUTION')).toBe('recorded entry');
   });
 
   it('reports recent times relatively, and hands older ones back', () => {

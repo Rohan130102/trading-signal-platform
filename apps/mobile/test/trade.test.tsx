@@ -105,7 +105,8 @@ describe('a feed card', () => {
       />,
     );
     expect(screen.getByText('Closed: T-1')).toBeTruthy();
-    expect(screen.getByText(/\+150 pts \(hypothetical\)/)).toBeTruthy();
+    expect(screen.getByText('+150 pts')).toBeTruthy();
+    expect(screen.queryByText(/signal result|recorded entry|hypothetical|verified/i)).toBeNull();
   });
 
   it('shows an announcement without inventing a trade', async () => {
@@ -160,11 +161,11 @@ describe('an outcome', () => {
     reason: 'TARGET_ACHIEVED',
   };
 
-  it('describes the signal, not what any subscriber made', async () => {
+  it('shows how the trade finished, with no internal labels', async () => {
     await wrap(<OutcomeSummary outcome={outcome} precision={2} />);
-    expect(screen.getByText('Favourable')).toBeTruthy();
+    expect(screen.getByText('Win')).toBeTruthy();
     expect(screen.getByText('+150 pts')).toBeTruthy();
-    expect(screen.getByText(/not what any subscriber achieved/)).toBeTruthy();
+    expect(screen.queryByText(/hypothetical|declared|verified|signal result/i)).toBeNull();
   });
 });
 

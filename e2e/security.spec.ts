@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { ADMIN_STATE, adminApi, createSubscriberViaApi, publishViaApi, signInFirstTime } from './helpers.js';
+import { WEB_ORIGIN } from './ports.js';
 
 test.describe('visitors with no account', () => {
   test('cannot reach private areas', async ({ page }) => {
@@ -73,7 +74,7 @@ test.describe('subscribers', () => {
       expect((await page.request.get(path)).status()).toBe(403);
     }
     const write = await page.request.post('/api/v1/admin/signals', {
-      headers: { origin: 'http://localhost:3000' },
+      headers: { origin: WEB_ORIGIN },
       data: {},
     });
     expect(write.status()).toBe(403);
@@ -97,6 +98,7 @@ test.describe('subscribers', () => {
     const api = await adminApi();
     const sub = await createSubscriberViaApi(api);
     await signInFirstTime(page, sub);
+    await page.goto('/app/alerts');
     let fired = false;
     page.on('dialog', async (dialog) => {
       fired = true;
@@ -118,7 +120,7 @@ test.describe('administrators', () => {
   test('a sign-out link followed from elsewhere cannot redirect off-site', async ({ page, context }) => {
     await context.clearCookies();
     await page.goto('/login?next=https://evil.example/phish');
-    await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
     const html = await page.content();
     expect(html).not.toContain('href="https://evil.example');
   });

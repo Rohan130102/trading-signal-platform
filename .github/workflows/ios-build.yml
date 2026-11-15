@@ -11,7 +11,7 @@ permissions:
 jobs:
   simulator:
     name: Compile for the iOS simulator
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       APP_VARIANT: development
@@ -19,6 +19,17 @@ jobs:
       EXPO_NO_TELEMETRY: '1'
     steps:
       - uses: actions/checkout@v4
+      # Expo SDK 58 needs Xcode 26, and its JSI module does not compile with 26.2 or 26.3
+      # (https://github.com/expo/expo/issues/52754). This picks the newest Xcode 26 on the runner.
+      - name: Use Xcode 26
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode 26 on this runner. Expo SDK 58 needs Swift 6.2."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23
@@ -44,4 +55,4 @@ jobs:
         with:
           name: signaldesk-ios-simulator
           path: signaldesk-ios-simulator.zip
-          retention-days: 14
+          retention-days: 7

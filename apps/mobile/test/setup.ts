@@ -6,6 +6,16 @@ jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' },
   NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
 }));
+// Release builds only; tests behave like a development build unless a test says otherwise.
+jest.mock('expo-updates', () => ({
+  isEnabled: false,
+  isEmbeddedLaunch: true,
+  createdAt: null,
+  useUpdates: jest.fn(() => ({ isUpdatePending: false })),
+  checkForUpdateAsync: jest.fn(async () => ({ isAvailable: false })),
+  fetchUpdateAsync: jest.fn(async () => ({ isNew: false })),
+  reloadAsync: jest.fn(async () => undefined),
+}));
 jest.mock('expo-system-ui', () => ({ setBackgroundColorAsync: jest.fn(async () => undefined) }));
 jest.mock('@react-native-async-storage/async-storage', () => ({
   __esModule: true,

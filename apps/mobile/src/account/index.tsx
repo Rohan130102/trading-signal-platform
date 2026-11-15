@@ -9,9 +9,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, AppState, Linking, View } from 'react-native';
+import { Alert, AppState, View } from 'react-native';
 import { api } from '@/lib/api';
-import { APP_VERSION, IN_EXPO_GO, websiteUrl } from '@/lib/config';
+import { useUpdateReady, versionLabel } from '@/lib/app-updates';
+import { APP_VERSION, IN_EXPO_GO } from '@/lib/config';
 import { hapticsEnabled, onHapticsChange, setHapticsEnabled } from '@/lib/haptics';
 import { disablePush, enablePush, openSystemSettings, type PushStatus, readPushStatus } from '@/lib/push';
 import { useMe, useSession } from '@/lib/session';
@@ -408,6 +409,7 @@ export function AccountSections() {
   const router = useRouter();
   const { signOut } = useSession();
   const toast = useToast();
+  const update = useUpdateReady();
   const [changing, setChanging] = useState(false);
   const everywhere = useMutation({
     mutationFn: () => api.post('/auth/logout-all'),
@@ -416,6 +418,17 @@ export function AccountSections() {
   });
   return (
     <>
+      {update.ready && (
+        <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+          <ListRow
+            testID="update-ready"
+            icon="arrow-up-circle-outline"
+            title="New version ready"
+            subtitle="Restart the app to use it now. Otherwise it starts next time."
+            onPress={update.restart}
+          />
+        </Card>
+      )}
       <NotificationSettings />
       <AppearanceSettings />
       <FeedbackSettings />
@@ -462,18 +475,14 @@ export function AccountSections() {
           title="Risk disclosure and privacy"
           onPress={() => router.push('/disclosures')}
         />
-        {websiteUrl() ? (
-          <>
-            <Divider />
-            <ListRow
-              testID="account-about"
-              icon="information-circle-outline"
-              title="About us and performance"
-              subtitle="Opens in your browser"
-              onPress={() => void Linking.openURL(`${websiteUrl()}/about`)}
-            />
-          </>
-        ) : null}
+        <Divider />
+        <ListRow
+          testID="account-about"
+          icon="information-circle-outline"
+          title="About us"
+          subtitle="Who we are and how the desk works"
+          onPress={() => router.push('/about')}
+        />
         {me.support.contact ? (
           <>
             <Divider />
@@ -489,7 +498,7 @@ export function AccountSections() {
         onPress={() => void signOut()}
       />
       <T v="caption" c="subtle" center style={{ marginTop: space.sm }}>
-        Signals are information, not advice. Version {APP_VERSION}
+        Signals are information, not advice. {versionLabel(APP_VERSION)}
       </T>
       {changing && <ChangePassword onClose={() => setChanging(false)} />}
     </>

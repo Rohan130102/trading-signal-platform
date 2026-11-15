@@ -1,6 +1,8 @@
 # Production-shaped stack on one host. Required values come from a .env file you create and protect:
 #   DOMAIN, POSTGRES_PASSWORD, APP_ENCRYPTION_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
-# Not exercised in the environment this was built in, because no Docker daemon was available.
+# Optional: APP_UPDATES_SIGNING_KEY, which turns on over-the-air app updates from ./app-updates.
+# Exercised on 15 November 2026 on an Oracle Cloud Ampere (arm64) VM with Ubuntu 24.04: build, migrations, a restored
+# database, HTTPS from Let's Encrypt, the live-update socket and the origin checks.
 name: signaldesk
 
 x-app: &app
@@ -46,6 +48,13 @@ services:
     <<: *app
     build: .
     command: [node, apps/api/dist/main.js]
+    environment:
+      <<: *app-env
+      # Over-the-air app updates (docs/DEPLOYMENT.md, "App updates"): on only when the signing key is in .env.
+      APP_UPDATES_DIR: ${APP_UPDATES_SIGNING_KEY:+/data/app-updates}
+      APP_UPDATES_SIGNING_KEY: ${APP_UPDATES_SIGNING_KEY:-}
+    volumes:
+      - ./app-updates:/data/app-updates:ro
     depends_on:
       migrate:
         condition: service_completed_successfully

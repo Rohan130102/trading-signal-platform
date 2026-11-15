@@ -12,6 +12,14 @@ const name = isProduction ? 'SignalDesk' : isDevelopment ? 'SignalDesk Dev' : 'S
 const identifier = `${process.env.APP_BUNDLE_ID ?? 'com.signaldesk.app'}${suffix}`;
 const background = '#0B0D10';
 
+/**
+ * Over-the-air updates come from the build's own server, signed with the key whose certificate is in
+ * code-signing/. A development build talks to Metro instead, and a build without an HTTPS server has none.
+ */
+const apiOrigin = (process.env.EXPO_PUBLIC_API_URL ?? '').trim().replace(/\/+$/, '');
+const updatesUrl =
+  !isDevelopment && apiOrigin.startsWith('https://') ? `${apiOrigin}/api/v1/app-updates/manifest` : null;
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name,
@@ -22,7 +30,19 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
   backgroundColor: background,
-  runtimeVersion: { policy: 'appVersion' },
+  // Changes whenever native code or configuration changes, so an update only reaches APKs that can run it.
+  runtimeVersion: { policy: 'fingerprint' },
+  updates: updatesUrl
+    ? {
+        url: updatesUrl,
+        enabled: true,
+        // Checked at launch without delaying it; a new version takes over at the next start (or the app offers it).
+        checkAutomatically: 'ON_LOAD',
+        fallbackToCacheTimeout: 0,
+        codeSigningCertificate: './code-signing/certificate.pem',
+        codeSigningMetadata: { keyid: 'main', alg: 'rsa-v1_5-sha256' },
+      }
+    : { enabled: false },
   ios: {
     bundleIdentifier: identifier,
     supportsTablet: false,

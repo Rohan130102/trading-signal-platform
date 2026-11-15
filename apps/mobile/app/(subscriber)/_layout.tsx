@@ -2,7 +2,9 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router/js-tabs';
 import { haptics } from '@/lib/haptics';
 import { useRealtime, useStartRealtimeFromHead } from '@/lib/realtime';
+import { useSession } from '@/lib/session';
 import { ProtectedScreen } from '@/security/Protected';
+import { TrialGreeting } from '@/subscriber/TrialGreeting';
 import { useColors } from '@/theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -17,6 +19,7 @@ const icon =
 export default function SubscriberTabs() {
   const c = useColors();
   const { unread } = useRealtime();
+  const { me } = useSession();
   useStartRealtimeFromHead(true);
   return (
     <ProtectedScreen id="subscriber" screen="tabs">
@@ -59,6 +62,7 @@ export default function SubscriberTabs() {
           options={{ title: 'Account', tabBarButtonTestID: 'tab-account', tabBarIcon: icon('person-circle-outline') }}
         />
       </Tabs>
+      {me && <TrialGreeting me={me} />}
     </ProtectedScreen>
   );
 }

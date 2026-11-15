@@ -1,28 +1,108 @@
 # Testing
 
-The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The tables below were
-executed on 5 November 2026 on the web platform. The unit, integration and web end-to-end suites were run again on 6 November after
-the mobile work, and the unit, integration and native app suites again on 8 November after the mobile experience work (grouped
-signals, announcements, device binding, screen protection), on one Apple Silicon Mac with 8 GB of memory, Node 22.23. The web
-end-to-end suite needs ports 3000 and 4000, which a running demo held, so on 8 November it ran in CI only.
+The native app's results are in [MOBILE_AUDIT.md](MOBILE_AUDIT.md), and how to run them in [MOBILE.md](MOBILE.md). The latest
+results below are from 14 November 2026, after sign-up, enquiries, trials, password recovery and upcoming trades were
+added, on one Apple Silicon Mac with 8 GB of memory, Node 22.23. Earlier rounds ran on 5, 6 and 8 November.
 
 ## Results
 
-| Gate                                                            | Result                                                                                               |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Clean install from lockfile (`npm ci`) and build                | Pass                                                                                                 |
-| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                 |
-| ESLint, zero warnings allowed                                   | Pass                                                                                                 |
-| Prettier                                                        | Pass                                                                                                 |
-| Unit tests                                                      | **168 of 168** (154 before, 14 added)                                                                |
-| Integration tests                                               | **219 of 219** (186 before, 33 added)                                                                |
-| Native app unit and component tests (Jest)                      | **85 of 85** (61 before, 24 added)                                                                   |
-| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                 |
-| Native app journeys, Android emulator in Expo Go                | **28 of 28**, including 7 new ones (see below); the live-signal journey checks the new-signal banner |
-| End-to-end tests                                                | **77 of 77**                                                                                         |
-| `npm audit --omit=dev`                                          | **0 vulnerabilities**                                                                                |
-| `npm audit` including dev tooling                               | 10 moderate, all `minimatch` through ESLint. None ship                                               |
-| Tests skipped or weakened to pass                               | None                                                                                                 |
+| Gate                                                            | Result                                                                                                     |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| TypeScript, all packages (`strict`, `noUncheckedIndexedAccess`) | Pass                                                                                                       |
+| ESLint, zero warnings allowed                                   | Pass                                                                                                       |
+| Prettier                                                        | Pass                                                                                                       |
+| Unit tests                                                      | **219 of 219**                                                                                             |
+| Integration tests                                               | **287 of 287**                                                                                             |
+| Native app unit and component tests (Jest)                      | **95 of 95**                                                                                               |
+| Release bundles for Android and iOS (`expo export`)             | Pass                                                                                                       |
+| Native app journeys, Android emulator in Expo Go                | **31 of 31** that can run here (see below). Screen protection was not run this round                       |
+| End-to-end tests (website)                                      | **78 of 78**, on ports 3300 and 4300 beside a running demo                                                 |
+| `npm audit --omit=dev`                                          | 3 moderate, all `minimatch` inside Expo's build tooling (`@expo/fingerprint`). Not introduced by this work |
+| Secret scan                                                     | No secrets found                                                                                           |
+| Tests skipped or weakened to pass                               | None                                                                                                       |
+
+### 15 November: configuration, free days, website and app alike
+
+| Gate                                       | Result                                                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Unit tests                                 | **226 of 226** (7 new: free days, the email account, saving settings)                                              |
+| Integration tests                          | **291 of 291** (4 new: the email account, test email, sign-up switch, free days for a paying member)               |
+| Native app unit and component tests (Jest) | **101 of 101** (6 new: sign-up paused or not yet open, About us, Configuration, free days)                         |
+| Website end-to-end                         | **84 of 84** (6 new: landing page, Log In and Sign Up, sign-up not yet open, email tab, sign-up switch, free days) |
+| Native app journeys, Android emulator      | **32 of 32** that can run here, including the new Configuration and free-days journey. Screen protection skipped   |
+| iOS simulator build (CI, Xcode 26.6)       | Pass                                                                                                               |
+| Types, lint, formatting, secret scan       | Pass                                                                                                               |
+
+In the full phone run, 30 passed at once. Two failed:
+
+- The new Configuration journey looked for tabs that sit past the edge of the scrolling tab row, and for a toast that
+  had already gone. Both checks were fixed; it then passed.
+- The first-sign-in journey once found the tour already on its second step. It passed when run again and did not
+  happen again; the cause was not found.
+
+The first website run found two accessibility contrast failures in the new pages (faded coloured text in light mode)
+and three tests that assumed the old first page. All were fixed before the 84 of 84.
+
+### 14 November: sign-up, trials, recovery and upcoming trades
+
+**Phone.** All 32 journeys in `apps/mobile/e2e/run.mjs` ran on a separate Android emulator (6 GB, its own data) against a
+throwaway stack. Five are new:
+
+- sign-in errors;
+- sign-up with email code, password and an emailed enquiry;
+- a trial and its one-time welcome;
+- an upcoming trade activated with levels and then corrected;
+- password recovery reaching the administrators.
+
+Emails were read from the file transport, never a real inbox.
+
+In the final full run, 27 passed, screen protection was skipped and 4 failed. All 4 failures were the journeys
+themselves:
+
+- two needed to scroll to lines now below the fold;
+- one tapped a field hidden behind the composer's sticky bar;
+- one ran while an app file was being saved, which reloads the app.
+
+After those fixes the 4 passed on the same stack. Sign-up, trial and recovery passed again after the last change to the
+code screen. Screen protection needs Metro started without the capture switch; it is unchanged since it passed on
+8 November.
+
+Defects these runs found in the app, now fixed:
+
+- the resend countdown lost its seconds on Android;
+- granted a trial, the first-use tour covered the trial welcome;
+- renewed while on the expired screen, coming back to the app did not check again for up to a minute;
+- a short "OK" button was 43 points wide;
+- the status screen said "Log out" where everything else says "Sign out";
+- the phone's sign-up and recovery calls were refused for having no `Origin`.
+
+Several older journeys and website tests had not been updated for the Master Admin round's changes:
+
+- signals now start as Awaiting entry by default;
+- hidden trades now have their own History filter.
+
+They are updated now.
+
+**Website.** The end-to-end suite ran in full on spare ports, with the website built against them, so it did not touch
+the demo on 3000 and 4000:
+
+```bash
+API_ORIGIN=http://localhost:4300 NEXT_PUBLIC_WS_URL=ws://localhost:4300/ws npm run build -w @signaldesk/web
+```
+
+```bash
+E2E_WEB_PORT=3300 E2E_API_PORT=4300 npm run test:e2e
+```
+
+Its first run found 8 failures:
+
+- an accessibility rule: the "OK" button's spoken name did not include "OK";
+- one administrator form label changed by mistake in a test;
+- tests still expecting the old Signals heading.
+
+All 78 passed after the fixes.
+
+**Not run:** iOS (no Xcode here; CI bundles the iOS JavaScript on every pull request, and the native build runs from the "iOS build" workflow when started by hand), real email delivery (needs SMTP settings), and push to real phones.
 
 ### Native app journeys, 8 November
 
@@ -62,7 +142,7 @@ npm run build && PLAYWRIGHT_BROWSERS_PATH=0 npm run test:e2e
 ulimit -n 20000 && SOCKETS=1000 EVENTS=100 DEVICES=500 npm run test:perf
 ```
 
-Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 3000 and 4000 free (E2E) or 4101 to 4106 free (integration).
+Integration and end-to-end tests start their own PostgreSQL on a temporary directory, and need ports 4101 to 4106 free (integration) or 3000 and 4000 (E2E). The E2E ports can be moved with `E2E_WEB_PORT` and `E2E_API_PORT`; build the website against the same API port first, as shown above.
 
 ## Layers
 
@@ -154,3 +234,80 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 | Load beyond 1,000 sockets, multiple API instances               | Not measured. Multiple workers are tested                                                      | Load test on staging hardware                                                                                     |
 | Slow mobile networks                                            | Not simulated beyond disconnects                                                               | Throttled test on staging                                                                                         |
 | Independent security testing                                    | Self-review only                                                                               | Commission a penetration test                                                                                     |
+
+### 15 November, later: sign-up form back, one way in, login design (website only)
+
+| Gate                                 | Result                                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit tests                           | **226 of 226**                                                                                                                                                           |
+| Integration tests                    | **291 of 291**                                                                                                                                                           |
+| Website end-to-end                   | **85 of 85**. The sign-up tests were rewritten: one Create Account, the details form shown without email, the WhatsApp hand-off carrying the details, and the four steps |
+| Types, lint, formatting, secret scan | Pass                                                                                                                                                                     |
+
+The four-step sign-up test stubs the server's answers, because the test server sends no email; the server side of each
+step is covered by the integration tests.
+
+A later CI run failed two iPhone tests: the login ID typed by the test was lost. The cause was real: anything typed
+or filled in by a password manager before the page's scripts have run was ignored, so Log In said "Enter your email
+or username". Login and sign-up now take in what the fields already hold, and Log In reads the fields themselves.
+Two tests hold the page's scripts back, type, then continue; the login one failed before the fix. Website end-to-end:
+**87 of 87**.
+
+Then the phone app got the same changes:
+
+| Gate                                       | Result                                                                                                                                                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native app unit and component tests (Jest) | **103 of 103** (sign-up without email, the WhatsApp hand-off with the typed details, email first without a WhatsApp number, paused sign-up)                                                         |
+| Native app journeys, Android emulator      | **9 of 10** chosen for the screens that changed: sign-in errors, disclosures, first sign-in (subscriber, admin), expiry, keyboard, sign-up with a real emailed code, trial welcome, forgot password |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                |
+
+The tenth, the large-text journey, needs an open signal left by journeys that were not in this run; it stopped on an
+empty Signals list after signing in. The screens it checks were not changed.
+
+### 15 November, fourth round: one performance view, hidden Master Admin functions, one access rule
+
+| Gate                                       | Result                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit tests                                 | **234 of 234** (new: the six-signal example from the brief, points kept per instrument, breakeven in the win rate, entitlement periods with a lapse, the automatic exit basis)                                                                                                                        |
+| Integration tests                          | **298 of 298** (new: trades and announcements before and after joining, old identifiers, alerts and unread counts, the live stream, pushes, a renewal after a lapse, the ordinary administrator's refusals, dashboard and audit log, a closed trade in the results with no other step)                |
+| Native app unit and component tests (Jest) | **103 of 103**                                                                                                                                                                                                                                                                                        |
+| Website end-to-end                         | **88 of 88** (new: a range trade closed with and without a typed entry, an ordinary administrator with no Master Admin pages)                                                                                                                                                                         |
+| Native app journeys, Android emulator      | **6 of 6** for the changed screens: first sign-in (subscriber and admin), a live signal to its result, publishing and closing with no basis question, the Performance screen, Configuration and free days. Two failed first on old wording in the journeys themselves and passed after it was updated |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                                                                                                                  |
+
+The rendered Performance page was checked at computer and phone width; the finished trades became a compact list on
+phones after the first look showed a cramped table. iOS was not run.
+
+### 15 November, fifth round: app updates without a new APK
+
+| Gate                                       | Result                                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration tests                          | **304 of 304** (new: nothing published, malformed requests, a signed manifest whose file hashes match the files served, a phone already up to date, a newer update, other fingerprints, a half-copied folder, unknown files, rollback, a changed byte breaking the signature)         |
+| Native app unit and component tests (Jest) | **108 of 108** (new: checking again on return after half an hour, nothing new or offline, builds without updates, restarting only when asked, the version label)                                                                                                                      |
+| Website end-to-end                         | **90 of 90** (new: the cursor stays in the password field when the page finishes loading; no browser autofocus in the server-rendered sign-in pages)                                                                                                                                  |
+| Fingerprint                                | The share build compared the APK's fingerprint with the update's and they matched (`15bdd694…`)                                                                                                                                                                                       |
+| On an Android emulator, live server        | The new APK asked the server and was told there was nothing new; after publishing, it downloaded the update (the signature was verified on the phone, only the app's code was fetched, images came from the APK), and on the next start it ran the update and was told it was current |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                                                                                                  |
+
+A CI run of the website suite failed once on the iPhone profile: a password typed while the page finished loading
+ended up at the start of the username. The server-rendered sign-in pages carried the browser's own `autofocus`, which
+Safari's engine can apply late; they now focus the first field only if nothing else has the cursor. The failure did not
+reproduce locally in 26 runs before the change, so the fix rests on the trace and on removing the attribute. On a
+second run with the app reset to its APK code, the "New version ready" notice appeared about a second after launch,
+once the update had downloaded; tapping "Restart now" restarted the app into the update, and the next start reported
+the update to the server and was told it was current.
+
+### 16 November: CI within the free runner minutes
+
+GitHub stopped starting CI jobs. The repository is private on the free plan, and its 2,000 monthly runner minutes were
+used up: about 2,079 since 1 November, more than half of them compiling Android builds. CI now compiles the Android app
+only for a native fingerprint it has not compiled yet, a newer push to a pull request cancels the run it replaces, and
+build artifacts are kept for days rather than weeks. The share build packages an update on every push and compiles an
+APK only for a new fingerprint.
+
+| Check                       | Result                                                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fingerprint, locally        | Unchanged after a JavaScript edit and after generating the Android project; changed by an app configuration edit                                                                                                                                                       |
+| New workflow steps, locally | Run with bash as a runner would: the fingerprint step, the build-or-skip decision in each case (built before, never built, started by hand, `[new apk]`), and the fingerprint check (passes when they match, fails when the update or APK differs or the APK has none) |
+| Workflows parse, formatting | Pass                                                                                                                                                                                                                                                                   |
+| On GitHub                   | **Not run.** GitHub starts no jobs until the minutes reset, so the cache lookups, the skipped Android job and the cancelled runs are unverified until then                                                                                                             |

@@ -1,4 +1,11 @@
-import { countActiveFilters, filterToQuery, type SignalCard as Card, type SignalsPage } from '@signaldesk/domain';
+import {
+  countActiveFilters,
+  filterToQuery,
+  type SignalCard as Card,
+  type SignalsPage,
+  type StatusGroup,
+  TITLES,
+} from '@signaldesk/domain';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -10,6 +17,7 @@ import { haptics } from '@/lib/haptics';
 import { enablePush, readPushStatus } from '@/lib/push';
 import { useRealtime } from '@/lib/realtime';
 import { prefs } from '@/lib/storage';
+import { Notices } from '@/subscriber/Notices';
 import { SignalCard } from '@/trade/SignalCard';
 import { useColors } from '@/theme';
 import { space } from '@/theme/tokens';
@@ -88,7 +96,7 @@ export default function Signals() {
   const known = useMemo(() => instruments.data?.map((i) => i.symbol), [instruments.data]);
   const { filter, setFilter, loaded } = useSavedFilter('signals-filter', known);
   const [menuFor, setMenuFor] = useState<Card | null>(null);
-  const list = useRef<FlatList<Card>>(null);
+  const list = useRef<FlatList<Row>>(null);
   const scrolledDown = useRef(false);
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set());
   const [newAbove, setNewAbove] = useState(0);
@@ -117,8 +125,11 @@ export default function Signals() {
     queryKey: ['signals', filter],
     enabled: loaded,
     initialPageParam: undefined as number | undefined,
+    // Live trades only: a trade leaves Signals when it finishes and is in History straight away.
     queryFn: ({ pageParam }) =>
-      api.get<SignalsPage>(`/signals${queryString({ ...filterToQuery(filter), limit: 20, before: pageParam })}`),
+      api.get<SignalsPage>(
+        `/signals${queryString({ ...filterToQuery({ ...filter, status: liveGroup(filter.status) }), limit: 20, before: pageParam })}`,
+      ),
     getNextPageParam: (last) => last.nextBefore ?? undefined,
     staleTime: 30_000,
   });
@@ -141,6 +152,18 @@ export default function Signals() {
     }
     return out;
   }, [signals.data]);
+
+  // Active first, then upcoming, each under its own heading. Newest activity first within each.
+  const rows = useMemo<Row[]>(() => {
+    const active = cards.filter((card) => card.status === 'ACTIVE' || card.status === 'PARTIALLY_CLOSED');
+    const upcoming = cards.filter((card) => card.status === 'PUBLISHED');
+    return [
+      ...(active.length > 0 ? [{ header: TITLES.active, count: active.length }] : []),
+      ...active,
+      ...(upcoming.length > 0 ? [{ header: TITLES.upcoming, count: upcoming.length }] : []),
+      ...upcoming,
+    ];
+  }, [cards]);
 
   const pull = useRefresh(useCallback(() => signals.refetch(), [signals]));
   const filtered = countActiveFilters(filter) > 0;
@@ -181,8 +204,8 @@ export default function Signals() {
       <FlatList
         ref={list}
         testID="feed-list"
-        data={cards}
-        keyExtractor={(card) => card.id}
+        data={rows}
+        keyExtractor={(row) => ('header' in row ? `header-${row.header}` : row.id)}
         style={styles.fill}
         contentContainerStyle={styles.list}
         refreshControl={<Refresh {...pull} />}
@@ -203,8 +226,9 @@ export default function Signals() {
           <View style={styles.header}>
             <PageTitle title="Signals" right={<LivePill />} />
             <ConnectionBanner />
+            <Notices />
             <PushPrompt />
-            <FilterBar value={filter} onChange={setFilter} instruments={instruments.data ?? []} />
+            <FilterBar value={filter} onChange={setFilter} instruments={instruments.data ?? []} groups={LIVE_GROUPS} />
           </View>
         }
         ListEmptyComponent={
@@ -213,10 +237,8 @@ export default function Signals() {
           ) : signals.isError ? (
             <ErrorState error={signals.error} onRetry={() => void signals.refetch()} />
           ) : (
-            <EmptyState icon="pulse" title={filtered ? 'Nothing matches these filters' : 'No signals yet'}>
-              {filtered
-                ? 'Try fewer filters, or reset them.'
-                : 'When a signal is published it appears here straight away. Every later change stays attached to it.'}
+            <EmptyState icon="pulse" title={filtered ? 'Nothing matches these filters' : 'No Signals Yet'}>
+              {filtered ? 'Try fewer filters, or reset them.' : 'New signals will appear here.'}
             </EmptyState>
           )
         }
@@ -233,7 +255,15 @@ export default function Signals() {
           ) : undefined
         }
         ItemSeparatorComponent={() => <View style={{ height: space.sm + 2 }} />}
-        renderItem={({ item }) => <SignalCard card={item} onMenu={setMenuFor} fresh={fresh.has(item.id)} />}
+        renderItem={({ item }) =>
+          'header' in item ? (
+            <T v="label" c="muted" style={styles.section} accessibilityRole="header">
+              {`${item.header.toUpperCase()}  ${item.count}`}
+            </T>
+          ) : (
+            <SignalCard card={item} onMenu={setMenuFor} fresh={fresh.has(item.id)} />
+          )
+        }
       />
       {newAbove > 0 && (
         <Pressable
@@ -279,6 +309,14 @@ export default function Signals() {
 /** How long a newly arrived signal stays outlined. */
 const FRESH_MS = 20_000;
 
+type Row = Card | { header: string; count: number };
+
+/** Signals offers live statuses only; anything else, such as an older saved filter, means all live trades. */
+const LIVE_GROUPS: readonly StatusGroup[] = ['ALL', 'AWAITING', 'LIVE'];
+function liveGroup(group: StatusGroup): StatusGroup {
+  return group === 'AWAITING' || group === 'LIVE' ? group : 'OPEN';
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1 },
   above: {
@@ -299,4 +337,5 @@ const styles = StyleSheet.create({
   },
   list: { padding: space.lg, paddingBottom: space.xxl, flexGrow: 1 },
   header: { gap: space.md, marginBottom: space.md },
+  section: { marginTop: space.sm, letterSpacing: 0.6 },
 });
