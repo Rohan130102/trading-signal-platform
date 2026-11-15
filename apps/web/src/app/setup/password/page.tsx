@@ -41,6 +41,7 @@ export default function SetPasswordPage() {
 
   return (
     <AuthFrame
+      focused
       title="Choose your password"
       description="The password you were given is temporary. Choose one only you know."
     >

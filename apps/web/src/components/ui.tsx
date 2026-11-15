@@ -6,6 +6,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-rea
 import {
   type ButtonHTMLAttributes,
   type ComponentProps,
+  type ComponentType,
   forwardRef,
   type InputHTMLAttributes,
   type ReactNode,
@@ -483,5 +484,110 @@ export function Logo({ className }: { className?: string }) {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+export interface TabItem<T extends string> {
+  id: T;
+  label: string;
+  icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+  /** A small count or dot beside the label, such as the number of fields with a problem. */
+  badge?: ReactNode;
+}
+
+/**
+ * Tabs that read as tabs to a screen reader. Arrow keys move between them, as the ARIA pattern expects.
+ * Across the top on narrow screens, and down the side when `vertical` is set and there is room.
+ */
+export function Tabs<T extends string>({
+  items,
+  value,
+  onChange,
+  label,
+  idPrefix,
+  vertical = false,
+}: {
+  items: readonly TabItem<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  label: string;
+  idPrefix: string;
+  vertical?: boolean;
+}) {
+  const move = (from: number, step: number) => {
+    const next = items[(from + step + items.length) % items.length];
+    if (!next) return;
+    onChange(next.id);
+    document.getElementById(`${idPrefix}-tab-${next.id}`)?.focus();
+  };
+  return (
+    <div
+      role="tablist"
+      aria-label={label}
+      aria-orientation={vertical ? 'vertical' : 'horizontal'}
+      className={clsx(
+        'flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none]',
+        vertical && 'lg:flex-col lg:overflow-visible lg:pb-0',
+      )}
+    >
+      {items.map((item, index) => {
+        const active = item.id === value;
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.id}
+            id={`${idPrefix}-tab-${item.id}`}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            aria-controls={`${idPrefix}-panel-${item.id}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onChange(item.id)}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                e.preventDefault();
+                move(index, 1);
+              } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                e.preventDefault();
+                move(index, -1);
+              }
+            }}
+            className={clsx(
+              'flex min-h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium whitespace-nowrap transition-colors',
+              vertical && 'lg:w-full',
+              active ? 'bg-raised text-text' : 'text-muted hover:bg-neutral-soft hover:text-text',
+            )}
+          >
+            {Icon && <Icon className="size-4 shrink-0" aria-hidden />}
+            <span className="flex-1 text-left">{item.label}</span>
+            {item.badge}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function TabPanel({
+  idPrefix,
+  id,
+  active,
+  children,
+}: {
+  idPrefix: string;
+  id: string;
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      role="tabpanel"
+      id={`${idPrefix}-panel-${id}`}
+      aria-labelledby={`${idPrefix}-tab-${id}`}
+      hidden={!active}
+      className="flex min-w-0 flex-col gap-4"
+    >
+      {active && children}
+    </div>
   );
 }

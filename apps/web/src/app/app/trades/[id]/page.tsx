@@ -25,7 +25,7 @@ export default function TradePage() {
   const trade = useQuery({ queryKey: ['trade', id], queryFn: () => api.get<TradeDetail>(`/trades/${id}`) });
   const back = (
     <Link
-      href="/app/active"
+      href="/app"
       className="-ml-1 inline-flex items-center gap-1 rounded px-1 text-[13px] text-muted hover:text-text"
     >
       <ArrowLeft className="size-3.5" aria-hidden /> Signals

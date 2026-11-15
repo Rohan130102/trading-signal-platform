@@ -8,15 +8,17 @@ import {
   MIN_REGISTRATION_AGE,
   registrationSchema,
   TITLES,
+  whatsappDigits,
 } from '@signaldesk/domain';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { CodeStep } from '@/components/auth/code-step';
 import { AuthTabs, Hints, issuesByField, PasswordInput } from '@/components/auth/parts';
-import { AuthFrame } from '@/components/shell/auth-frame';
+import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
 import { EnquiryActions } from '@/components/subscriber/enquiry';
-import { Button, Field, FormError, Input } from '@/components/ui';
+import { Mail, MessageCircle } from 'lucide-react';
+import { Button, buttonClass, Field, FormError, Input } from '@/components/ui';
 import { api } from '@/lib/api';
 
 type Step = 'details' | 'code' | 'password' | 'done';
@@ -226,11 +228,67 @@ function PasswordStep({ setupToken, onDone }: { setupToken: string; onDone: () =
   );
 }
 
+/**
+ * Shown instead of the form when an account cannot be created right now: sign-up is paused, or email is not set
+ * up so no code could be sent. Says so before anything is typed, and offers a way to reach the team.
+ */
+function SignupUnavailable({ paused, whatsapp, email }: { paused: boolean; whatsapp: string; email: string }) {
+  const digits = whatsappDigits(whatsapp);
+  return (
+    <AuthFrame
+      title={paused ? 'Sign-up is paused' : 'Sign-up opens soon'}
+      description={
+        paused
+          ? 'New accounts cannot be created at the moment. Message our team and they will help you join.'
+          : 'We cannot create new accounts online just yet. Message our team and they will set you up.'
+      }
+    >
+      <AuthTabs current="signup" />
+      <div className="flex flex-col gap-3">
+        {digits && (
+          <a
+            href={`https://wa.me/${digits}`}
+            target="_blank"
+            rel="noreferrer"
+            className={buttonClass('primary', 'lg', 'w-full')}
+          >
+            <MessageCircle className="size-4" aria-hidden />
+            Message us on WhatsApp
+          </a>
+        )}
+        {email && (
+          <a href={`mailto:${email}`} className={buttonClass('secondary', 'lg', 'w-full')}>
+            <Mail className="size-4" aria-hidden />
+            Email {email}
+          </a>
+        )}
+        <p className="mt-2 text-center text-[13px] text-muted">
+          Already have an account?{' '}
+          <Link href="/login" className="rounded font-semibold text-text hover:underline">
+            {ACTIONS.logIn}
+          </Link>
+        </p>
+      </div>
+    </AuthFrame>
+  );
+}
+
 export default function SignupPage() {
   const router = useRouter();
+  const info = usePublicInfo();
   const [step, setStep] = useState<Step>('details');
   const [challenge, setChallenge] = useState<ChallengeResponse | null>(null);
   const [setupToken, setSetupToken] = useState<string | null>(null);
+
+  if (step === 'details' && info.data && !info.data.signupAvailable) {
+    return (
+      <SignupUnavailable
+        paused={!info.data.signupOpen}
+        whatsapp={info.data.supportWhatsapp}
+        email={info.data.supportEmail}
+      />
+    );
+  }
 
   if (step === 'done') {
     return (

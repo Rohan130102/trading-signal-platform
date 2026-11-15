@@ -405,6 +405,8 @@ test('an announcement reaches the feed as an announcement, not a trade', async (
   const sub = await createSubscriberViaApi(api);
   const subscriber = await (await browser.newContext({ storageState: { cookies: [], origins: [] } })).newPage();
   await signInFirstTime(subscriber, sub);
+  // Announcements arrive in Alerts, as on the phone.
+  await subscriber.goto('/app/alerts');
   await page.goto('/admin');
   await page.getByRole('button', { name: 'Announcement' }).click();
   const text = `Markets close early ${Date.now()}.`;
@@ -449,8 +451,8 @@ test('a later administrator sign-in asks for a code', async ({ browser }) => {
   await context.close();
 });
 
-test('public performance stays closed, and the settings page says why', async ({ page }) => {
-  await page.goto('/admin/settings');
+test('public performance stays closed, and the configuration screen says why', async ({ page }) => {
+  await page.goto('/admin/settings?tab=legal');
   await expect(page.getByRole('heading', { name: 'Public performance section' })).toBeVisible();
   await expect(page.getByText('Closed', { exact: true })).toBeVisible();
   await expect(page.getByText(/A disclaimer alone does not make/)).toBeVisible();
@@ -463,7 +465,9 @@ test('public performance stays closed, and the settings page says why', async ({
 
 test('the Master Admin sets platform rules and registers administrators', async ({ page }) => {
   await page.goto('/admin/settings');
-  await expect(page.getByRole('heading', { name: 'Signals' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Configuration' })).toBeVisible();
+  await page.getByRole('tab', { name: 'Signals' }).click();
+  await expect(page.getByRole('heading', { name: 'New signals' })).toBeVisible();
   await expect(page.getByRole('radio', { name: 'Awaiting entry' })).toBeChecked();
   await expect(page.getByLabel('Entry window')).toHaveValue('240');
   await page.goto('/admin/admins');

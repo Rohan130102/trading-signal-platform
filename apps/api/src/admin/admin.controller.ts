@@ -28,6 +28,7 @@ import { PrismaService } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PerformanceService } from '../performance/performance.service.js';
+import { EmailTransport } from '../email/email-transport.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TradesQueries } from '../trades/trades.queries.js';
 import { TradesService } from '../trades/trades.service.js';
@@ -43,11 +44,12 @@ export class AdminController {
     private readonly performance: PerformanceService,
     private readonly settings: SettingsService,
     private readonly audit: AuditService,
+    private readonly email: EmailTransport,
   ) {}
 
   @Get('dashboard')
   @Summary('Everything the administrator needs at a glance')
-  async dashboard() {
+  async dashboard(@Auth() auth: AuthContext) {
     const now = new Date();
     const soon = new Date(now.getTime() + 7 * 86_400_000);
     const [live, closed, recentEvents, drafts, total, active, expiring, expired, health] = await Promise.all([
@@ -99,6 +101,17 @@ export class AdminController {
         level: 'WARNING',
         message: 'Push notifications are not configured. Subscribers get in-app updates only.',
         href: '/admin/notifications',
+      });
+    }
+    // Sign-up sends a code by email, so without email nobody new can join.
+    const [{ signupOpen }, emailStatus] = await Promise.all([this.settings.get(), this.email.status()]);
+    if (signupOpen && emailStatus === 'NOT_SET_UP') {
+      alerts.push({
+        level: 'WARNING',
+        message: auth.user.isMasterAdmin
+          ? 'Email is not set up, so new people cannot sign up. Set it up in Configuration, Email.'
+          : 'Email is not set up, so new people cannot sign up. Ask the Super Admin to set it up.',
+        href: '/admin/settings?tab=email',
       });
     }
     if (health.push.last24h.failed > 0) {

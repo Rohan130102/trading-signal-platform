@@ -7004,7 +7004,6 @@
                     "maxLength": 500
                   },
                   "allowRepeat": {
-                    "default": false,
                     "type": "boolean"
                   },
                   "idempotencyKey": {
@@ -8628,7 +8627,7 @@
     },
     "/api/v1/admin/settings": {
       "get": {
-        "summary": "Application settings",
+        "summary": "Application settings. Contains no secrets: the email account has its own Master Admin endpoint.",
         "tags": [
           "Admin"
         ],
@@ -8757,6 +8756,14 @@
                   },
                   "supportEmail": {
                     "type": "string"
+                  },
+                  "signupOpen": {
+                    "type": "boolean"
+                  },
+                  "defaultTrialDays": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 90
                   }
                 },
                 "required": [
@@ -8775,6 +8782,189 @@
                   "trailingStopWording",
                   "screenshotsAllowedDefault",
                   "historyScope"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/email": {
+      "get": {
+        "summary": "The email account used for sign-up codes and account emails. The password is never returned.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "x-access": "admin",
+        "parameters": [],
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Save the email account. A password left empty keeps the saved one. Master Admin only; audited.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "x-access": "admin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "host": {
+                    "type": "string",
+                    "maxLength": 253,
+                    "pattern": "^$|^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "security": {
+                    "type": "string",
+                    "enum": [
+                      "STARTTLS",
+                      "TLS"
+                    ]
+                  },
+                  "username": {
+                    "type": "string",
+                    "maxLength": 320
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "fromName": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "fromAddress": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "const": ""
+                      },
+                      {
+                        "type": "string"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "enabled",
+                  "host",
+                  "port",
+                  "security",
+                  "username",
+                  "fromName",
+                  "fromAddress"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/settings/email/test": {
+      "post": {
+        "summary": "Send one test email with the saved account. Answers with what went wrong if it fails.",
+        "tags": [
+          "Admin"
+        ],
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "bearer": []
+          }
+        ],
+        "x-access": "admin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "to"
                 ],
                 "additionalProperties": false
               }

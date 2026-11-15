@@ -27,7 +27,7 @@ setup('administrator first sign-in', async ({ page }) => {
   await page.getByRole('button', { name: 'Turn on' }).click();
 
   await expect(page.getByRole('heading', { name: 'Save your recovery codes' })).toBeVisible();
-  await expect(page.locator('li').first()).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
+  await expect(page.getByRole('main').locator('li').first()).toHaveText(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/);
   await page.getByRole('button', { name: 'I have saved them' }).click();
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();

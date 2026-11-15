@@ -2,8 +2,9 @@
 
 import {
   ACTIONS,
-  computeInitialWindow,
+  type AdminSettings,
   computeRenewal,
+  grantTrialWindow,
   ENQUIRY_STATUS_LABELS,
   ENQUIRY_STATUSES,
   type EnquiryStatus,
@@ -16,7 +17,7 @@ import {
   type SubscriberDetail,
   TRIAL_DAY_SHORTCUTS,
 } from '@signaldesk/domain';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { ArrowRight } from 'lucide-react';
 import { type FormEvent, useMemo, useState } from 'react';
@@ -215,33 +216,47 @@ export function StartDialog({ detail, onClose, onDone }: { detail: Detail; onClo
 
 export function TrialDialog({ detail, onClose, onDone }: { detail: Detail; onClose: () => void; onDone: () => void }) {
   const tz = detail.subscription.timezone;
-  const [days, setDays] = useState('5');
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<AdminSettings>('/admin/settings'),
+  });
+  const [chosen, setChosen] = useState<string | null>(null);
+  const days = chosen ?? String(settings.data?.defaultTrialDays ?? 7);
   const [date, setDate] = useState(() => todayIn(tz));
   const [note, setNote] = useState('');
   const [key] = useState(newKey);
-  const hadTrial = detail.trials.length > 0;
-  const [allowRepeat, setAllowRepeat] = useState(false);
+  // Running access, paid or trial, gets the days added after its last day; otherwise a trial starts.
+  const running = detail.subscription.state === 'ACTIVE' || detail.subscription.state === 'SCHEDULED';
   const n = validDays(days, MAX_TRIAL_DAYS);
-  const trialWindow = useMemo(() => {
-    if (!n || !date) return null;
+  const current = currentWindow(detail);
+  const preview = useMemo(() => {
+    if (!n || (!running && !date)) return null;
     try {
-      return computeInitialWindow(startInstant(date, tz, new Date()), n, tz);
+      const now = new Date();
+      return grantTrialWindow(
+        current ? { ...current, kind: detail.subscription.kind ?? 'PAID' } : null,
+        n,
+        now,
+        tz,
+        running ? undefined : startInstant(date, tz, now),
+      );
     } catch {
       return null;
     }
-  }, [date, n, tz]);
+  }, [current, date, detail.subscription.kind, n, running, tz]);
   const grant = useMutation({
     mutationFn: () =>
       api.post<{ subscriber: Detail }>(`/admin/subscribers/${detail.id}/trial`, {
         durationDays: n,
-        activationDate: date === todayIn(tz) ? undefined : date,
+        activationDate: running || date === todayIn(tz) ? undefined : date,
         note: note.trim() || undefined,
-        allowRepeat,
         idempotencyKey: key,
       }),
     onSuccess: (r) => {
       onDone();
-      toast.success(`Free trial through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`);
+      toast.success(
+        `${running ? 'Free days added' : 'Free trial started'}. Access until ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}.`,
+      );
       onClose();
     },
   });
@@ -249,55 +264,50 @@ export function TrialDialog({ detail, onClose, onDone }: { detail: Detail; onClo
     e.preventDefault();
     grant.mutate();
   };
+  const earlier = detail.trials.length;
   return (
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
       title={ACTIONS.grantFreeTrial}
-      description="Same access as a subscription. They are told by email, in the app and by notification."
+      description={
+        running
+          ? 'They already have access. The free days are added after their last day, so nothing is lost.'
+          : 'Same access as a subscription. They are told by email, in the app and by notification.'
+      }
     >
       <form onSubmit={submit} className="flex flex-col gap-4">
-        <DaysField value={days} onChange={setDays} shortcuts={TRIAL_DAY_SHORTCUTS} max={MAX_TRIAL_DAYS} />
-        <Field label="Starts on">
-          {(c) => (
-            <Input
-              {...c}
-              type="date"
-              min={todayIn(tz)}
-              className="max-w-48"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-            />
-          )}
-        </Field>
+        <DaysField value={days} onChange={setChosen} shortcuts={TRIAL_DAY_SHORTCUTS} max={MAX_TRIAL_DAYS} />
+        {!running && (
+          <Field label="Starts on">
+            {(c) => (
+              <Input
+                {...c}
+                type="date"
+                min={todayIn(tz)}
+                className="max-w-48"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
+            )}
+          </Field>
+        )}
         <DatesPreview
-          before={null}
-          after={trialWindow ? lastValidLocalDate(trialWindow.expiresAt, tz) : null}
+          before={running ? detail.subscription.lastValidDate : null}
+          after={preview ? lastValidLocalDate(preview.expiresAt, tz) : null}
           tz={tz}
         />
-        {hadTrial && (
-          <label className="flex items-start gap-2 rounded-lg bg-update-soft p-3 text-sm text-update">
-            <input
-              type="checkbox"
-              className="mt-0.5"
-              checked={allowRepeat}
-              onChange={(e) => setAllowRepeat(e.target.checked)}
-            />
-            They already had a free trial. Grant another.
-          </label>
+        {earlier > 0 && (
+          <p className="text-[13px] text-muted">
+            {earlier === 1 ? 'They had one free trial before.' : `They had ${earlier} free trials before.`}
+          </p>
         )}
-        <Field label="Internal remarks" hint="Optional. Never shown to the subscriber.">
+        <Field label="Internal remarks" hint="Optional. Never shown to the member.">
           {(c) => <Input {...c} value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />}
         </Field>
         <FormError error={grant.error} />
-        <Button
-          type="submit"
-          variant="primary"
-          size="lg"
-          loading={grant.isPending}
-          disabled={!trialWindow || (hadTrial && !allowRepeat)}
-        >
-          {ACTIONS.grantFreeTrial}
+        <Button type="submit" variant="primary" size="lg" loading={grant.isPending} disabled={!preview}>
+          {!running ? ACTIONS.grantFreeTrial : n ? `Add ${n} free ${n === 1 ? 'day' : 'days'}` : 'Add free days'}
         </Button>
       </form>
     </Dialog>

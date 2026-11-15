@@ -29,7 +29,14 @@ proxies in front of the API. Keep `PUBLIC_PERFORMANCE_ENABLED=false` unless comp
 ## Email
 
 Sign-up codes, recovery codes, subscription enquiries to support and account messages are sent by email. Without it, sign-up
-says plainly that email is not set up, and nothing pretends to be sent.
+says plainly that it opens soon, offers WhatsApp and email to support instead, and nothing pretends to be sent.
+
+**The usual way: the configuration screen.** The Super Admin opens Configuration, Email (website or app), picks Gmail,
+Outlook or Other, enters the sending address and its password (for Gmail an app password), saves, and sends a test email.
+No server change or restart is needed. The password is encrypted with `APP_ENCRYPTION_KEY` and never shown again.
+
+**Or on the server**, with the settings below. Details saved on the configuration screen take precedence; the file
+transport, used in development and tests, takes precedence over both.
 
 | Setting                                 | Notes                                                                                                           |
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------------- |

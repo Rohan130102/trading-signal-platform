@@ -1,15 +1,21 @@
 import {
+  type AdminSettings,
   ENTRY_WINDOW_CHOICES,
   entryWindowLabel,
-  supportSettingsSchema,
   type HistoryScope,
-  type PlatformSettings,
+  type PublicInfo,
+  settingsBody,
+  type SettingsInput,
+  settingsSchema,
   type SignalStartMode,
   type TrailingStopWording,
+  TRIAL_DAY_SHORTCUTS,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { View } from 'react-native';
+import { EmailSettings } from '@/admin/EmailSettings';
 import { api } from '@/lib/api';
 import { haptics } from '@/lib/haptics';
 import { useSession } from '@/lib/session';
@@ -32,53 +38,291 @@ import {
   useToast,
 } from '@/ui';
 
-type Settings = PlatformSettings & Record<string, unknown>;
+const TABS = [
+  { id: 'general', label: 'General', icon: 'business-outline' },
+  { id: 'contact', label: 'Contact', icon: 'chatbubble-ellipses-outline' },
+  { id: 'email', label: 'Email', icon: 'mail-outline' },
+  { id: 'signup', label: 'Sign-up & trials', icon: 'person-add-outline' },
+  { id: 'signals', label: 'Signals', icon: 'pulse-outline' },
+  { id: 'legal', label: 'Legal', icon: 'document-text-outline' },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
+
+type TextKey = {
+  [K in keyof SettingsInput]-?: NonNullable<SettingsInput[K]> extends string ? K : never;
+}[keyof SettingsInput];
+
+interface TextSpec {
+  key: TextKey;
+  label: string;
+  hint?: string;
+  lines?: number;
+  keyboard?: 'default' | 'email-address' | 'phone-pad';
+}
 
 /**
- * Platform rules, changed by the Master Admin without touching code. Each change is saved at once, recorded
- * in the audit log with its old and new value, and reaches open apps straight away.
+ * A group of text settings with one Save button. Checked with the same rules as the server before sending, and
+ * sent as the whole set of settings, so nothing else changes.
  */
-export default function PlatformSettingsScreen() {
+function TextSettings({
+  specs,
+  settings,
+  canEdit,
+  onSave,
+  saving,
+  testID,
+}: {
+  specs: TextSpec[];
+  settings: AdminSettings;
+  canEdit: boolean;
+  onSave: (change: Partial<SettingsInput>) => void;
+  saving: boolean;
+  testID: string;
+}) {
+  const valuesOf = (from: AdminSettings) =>
+    Object.fromEntries(specs.map((s) => [s.key, String(from[s.key] ?? '')])) as Record<TextKey, string>;
+  const [draft, setDraft] = useState(() => valuesOf(settings));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  // Start again from the saved values only when they change (after a save or a refresh), never while typing.
+  const [shown, setShown] = useState(settings);
+  if (shown !== settings) {
+    setShown(settings);
+    setDraft(valuesOf(settings));
+  }
+  const changed = specs.some((s) => draft[s.key] !== String(settings[s.key] ?? ''));
+  const submit = () => {
+    const parsed = settingsSchema.safeParse(settingsBody(settings, draft as Partial<SettingsInput>));
+    if (!parsed.success) {
+      const next: Record<string, string> = {};
+      for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
+      setErrors(next);
+      return;
+    }
+    setErrors({});
+    onSave(draft as Partial<SettingsInput>);
+  };
+  return (
+    <Card style={{ gap: space.md }} testID={testID}>
+      {specs.map((s) => (
+        <Field
+          key={s.key}
+          testID={`config-${s.key}`}
+          label={s.label}
+          hint={s.hint}
+          value={draft[s.key]}
+          error={errors[s.key]}
+          editable={canEdit}
+          multiline={Boolean(s.lines)}
+          numberOfLines={s.lines}
+          style={s.lines ? { minHeight: 22 * s.lines, textAlignVertical: 'top' } : undefined}
+          keyboardType={s.keyboard ?? 'default'}
+          autoCapitalize={s.keyboard === 'email-address' ? 'none' : 'sentences'}
+          onChangeText={(v) => setDraft((d) => ({ ...d, [s.key]: v }))}
+        />
+      ))}
+      {canEdit && (
+        <Button
+          testID={`${testID}-save`}
+          label="Save"
+          variant="primary"
+          disabled={!changed}
+          loading={saving}
+          onPress={submit}
+        />
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Everything the Super Admin can change without a code update, in the same tabs as the website. Choices are saved
+ * as soon as they are tapped; text has a Save button. Every change is recorded in the audit log.
+ */
+export default function ConfigurationScreen() {
   const { me } = useSession();
   const canEdit = me?.isMasterAdmin === true;
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<TabId>(() =>
+    TABS.some((t) => t.id === params.tab) ? (params.tab as TabId) : 'general',
+  );
   const client = useQueryClient();
   const toast = useToast();
   const settings = useQuery({
     queryKey: ['admin', 'settings'],
-    queryFn: () => api.get<Settings>('/admin/settings'),
+    queryFn: () => api.get<AdminSettings>('/admin/settings'),
   });
-  const refresh = useCallback(() => settings.refetch(), [settings]);
+  const info = useQuery({ queryKey: ['public-info'], queryFn: () => api.get<PublicInfo>('/public/info') });
+  const refresh = useCallback(() => Promise.all([settings.refetch(), info.refetch()]), [settings, info]);
   const save = useMutation({
-    mutationFn: async (change: Partial<PlatformSettings>) => {
-      const { id: _id, updatedAt: _u, dataResetAt: _r, ...current } = settings.data as Settings;
-      return api.put<Settings>('/admin/settings', { ...current, ...change });
-    },
+    mutationFn: (change: Partial<SettingsInput>) =>
+      api.put<AdminSettings>('/admin/settings', settingsBody(settings.data as AdminSettings, change)),
     onSuccess: (next) => {
       haptics.notify('success');
       client.setQueryData(['admin', 'settings'], next);
+      void client.invalidateQueries({ queryKey: ['public-info'] });
       toast({ tone: 'success', title: 'Saved' });
     },
     onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
   });
   const s = settings.data;
-  const set = (change: Partial<PlatformSettings>) => {
+  const set = (change: Partial<SettingsInput>) => {
     if (canEdit && !save.isPending) save.mutate(change);
   };
   const windows = s
     ? [...new Set([0, ...ENTRY_WINDOW_CHOICES, s.entryExpiryMinutesDefault])].sort((a, b) => a - b)
     : [];
+  const emailBlocked = info.data ? info.data.signupOpen && !info.data.signupAvailable : false;
+  const textProps = { canEdit, onSave: set, saving: save.isPending };
+
   return (
     <Screen edges={['bottom']} refresh={refresh} testID="platform-settings">
-      {!canEdit && (
+      <ChipRow>
+        {TABS.map((t) => (
+          <Chip
+            key={t.id}
+            testID={`config-tab-${t.id}`}
+            icon={t.icon}
+            label={t.id === 'email' && emailBlocked ? `${t.label} !` : t.label}
+            on={tab === t.id}
+            onPress={() => setTab(t.id)}
+          />
+        ))}
+      </ChipRow>
+      {!canEdit && tab !== 'email' && (
         <Notice tone="neutral" icon="lock-closed-outline">
-          Only the Master Admin can change these. You can see what is in force.
+          Only the Super Admin can change the configuration. You can see what is in force.
         </Notice>
       )}
-      {settings.isPending && <Loading rows={3} label="Loading settings" />}
+      {settings.isPending && <Loading rows={3} label="Loading configuration" />}
       {settings.isError && <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />}
-      {s && (
+
+      {s && tab === 'general' && (
         <>
-          <SectionTitle>Signals</SectionTitle>
+          <SectionTitle>Your service</SectionTitle>
+          <TextSettings
+            {...textProps}
+            testID="config-service"
+            settings={s}
+            specs={[
+              { key: 'serviceName', label: 'Service name' },
+              {
+                key: 'serviceDescription',
+                label: 'Short description',
+                hint: 'On the home page. Do not state accuracy, returns or guarantees.',
+                lines: 3,
+              },
+              {
+                key: 'businessTimezone',
+                label: 'Business time zone',
+                hint: 'Decides when a subscription day starts and ends, such as Asia/Kolkata.',
+              },
+            ]}
+          />
+          <SectionTitle>About us</SectionTitle>
+          <TextSettings
+            {...textProps}
+            testID="config-about"
+            settings={s}
+            specs={[
+              {
+                key: 'aboutBody',
+                label: 'About us text',
+                hint: 'Shown on the About page of the website and from the app. Leave a blank line between paragraphs.',
+                lines: 8,
+              },
+            ]}
+          />
+        </>
+      )}
+
+      {s && tab === 'contact' && (
+        <>
+          <SectionTitle>Where enquiries go</SectionTitle>
+          <TextSettings
+            {...textProps}
+            testID="config-enquiries"
+            settings={s}
+            specs={[
+              {
+                key: 'supportWhatsapp',
+                label: 'Support WhatsApp number',
+                hint: 'Include the country code, such as +91.',
+                keyboard: 'phone-pad',
+              },
+              { key: 'supportEmail', label: 'Support email', keyboard: 'email-address' },
+            ]}
+          />
+          <SectionTitle>What people are told</SectionTitle>
+          <TextSettings
+            {...textProps}
+            testID="config-told"
+            settings={s}
+            specs={[
+              { key: 'supportContact', label: 'Support contact line', hint: 'Shown publicly and to members.' },
+              {
+                key: 'renewalInstructions',
+                label: 'Message for members whose access ended',
+                hint: 'Optional. Shown with the renewal button.',
+                lines: 3,
+              },
+            ]}
+          />
+        </>
+      )}
+
+      {tab === 'email' && <EmailSettings canEdit={canEdit} defaultTestTo={me?.profile?.email ?? ''} />}
+
+      {s && tab === 'signup' && (
+        <>
+          <SectionTitle>Sign-up</SectionTitle>
+          <Card style={{ gap: space.md }}>
+            <ToggleRow
+              testID="config-signup-open"
+              label="Allow new sign-ups"
+              hint={
+                s.signupOpen
+                  ? 'Anyone can sign up with their email. They get no signals until you start a subscription or trial.'
+                  : 'Sign-up is paused. The sign-up screen tells people to contact support.'
+              }
+              value={s.signupOpen}
+              disabled={!canEdit}
+              onChange={(v) => set({ signupOpen: v })}
+            />
+            {emailBlocked && (
+              <Notice tone="update" icon="warning" title="Email is not set up">
+                Sign-up sends a code by email, so nobody new can join until it is.
+              </Notice>
+            )}
+            {emailBlocked && <Button testID="config-go-email" label="Set up email" onPress={() => setTab('email')} />}
+          </Card>
+          <SectionTitle>Free trials</SectionTitle>
+          <Card style={{ gap: space.md }}>
+            <T v="small" c="muted">
+              Usual trial length. Filled in when a trial is granted; it can be changed each time, up to 90 days.
+            </T>
+            <ChipRow>
+              {[...new Set([...TRIAL_DAY_SHORTCUTS, 30, s.defaultTrialDays])]
+                .sort((a, b) => a - b)
+                .map((d) => (
+                  <Chip
+                    key={d}
+                    testID={`config-trial-${d}`}
+                    label={`${d} days`}
+                    on={s.defaultTrialDays === d}
+                    onPress={() => set({ defaultTrialDays: d })}
+                  />
+                ))}
+            </ChipRow>
+            <T v="caption" c="subtle">
+              Any administrator can give any member free days, from New Registrations or the member’s page.
+            </T>
+          </Card>
+        </>
+      )}
+
+      {s && tab === 'signals' && (
+        <>
+          <SectionTitle>New signals</SectionTitle>
           <Card style={{ gap: space.md }}>
             <T v="small" c="muted">
               A new signal starts as
@@ -94,7 +338,7 @@ export default function PlatformSettingsScreen() {
             />
             <T v="caption" c="subtle">
               {s.signalStartMode === 'AWAITING_ENTRY'
-                ? 'It waits until it is activated. If its entry window ends first, it is cancelled automatically and subscribers are told not to enter.'
+                ? 'It waits until it is activated. If its entry window ends first, it is cancelled automatically and members are told not to enter.'
                 : 'It is active as soon as it is published. That is never a fill.'}
             </T>
             <T v="small" c="muted">
@@ -129,13 +373,13 @@ export default function PlatformSettingsScreen() {
                 : '“Stop-loss on trade T-0012 trailed from 3,300.00 to 3,350.00 (50 pts from 3,400.00).”'}
             </T>
           </Card>
-          <SectionTitle>Subscribers</SectionTitle>
+          <SectionTitle>What members see</SectionTitle>
           <Card style={{ gap: space.md }}>
             <T v="small" c="muted">
-              Each subscriber’s history
+              Each member’s history
             </T>
             <Segmented<HistoryScope>
-              label="Each subscriber’s history"
+              label="Each member’s history"
               value={s.historyScope}
               onChange={(v) => set({ historyScope: v })}
               options={[
@@ -147,7 +391,7 @@ export default function PlatformSettingsScreen() {
               <ToggleRow
                 testID="rule-screenshots"
                 label="Allow screenshots"
-                hint="Default for subscribers. Override it for one subscriber on their page."
+                hint="Default for members. Override it for one member on their page."
                 value={s.screenshotsAllowedDefault}
                 disabled={!canEdit}
                 onChange={(v) => set({ screenshotsAllowedDefault: v })}
@@ -159,94 +403,33 @@ export default function PlatformSettingsScreen() {
               sees. Web browsers cannot block them.
             </T>
           </Card>
-          <SupportContact
-            canEdit={canEdit}
-            whatsapp={String(s.supportWhatsapp ?? '')}
-            email={String(s.supportEmail ?? '')}
-            onSaved={(next) => client.setQueryData(['admin', 'settings'], next)}
+        </>
+      )}
+
+      {s && tab === 'legal' && (
+        <>
+          <SectionTitle>Legal text</SectionTitle>
+          <TextSettings
+            {...textProps}
+            testID="config-legal"
+            settings={s}
+            specs={[
+              { key: 'legalEntityName', label: 'Legal entity name' },
+              {
+                key: 'regulatoryStatement',
+                label: 'Regulatory statement',
+                hint: 'Empty until your status is established. Never claim a registration you do not hold.',
+                lines: 3,
+              },
+              { key: 'riskDisclosure', label: 'Risk disclosure', lines: 8 },
+              { key: 'privacyNotice', label: 'Privacy notice', lines: 6 },
+            ]}
           />
           <T v="caption" c="subtle">
-            Service texts, legal disclosures and public-results approvals are edited in the web admin.
+            Approvals for publishing past results are recorded on the website, under Configuration, Legal.
           </T>
         </>
       )}
     </Screen>
-  );
-}
-
-/** Where subscription enquiries go. Master Admin only; the change is audited and applies to every screen at once. */
-function SupportContact({
-  canEdit,
-  whatsapp,
-  email,
-  onSaved,
-}: {
-  canEdit: boolean;
-  whatsapp: string;
-  email: string;
-  onSaved: (next: Settings) => void;
-}) {
-  const toast = useToast();
-  const [form, setForm] = useState({ supportWhatsapp: whatsapp, supportEmail: email });
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  useEffect(() => setForm({ supportWhatsapp: whatsapp, supportEmail: email }), [whatsapp, email]);
-  const save = useMutation({
-    mutationFn: (body: { supportWhatsapp: string; supportEmail: string }) =>
-      api.put<Settings>('/admin/settings/support', body),
-    onSuccess: (next) => {
-      onSaved(next);
-      toast({ tone: 'success', title: 'Support contact saved' });
-    },
-    onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
-  });
-  const submit = () => {
-    const parsed = supportSettingsSchema.safeParse(form);
-    if (!parsed.success) {
-      const next: Record<string, string> = {};
-      for (const issue of parsed.error.issues) next[String(issue.path[0])] ??= issue.message;
-      setErrors(next);
-      return;
-    }
-    setErrors({});
-    save.mutate(parsed.data);
-  };
-  const changed = form.supportWhatsapp !== whatsapp || form.supportEmail !== email;
-  return (
-    <>
-      <SectionTitle>Support contact</SectionTitle>
-      <Card style={{ gap: space.md }} testID="support-contact-settings">
-        <Field
-          testID="support-whatsapp"
-          label="WhatsApp number"
-          hint="Subscription enquiries open WhatsApp to this number."
-          value={form.supportWhatsapp}
-          error={errors.supportWhatsapp}
-          editable={canEdit}
-          keyboardType="phone-pad"
-          onChangeText={(v) => setForm((f) => ({ ...f, supportWhatsapp: v }))}
-        />
-        <Field
-          testID="support-email"
-          label="Support email"
-          hint="Enquiries sent by email go here, from the server."
-          value={form.supportEmail}
-          error={errors.supportEmail}
-          editable={canEdit}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          onChangeText={(v) => setForm((f) => ({ ...f, supportEmail: v }))}
-        />
-        {canEdit && (
-          <Button
-            testID="support-save"
-            label="Save"
-            variant="primary"
-            disabled={!changed}
-            loading={save.isPending}
-            onPress={submit}
-          />
-        )}
-      </Card>
-    </>
   );
 }

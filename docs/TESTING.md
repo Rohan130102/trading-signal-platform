@@ -21,6 +21,28 @@ added, on one Apple Silicon Mac with 8 GB of memory, Node 22.23. Earlier rounds 
 | Secret scan                                                     | No secrets found                                                                                           |
 | Tests skipped or weakened to pass                               | None                                                                                                       |
 
+### 15 November: configuration, free days, website and app alike
+
+| Gate                                       | Result                                                                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Unit tests                                 | **226 of 226** (7 new: free days, the email account, saving settings)                                              |
+| Integration tests                          | **291 of 291** (4 new: the email account, test email, sign-up switch, free days for a paying member)               |
+| Native app unit and component tests (Jest) | **101 of 101** (6 new: sign-up paused or not yet open, About us, Configuration, free days)                         |
+| Website end-to-end                         | **84 of 84** (6 new: landing page, Log In and Sign Up, sign-up not yet open, email tab, sign-up switch, free days) |
+| Native app journeys, Android emulator      | **32 of 32** that can run here, including the new Configuration and free-days journey. Screen protection skipped   |
+| iOS simulator build (CI, Xcode 26.6)       | Pass                                                                                                               |
+| Types, lint, formatting, secret scan       | Pass                                                                                                               |
+
+In the full phone run, 30 passed at once. Two failed:
+
+- The new Configuration journey looked for tabs that sit past the edge of the scrolling tab row, and for a toast that
+  had already gone. Both checks were fixed; it then passed.
+- The first-sign-in journey once found the tour already on its second step. It passed when run again and did not
+  happen again; the cause was not found.
+
+The first website run found two accessibility contrast failures in the new pages (faded coloured text in light mode)
+and three tests that assumed the old first page. All were fixed before the 84 of 84.
+
 ### 14 November: sign-up, trials, recovery and upcoming trades
 
 **Phone.** All 32 journeys in `apps/mobile/e2e/run.mjs` ran on a separate Android emulator (6 GB, its own data) against a

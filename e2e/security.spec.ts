@@ -98,6 +98,7 @@ test.describe('subscribers', () => {
     const api = await adminApi();
     const sub = await createSubscriberViaApi(api);
     await signInFirstTime(page, sub);
+    await page.goto('/app/alerts');
     let fired = false;
     page.on('dialog', async (dialog) => {
       fired = true;
