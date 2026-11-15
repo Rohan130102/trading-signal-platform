@@ -158,3 +158,11 @@ name used anywhere.
 | Safe for older phones                   | Updates go only to APKs with the same native fingerprint, so a change that needs new native code waits for a new APK instead of crashing old ones. A rollback folder sends phones back to their APK's own code                                                                                                                               |
 
 One more APK is needed, the first with the update certificate inside; after that, only native changes need a new one.
+
+## Sixth round, 16 November: CI within the free minutes
+
+CI had used the repository's 2,000 free monthly runner minutes, and GitHub stopped starting jobs. Without a paid plan:
+CI compiles the Android app only when its native parts change (the JavaScript is still bundled on every run), a newer
+push to a pull request cancels the run it replaces, artifacts are kept for days rather than weeks, and the share build
+compiles an APK only for new native parts, packaging an update otherwise. Applied to November's runs, that would have
+come to roughly 900 to 1,000 minutes; this is an estimate, not a measurement.

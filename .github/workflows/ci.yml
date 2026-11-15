@@ -6,9 +6,17 @@ on:
     paths-ignore: ['docs/**', '**/*.md']
   pull_request:
     paths-ignore: ['docs/**', '**/*.md']
+  # Everything, including the Android build when its native parts have not changed.
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+# The repository has a monthly allowance of runner minutes. A newer push to a pull request stops the run still going
+# for the older one; every other run (pushes to main, runs started by hand) gets a group of its own and finishes.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
+  cancel-in-progress: true
 
 env:
   EXPO_NO_TELEMETRY: '1'
@@ -85,6 +93,10 @@ jobs:
     name: Mobile validation
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      android-build-needed: ${{ steps.android.outputs.needed }}
+      android-key: ${{ steps.fingerprint.outputs.key }}
+      android-built-before: ${{ steps.built.outputs.cache-hit }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,6 +105,43 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run build -w @signaldesk/domain
+      # The Android build took most of CI's minutes, yet only a native change can break it: a dependency with native
+      # code, the app configuration, a plugin, the Expo SDK. The JavaScript is bundled and checked by this job every
+      # time. Expo's fingerprint is a hash of everything native (the same one that decides which APKs an update
+      # reaches), so the build is skipped when one already succeeded for this fingerprint and this workflow file.
+      - name: Fingerprint of the native parts
+        id: fingerprint
+        working-directory: apps/mobile
+        env:
+          # The Android build job's settings, which are part of the fingerprint.
+          APP_VARIANT: development
+          EXPO_PUBLIC_API_URL: http://localhost:4200
+        run: |
+          fingerprint=$(npx expo-updates runtimeversion:resolve --platform android | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).runtimeVersion ?? "")')
+          if ! printf '%s' "$fingerprint" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not work out the native fingerprint (got '$fingerprint')."
+            exit 1
+          fi
+          echo "Native fingerprint: $fingerprint"
+          echo "key=android-build-$fingerprint-${{ hashFiles('.github/workflows/ci.yml') }}" >> "$GITHUB_OUTPUT"
+      - name: Has the Android build already passed for these native parts?
+        id: built
+        uses: actions/cache/restore@v4
+        with:
+          path: .android-build-passed
+          key: ${{ steps.fingerprint.outputs.key }}
+      - name: Decide on the Android build
+        id: android
+        env:
+          BUILT_BEFORE: ${{ steps.built.outputs.cache-hit }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$BUILT_BEFORE" = "true" ] && [ "$EVENT" != "workflow_dispatch" ]; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "Android build skipped: it already passed for these native parts. JavaScript changes are bundled and checked by Mobile validation." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+          fi
       - run: npm run typecheck -w @signaldesk/mobile
       - run: npm test -w @signaldesk/mobile
       - name: Project health
@@ -114,6 +163,7 @@ jobs:
   android-apk:
     name: Android build
     needs: mobile
+    if: needs.mobile.outputs.android-build-needed == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -143,4 +193,15 @@ jobs:
         with:
           name: signaldesk-android-test-apk
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 14
+          # Storage counts against the same allowance. Run the workflow by hand for a fresh APK.
+          retention-days: 3
+      # A marker that this build passed, so later runs with the same native parts skip it (see Mobile validation).
+      # Unused for seven days, GitHub removes it, and the next run builds again.
+      - name: Remember that the Android build passed
+        if: needs.mobile.outputs.android-built-before != 'true'
+        run: echo "${{ github.run_id }}" > .android-build-passed
+      - if: needs.mobile.outputs.android-built-before != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .android-build-passed
+          key: ${{ needs.mobile.outputs.android-key }}

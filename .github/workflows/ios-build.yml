@@ -55,4 +55,4 @@ jobs:
         with:
           name: signaldesk-ios-simulator
           path: signaldesk-ios-simulator.zip
-          retention-days: 14
+          retention-days: 7

@@ -296,3 +296,18 @@ reproduce locally in 26 runs before the change, so the fix rests on the trace an
 second run with the app reset to its APK code, the "New version ready" notice appeared about a second after launch,
 once the update had downloaded; tapping "Restart now" restarted the app into the update, and the next start reported
 the update to the server and was told it was current.
+
+### 16 November: CI within the free runner minutes
+
+GitHub stopped starting CI jobs. The repository is private on the free plan, and its 2,000 monthly runner minutes were
+used up: about 2,079 since 1 November, more than half of them compiling Android builds. CI now compiles the Android app
+only for a native fingerprint it has not compiled yet, a newer push to a pull request cancels the run it replaces, and
+build artifacts are kept for days rather than weeks. The share build packages an update on every push and compiles an
+APK only for a new fingerprint.
+
+| Check                       | Result                                                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fingerprint, locally        | Unchanged after a JavaScript edit and after generating the Android project; changed by an app configuration edit                                                                                                                                                       |
+| New workflow steps, locally | Run with bash as a runner would: the fingerprint step, the build-or-skip decision in each case (built before, never built, started by hand, `[new apk]`), and the fingerprint check (passes when they match, fails when the update or APK differs or the APK has none) |
+| Workflows parse, formatting | Pass                                                                                                                                                                                                                                                                   |
+| On GitHub                   | **Not run.** GitHub starts no jobs until the minutes reset, so the cache lookups, the skipped Android job and the cancelled runs are unverified until then                                                                                                             |
