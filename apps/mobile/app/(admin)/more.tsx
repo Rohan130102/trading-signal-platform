@@ -96,8 +96,8 @@ export default function More() {
         <ListRow
           testID="more-settings"
           icon="options-outline"
-          title="Platform settings"
-          subtitle={master ? 'Signal start, entry window, history, screenshots' : 'See the rules in force'}
+          title="Configuration"
+          subtitle={master ? 'Email, sign-up, trials, contact, signals and legal text' : 'See what is in force'}
           onPress={() => router.push('/admin/settings')}
         />
         {master && (

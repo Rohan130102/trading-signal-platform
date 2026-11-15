@@ -29,7 +29,11 @@ export default function VerifyPage() {
   };
 
   return (
-    <AuthFrame title="Enter your code" description="Open your authenticator app and type the six digits it shows.">
+    <AuthFrame
+      focused
+      title="Enter your code"
+      description="Open your authenticator app and type the six digits it shows."
+    >
       <form onSubmit={submit} className="flex flex-col gap-4">
         <Field label="Code" hint="Lost your phone? Enter one of your recovery codes here instead.">
           {(c) => (

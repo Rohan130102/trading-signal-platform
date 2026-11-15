@@ -45,7 +45,11 @@ export class RegistrationService {
 
   /** The same answer whether or not the address is taken; a taken address is told so by email instead. */
   async start(input: Registration, ip: string): Promise<ChallengeResponse> {
-    const { serviceName } = await this.settings.get();
+    const { serviceName, signupOpen } = await this.settings.get();
+    // The same answer for everyone, so it says nothing about whether an address has an account.
+    if (!signupOpen) {
+      throw new AppError(403, 'SIGNUP_CLOSED', 'New sign-ups are paused. Contact support to join.');
+    }
     const existing = await this.existingAccount(input.email);
     if (existing) {
       return this.challenges.issue({

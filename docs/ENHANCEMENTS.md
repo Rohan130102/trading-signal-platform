@@ -18,27 +18,27 @@ architecture: nothing was rebuilt, and accounts, subscriptions, trades and their
 
 ## Checklist
 
-| #            | Requirement                                                                 | Where                                                                         | Tests                                               |
-| ------------ | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------- |
-| 2            | Log In / Sign Up screen, email or username, show/hide password              | web `login`, `signup`; mobile `(auth)/login`, `(auth)/signup`                 | e2e `onboarding.spec`, mobile `auth-copy.test`      |
-| 3.1          | Five required fields, phone in E.164 (default +91), age with legal minimum  | domain `registration.ts`; API `registration.service`                          | domain `registration.test`; API `registration.test` |
-| 3.2          | Email code: 6 digits, 5 minutes, 5 tries, 60 s resend, hashed, rate limited | API `email-challenge.service`                                                 | API `registration.test`                             |
-| 3.3          | Create password after verification, account enabled, no access              | API `registration.service.complete`                                           | API `registration.test`                             |
-| 4            | WhatsApp enquiry with email fallback, never claimed as sent                 | domain `support.ts`; API `enquiries.service`; web/mobile `SubscriptionStatus` | domain `support.test`; API `enquiries.test`         |
-| 4.4          | Support WhatsApp and email set by the Master Admin only, audited            | API `settings`; web/mobile settings                                           | API `enquiries.test`                                |
-| 5            | Identity, enquiry and access kept separate                                  | `users.email_verified_at`, `users.enquiry_status`, `subscriptions.kind`       | API `registration.test`, `trials.test`              |
-| 6            | New Registrations list with badge, filters, detail actions                  | API `registrations` in `subscribers`; web/mobile admin                        | API `registration.test`                             |
-| 7            | Start / renew with any number of days, preview, no shortening               | domain `subscription.ts`; API `subscribers.service`                           | domain `subscription.test`; API `trials.test`       |
-| 7.4, 8.4, 18 | Email + in-app + push for start, renewal and trial                          | API `notices.service`, `email` outbox, worker                                 | API `trials.test`                                   |
-| 8            | Admin-granted free trials, never automatic, one greeting per grant          | `trial_grants`; API `trials` in `subscribers.service`; `TrialGreeting`        | API `trials.test`                                   |
-| 9            | Expired users sign in, see renewal screen, get no new private data          | existing access rule; `SubscriptionStatus` screens                            | API `trials.test` (expiry and restore)              |
-| 10           | Forgot password: email code, then admin-issued temporary password           | API `password-reset.service`; web/mobile admin list                           | API `password-reset.test`                           |
-| 11           | Range trade published with no target or stop, activated later with levels   | domain `lifecycle.ts`, `contracts.ts`; composer; Activate form                | domain `lifecycle.test`; API `signals.test`         |
-| 12           | Clean correction wording for subscribers, full audit kept                   | domain `templates.ts`, `lifecycle.ts`                                         | domain `lifecycle.test`                             |
-| 13, 16       | Minimal copy, "Edit Levels Manually", consistent action names               | domain `copy.ts`; all screens                                                 | domain `copy.test`                                  |
-| 14           | Signals page: Upcoming, Active, History                                     | web `app/page.tsx`; mobile `feed.tsx`                                         | e2e, mobile tests                                   |
-| 15           | Closed trades in History at once                                            | existing queries                                                              | API `signals.test`                                  |
-| 17           | One reversible, additive migration                                          | `20261114000000_onboarding_trials`                                            | migrate from the previous schema                    |
+| #            | Requirement                                                                     | Where                                                                         | Tests                                               |
+| ------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | --------------------------------------------------- |
+| 2            | Log In / Sign Up screen, email or username, show/hide password                  | web `login`, `signup`; mobile `(auth)/login`, `(auth)/signup`                 | e2e `onboarding.spec`, mobile `configuration.test`  |
+| 3.1          | Five required fields, phone in E.164 (default +91), age with legal minimum      | domain `registration.ts`; API `registration.service`                          | domain `registration.test`; API `registration.test` |
+| 3.2          | Email code: 6 digits, 5 minutes, 5 tries, 60 s resend, hashed, rate limited     | API `email-challenge.service`                                                 | API `registration.test`                             |
+| 3.3          | Create password after verification, account enabled, no access                  | API `registration.service.complete`                                           | API `registration.test`                             |
+| 4            | WhatsApp enquiry with email fallback, never claimed as sent                     | domain `support.ts`; API `enquiries.service`; web/mobile `SubscriptionStatus` | domain `support.test`; API `enquiries.test`         |
+| 4.4          | Support WhatsApp and email set by the Master Admin only, audited                | API `settings`; web/mobile settings                                           | API `enquiries.test`                                |
+| 5            | Identity, enquiry and access kept separate                                      | `users.email_verified_at`, `users.enquiry_status`, `subscriptions.kind`       | API `registration.test`, `trials.test`              |
+| 6            | New Registrations list with badge, filters, detail actions                      | API `registrations` in `subscribers`; web/mobile admin                        | API `registration.test`                             |
+| 7            | Start / renew with any number of days, preview, no shortening                   | domain `subscription.ts`; API `subscribers.service`                           | domain `subscription.test`; API `trials.test`       |
+| 7.4, 8.4, 18 | Email + in-app + push for start, renewal and trial                              | API `notices.service`, `email` outbox, worker                                 | API `trials.test`                                   |
+| 8            | Admin-granted free days for any member, never automatic, one greeting per grant | `trial_grants`; API `trials` in `subscribers.service`; `TrialGreeting`        | API `trials.test`                                   |
+| 9            | Expired users sign in, see renewal screen, get no new private data              | existing access rule; `SubscriptionStatus` screens                            | API `trials.test` (expiry and restore)              |
+| 10           | Forgot password: email code, then admin-issued temporary password               | API `password-reset.service`; web/mobile admin list                           | API `password-reset.test`                           |
+| 11           | Range trade published with no target or stop, activated later with levels       | domain `lifecycle.ts`, `contracts.ts`; composer; Activate form                | domain `lifecycle.test`; API `signals.test`         |
+| 12           | Clean correction wording for subscribers, full audit kept                       | domain `templates.ts`, `lifecycle.ts`                                         | domain `lifecycle.test`                             |
+| 13, 16       | Minimal copy, "Edit Levels Manually", consistent action names                   | domain `copy.ts`; all screens                                                 | domain `copy.test`                                  |
+| 14           | Signals page: Upcoming, Active, History                                         | web `app/page.tsx`; mobile `feed.tsx`                                         | e2e, mobile tests                                   |
+| 15           | Closed trades in History at once                                                | existing queries                                                              | API `signals.test`                                  |
+| 17           | One reversible, additive migration                                              | `20261114000000_onboarding_trials`                                            | migrate from the previous schema                    |
 
 ## Decisions
 
@@ -55,9 +55,9 @@ architecture: nothing was rebuilt, and accounts, subscriptions, trades and their
 - **WhatsApp.** The web opens `https://wa.me/<digits>?text=…` and never records a message as sent. The phone app
   opens `whatsapp://send`; only if the system reports WhatsApp missing does it send the enquiry by email, after the
   user's tap. Enquiry records say what actually happened: link opened, email accepted, or email failed.
-- **Trials.** A trial sets the same access window a subscription does (`subscriptions.kind = TRIAL`) and is also
-  kept in `trial_grants` for reporting and the one-time greeting. A second trial for the same person needs an
-  explicit override. Starting a paid subscription replaces a running trial from the chosen date.
+- **Trials.** Any administrator can give any member free days, at any time and as often as needed. While access is
+  running, paid or trial, the days are added after its last day and a paying member stays paid; otherwise a trial
+  starts on the chosen date. Every grant is kept in `trial_grants` for reporting and the one-time welcome.
 - **Payment confirmed.** The product does not track offline payment, so the "Activation pending" state is not shown.
 - **Upcoming trades.** A range signal may be published without a target or stop-loss. It stays "Awaiting entry";
   activating it requires the final entry, at least one target and a stop-loss, and updates the same trade. The
@@ -95,11 +95,31 @@ The website's screens were checked in a browser, and its end-to-end suite covers
 
 ## Not built, or not verified
 
-- **Email delivery** needs SMTP settings in the server's `.env` (see `.env.example`). Until then sign-up says email is not
-  set up. With the file transport, every email was checked in tests; no real inbox was used.
-- **iOS** was not run: this Mac has no Xcode. CI bundles the iOS JavaScript on every pull request; the native iOS build runs from the "iOS build" workflow when started by hand.
+- **Email delivery** needs an email account, entered by the Super Admin on the configuration screen (or SMTP settings
+  in the server's `.env`). Until then sign-up says it opens soon. Tests use the file transport; no real inbox was used.
+- **iOS** was not run on a simulator or iPhone: this Mac has no Xcode. The native iOS app does compile: the "iOS
+  build" workflow built it for the simulator on 15 November with Xcode 26.6, after it was changed to use the macOS 26
+  runner. Installing on an iPhone needs an Apple Developer account for signing.
 - **Push for account messages** reaches devices registered for push. A brand-new account registers a device only after
   it can see signals, so its first "Subscription Activated" arrives in the app and by email.
 - **Expiry reminders** ("your trial ends tomorrow") are not built; the brief asked for them only where configured.
 - **"Activation pending"** is not shown: the product does not record offline payments, so it cannot know.
 - **Direction on an upcoming trade** is still required at publication. The trade model needs it, and it can be corrected.
+
+## Second round, 15 November: configuration, free days, website and app alike
+
+| Asked for                                              | What was done                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Email is not set up" at sign-up                       | The Super Admin sets the email account on the configuration screen (Gmail, Outlook or other), with a test button. Until then sign-up says it opens soon, before anything is typed, and offers WhatsApp and email. Administrators see a prompt on the dashboard |
+| Configuration without code changes                     | One Configuration screen with six tabs, on the website and in the app: General, Contact, Email, Sign-up & trials, Signals, Legal. Super Admin only; read-only for other administrators; every change audited                                                   |
+| Free trial of N days for any member, existing ones too | Any member, any time. Running access is extended after its last day; otherwise a trial starts. No extra confirmation for a second one                                                                                                                          |
+| Better login and landing pages                         | A new landing page (what it is, how it works, an example signal clearly marked as an example, About us, the risk notice) and a two-panel login on wide screens; on phones, the form alone. The app's sign-in screens show the service's name                   |
+| About us missing from the website                      | About us, Risk disclosure and Support in the website's Account page; About us is now a screen in the app too, readable before signing in                                                                                                                       |
+| Website and app alike                                  | The website's signed-in area has the app's five places in the same order: Signals, Alerts, News, History, Account. News is new on the website                                                                                                                  |
+
+Still website-only, on purpose: recording a compliance approval for publishing past results (dates and a signed review
+reference), which the Legal tab in the app points to. Administrators' audit log, templates and trades list were already
+website-only and are unchanged.
+
+Found and fixed while building this round: the admin settings endpoint returned the whole settings row, so any secret
+added to it would have reached every administrator. It now returns the platform settings only.

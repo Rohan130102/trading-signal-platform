@@ -581,6 +581,18 @@ model AppSettings {
   /// Where subscription enquiries go. Set by the Master Admin only.
   supportWhatsapp           String    @default("+919987255414") @map("support_whatsapp")
   supportEmail              String    @default("singhrohan130102@gmail.com") @map("support_email")
+  signupOpen                Boolean   @default(true) @map("signup_open")
+  defaultTrialDays          Int       @default(7) @map("default_trial_days")
+  /// The SMTP account entered by the Super Admin. The password is encrypted and never returned by the API.
+  emailEnabled              Boolean   @default(false) @map("email_enabled")
+  smtpHost                  String    @default("") @map("smtp_host")
+  smtpPort                  Int       @default(587) @map("smtp_port")
+  smtpSecurity              String    @default("STARTTLS") @map("smtp_security")
+  smtpUsername              String    @default("") @map("smtp_username")
+  smtpPasswordEnc           String?   @map("smtp_password_enc")
+  emailFromName             String    @default("") @map("email_from_name")
+  emailFromAddress          String    @default("") @map("email_from_address")
+  emailTestedAt             DateTime? @map("email_tested_at") @db.Timestamptz(3)
   updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("app_settings")

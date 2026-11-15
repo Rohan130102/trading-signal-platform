@@ -29,8 +29,9 @@ export class EmailService {
     private readonly transport: EmailTransport,
   ) {}
 
-  get available(): boolean {
-    return this.transport.available;
+  /** Whether anything can be sent now: the configuration screen's account, the server's, or files in development. */
+  available(): Promise<boolean> {
+    return this.transport.available();
   }
 
   async enqueue(tx: Tx, email: QueuedEmail): Promise<bigint | null> {
@@ -65,7 +66,7 @@ export class EmailService {
 
   /** Claims due messages with SKIP LOCKED, so several workers never send the same one. */
   async processBatch(): Promise<number> {
-    if (!this.transport.available) return 0;
+    if (!(await this.transport.available())) return 0;
     const claimed = await this.prisma.$queryRaw<
       {
         id: bigint;

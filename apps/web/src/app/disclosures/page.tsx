@@ -8,7 +8,7 @@ export default async function DisclosuresPage() {
   const info = await getPublicInfo();
   return (
     <div className="flex min-h-dvh flex-col">
-      <PublicHeader name={info.serviceName} />
+      <PublicHeader name={info.serviceName} signupAvailable={info.signupAvailable} />
       <main className="mx-auto w-full max-w-3xl flex-1 px-4 pt-6 sm:px-6">
         <h1 className="text-[28px] font-semibold tracking-tight">Risk disclosure and privacy</h1>
         <section className="mt-6">

@@ -66,8 +66,9 @@ for (const theme of ['dark', 'light'] as const) {
         entryHigh: String(500000),
       }).catch(() => undefined);
       for (const [path, label] of [
-        ['/app', 'feed'],
-        ['/app/active', 'active'],
+        ['/app', 'signals'],
+        ['/app/alerts', 'alerts'],
+        ['/app/news', 'news'],
         ['/app/history', 'history'],
         [`/app/trades/${trade.id}`, 'trade'],
         ['/app/account', 'account'],
@@ -108,6 +109,7 @@ for (const theme of ['dark', 'light'] as const) {
           ['/admin/notifications', 'health'],
           ['/admin/audit', 'audit'],
           ['/admin/settings', 'settings'],
+          ['/admin/settings?tab=email', 'settings-email'],
         ];
         for (const [path, label] of pages) {
           await page.goto(path);

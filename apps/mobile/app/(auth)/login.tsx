@@ -1,9 +1,8 @@
-import { ACTIONS, loginSchema, type PublicInfo } from '@signaldesk/domain';
-import { useQuery } from '@tanstack/react-query';
+import { ACTIONS, loginSchema } from '@signaldesk/domain';
 import { Link } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Pressable, View } from 'react-native';
-import { api, ApiError } from '@/lib/api';
+import { ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { AuthTabs } from '@/subscriber/AuthParts';
 import { space } from '@/theme/tokens';
@@ -17,12 +16,6 @@ export default function Login() {
   const [fieldErrors, setFieldErrors] = useState<{ identifier?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
   const passwordInput = useRef<InputHandle>(null);
-  const info = useQuery({
-    queryKey: ['public-info'],
-    queryFn: () => api.get<PublicInfo>('/public/info'),
-    staleTime: 3_600_000,
-    retry: false,
-  });
 
   const submit = async () => {
     const parsed = loginSchema.safeParse({ identifier, password });
@@ -47,7 +40,7 @@ export default function Login() {
   };
 
   return (
-    <AuthFrame title={info.data?.serviceName ?? 'SignalDesk'}>
+    <AuthFrame title="Welcome back">
       <AuthTabs current="login" />
       {notice && !error && <Notice tone="neutral">{notice}</Notice>}
       <View style={{ gap: space.md }}>
@@ -110,13 +103,22 @@ export default function Login() {
         </Link>
       </View>
       <View style={{ flexGrow: 1 }} />
-      <Link href="/disclosures" asChild>
-        <Pressable accessibilityRole="link" hitSlop={10} testID="login-disclosures" style={{ alignSelf: 'center' }}>
-          <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
-            Risk disclosure and privacy
-          </T>
-        </Pressable>
-      </Link>
+      <View style={{ flexDirection: 'row', justifyContent: 'center', gap: space.lg, flexWrap: 'wrap' }}>
+        <Link href="/about" asChild>
+          <Pressable accessibilityRole="link" hitSlop={10} testID="login-about">
+            <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
+              About us
+            </T>
+          </Pressable>
+        </Link>
+        <Link href="/disclosures" asChild>
+          <Pressable accessibilityRole="link" hitSlop={10} testID="login-disclosures">
+            <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
+              Risk disclosure and privacy
+            </T>
+          </Pressable>
+        </Link>
+      </View>
     </AuthFrame>
   );
 }

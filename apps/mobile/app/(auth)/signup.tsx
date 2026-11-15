@@ -4,11 +4,14 @@ import {
   checkNewPassword,
   maskEmail,
   MIN_REGISTRATION_AGE,
+  type PublicInfo,
   registrationSchema,
+  whatsappDigits,
 } from '@signaldesk/domain';
+import { useQuery } from '@tanstack/react-query';
 import { Link, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { AuthTabs, CodeStep, issuesByField } from '@/subscriber/AuthParts';
@@ -232,10 +235,55 @@ function Password({ setupToken }: { setupToken: string }) {
   );
 }
 
+/**
+ * Shown instead of the form when an account cannot be created right now: sign-up is paused, or email is not set
+ * up so no code could be sent. Says so before anything is typed, and offers a way to reach the team.
+ */
+function SignupUnavailable({ info }: { info: PublicInfo }) {
+  const digits = whatsappDigits(info.supportWhatsapp);
+  const paused = !info.signupOpen;
+  return (
+    <AuthFrame
+      title={paused ? 'Sign-up is paused' : 'Sign-up opens soon'}
+      description={
+        paused
+          ? 'New accounts cannot be created at the moment. Message our team and they will help you join.'
+          : 'We cannot create new accounts in the app just yet. Message our team and they will set you up.'
+      }
+    >
+      <AuthTabs current="signup" />
+      <View style={{ gap: space.md }} testID="signup-unavailable">
+        {digits ? (
+          <Button
+            testID="signup-whatsapp"
+            icon="logo-whatsapp"
+            label="Message us on WhatsApp"
+            variant="primary"
+            large
+            full
+            onPress={() => void Linking.openURL(`https://wa.me/${digits}`)}
+          />
+        ) : null}
+        {info.supportEmail ? (
+          <Button
+            testID="signup-email"
+            icon="mail-outline"
+            label={`Email ${info.supportEmail}`}
+            full
+            onPress={() => void Linking.openURL(`mailto:${info.supportEmail}`)}
+          />
+        ) : null}
+      </View>
+    </AuthFrame>
+  );
+}
+
 export default function SignUp() {
+  const info = useQuery({ queryKey: ['public-info'], queryFn: () => api.get<PublicInfo>('/public/info') });
   const [step, setStep] = useState<Step>('details');
   const [challenge, setChallenge] = useState<ChallengeResponse | null>(null);
   const [setupToken, setSetupToken] = useState<string | null>(null);
+  if (step === 'details' && info.data && !info.data.signupAvailable) return <SignupUnavailable info={info.data} />;
   const title =
     step === 'details' ? 'Create your account' : step === 'code' ? ACTIONS.verifyEmail : ACTIONS.createPassword;
   const description =

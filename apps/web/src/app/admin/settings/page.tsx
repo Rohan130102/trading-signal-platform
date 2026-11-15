@@ -2,20 +2,37 @@
 
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  type AdminSettings,
   approvalSchema,
   ENTRY_WINDOW_CHOICES,
   entryWindowLabel,
   type HistoryScope,
+  type PublicInfo,
+  settingsBody,
   settingsSchema,
   type SignalStartMode,
+  TRIAL_DAY_SHORTCUTS,
   type TrailingStopWording,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Lock, ShieldAlert, Unlock } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { clsx } from 'clsx';
+import {
+  Activity,
+  AlertTriangle,
+  Building2,
+  Lock,
+  Mail,
+  MessageCircle,
+  Scale,
+  ShieldAlert,
+  Unlock,
+  UserPlus,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { type FieldErrors, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import type { z } from 'zod';
+import { EmailSettings } from '@/components/admin/email-settings';
 import {
   Badge,
   Button,
@@ -26,12 +43,14 @@ import {
   Field,
   FormError,
   Input,
+  Labeled,
   Loading,
   PageHeader,
-  Labeled,
   Segmented,
   Select,
   Switch,
+  TabPanel,
+  Tabs,
   Textarea,
 } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -58,226 +77,438 @@ interface Gate {
   }[];
 }
 
+const TABS = [
+  { id: 'general', label: 'General', icon: Building2 },
+  { id: 'contact', label: 'Contact', icon: MessageCircle },
+  { id: 'email', label: 'Email', icon: Mail },
+  { id: 'signup', label: 'Sign-up & trials', icon: UserPlus },
+  { id: 'signals', label: 'Signals', icon: Activity },
+  { id: 'legal', label: 'Legal', icon: Scale },
+] as const;
+type TabId = (typeof TABS)[number]['id'];
+
+/** Which tab holds each field, so a problem on a hidden tab is pointed out and opened. */
+const FIELD_TAB: Record<keyof SettingsValues, TabId> = {
+  serviceName: 'general',
+  serviceDescription: 'general',
+  businessTimezone: 'general',
+  aboutBody: 'general',
+  supportWhatsapp: 'contact',
+  supportEmail: 'contact',
+  supportContact: 'contact',
+  renewalInstructions: 'contact',
+  signupOpen: 'signup',
+  defaultTrialDays: 'signup',
+  signalStartMode: 'signals',
+  entryExpiryMinutesDefault: 'signals',
+  trailingStopWording: 'signals',
+  screenshotsAllowedDefault: 'signals',
+  historyScope: 'signals',
+  legalEntityName: 'legal',
+  regulatoryStatement: 'legal',
+  riskDisclosure: 'legal',
+  privacyNotice: 'legal',
+};
+
 const WINDOW_OPTIONS = [...new Set([0, ...ENTRY_WINDOW_CHOICES, 480, 720, 2880, 10080])].sort((a, b) => a - b);
 
-function SettingsForm({ initial, canEdit }: { initial: SettingsValues; canEdit: boolean }) {
+function timezones(current: string): string[] {
+  const all = typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+  return all.includes(current) ? all : [current, ...all];
+}
+
+function tabFromUrl(): TabId {
+  if (typeof window === 'undefined') return 'general';
+  const wanted = new URLSearchParams(window.location.search).get('tab');
+  return TABS.some((t) => t.id === wanted) ? (wanted as TabId) : 'general';
+}
+
+function Section({ title, description, children }: { title: string; description?: string; children: React.ReactNode }) {
+  return (
+    <Card className="flex flex-col gap-4 p-4 sm:p-5">
+      <div>
+        <h2 className="text-sm font-semibold">{title}</h2>
+        {description && <p className="mt-0.5 text-[13px] text-muted">{description}</p>}
+      </div>
+      {children}
+    </Card>
+  );
+}
+
+function Configuration({ settings, canEdit }: { settings: AdminSettings; canEdit: boolean }) {
   const client = useQueryClient();
+  const me = useMe();
+  const [tab, setTab] = useState<TabId>('general');
+  useEffect(() => setTab(tabFromUrl()), []);
+  const open = (next: TabId) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', next);
+    window.history.replaceState(null, '', url);
+  };
+  const initial = useMemo(() => settingsBody(settings) as SettingsValues, [settings]);
   const form = useForm<SettingsValues>({ resolver: zodResolver(settingsSchema), defaultValues: initial });
-  const startMode = form.watch('signalStartMode');
-  const windowMinutes = form.watch('entryExpiryMinutesDefault');
-  const wording = form.watch('trailingStopWording');
-  const historyScope = form.watch('historyScope');
-  const screenshots = form.watch('screenshotsAllowedDefault');
+  const info = useQuery({ queryKey: ['public-info'], queryFn: () => api.get<PublicInfo>('/public/info') });
+  const values = form.watch();
   const setRule = <K extends keyof SettingsValues>(key: K, value: SettingsValues[K]) =>
     form.setValue(key, value as never, { shouldDirty: true, shouldValidate: true });
-  const windowChoices = WINDOW_OPTIONS.includes(windowMinutes) ? WINDOW_OPTIONS : [...WINDOW_OPTIONS, windowMinutes];
+  const windowChoices = WINDOW_OPTIONS.includes(values.entryExpiryMinutesDefault)
+    ? WINDOW_OPTIONS
+    : [...WINDOW_OPTIONS, values.entryExpiryMinutesDefault];
   const save = useMutation({
-    mutationFn: (v: SettingsValues) => api.put('/admin/settings', v),
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ['admin', 'settings'] });
+    mutationFn: (v: SettingsValues) => api.put<AdminSettings>('/admin/settings', v),
+    onSuccess: (next) => {
+      client.setQueryData(['admin', 'settings'], next);
       void client.invalidateQueries({ queryKey: ['me'] });
-      toast.success('Settings saved');
+      void client.invalidateQueries({ queryKey: ['public-info'] });
+      form.reset(settingsBody(next) as SettingsValues);
+      toast.success('Configuration saved');
     },
   });
   const e = form.formState.errors;
+  const errorTabs = new Set(Object.keys(e).map((k) => FIELD_TAB[k as keyof SettingsValues]));
+  const onInvalid = (errors: FieldErrors<SettingsValues>) => {
+    const first = Object.keys(errors)[0] as keyof SettingsValues | undefined;
+    if (first) open(FIELD_TAB[first]);
+  };
+  const dirty = form.formState.isDirty;
+  const emailBlocked = info.data ? info.data.signupOpen && !info.data.signupAvailable : false;
+
   return (
-    <form
-      onSubmit={(ev) => void form.handleSubmit((v) => save.mutate(v))(ev)}
-      className="flex flex-col gap-4"
-      noValidate
-    >
-      {!canEdit && (
-        <p className="flex items-start gap-2 rounded-lg bg-neutral-soft p-3 text-[13px] text-muted" role="note">
-          <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-          Only the Master Admin can change settings. You can see what is in force.
-        </p>
-      )}
-      <fieldset disabled={!canEdit} className="flex min-w-0 flex-col gap-4">
-        <Card className="flex flex-col gap-4 p-4 sm:p-5">
-          <div>
-            <h2 className="text-sm font-semibold">Signals</h2>
-            <p className="mt-0.5 text-[13px] text-muted">
-              Defaults for every new signal. Administrators can still choose differently when they publish one.
-            </p>
-          </div>
-          <Labeled
-            label="A new signal starts as"
-            hint={
-              startMode === 'AWAITING_ENTRY'
-                ? 'It waits until an administrator activates it. If its entry window ends first, it is cancelled automatically and subscribers are told not to enter.'
-                : 'It is active as soon as it is published. Activation is recorded separately and is never a fill.'
-            }
-          >
-            <Segmented<SignalStartMode>
-              label="A new signal starts as"
-              value={startMode}
-              onChange={(v) => setRule('signalStartMode', v)}
-              options={[
-                { value: 'AWAITING_ENTRY', label: 'Awaiting entry' },
-                { value: 'ACTIVE', label: 'Active immediately' },
-              ]}
-            />
-          </Labeled>
-          <Field
-            label="Entry window"
-            error={e.entryExpiryMinutesDefault?.message}
-            hint="How long a new signal may wait for entry before it is cancelled automatically."
-          >
-            {(c) => (
-              <Select
-                {...c}
-                value={String(windowMinutes)}
-                onChange={(ev) => setRule('entryExpiryMinutesDefault', Number(ev.target.value))}
-              >
-                {windowChoices.map((m) => (
-                  <option key={m} value={m}>
-                    {m === 0 ? 'No limit (never cancelled automatically)' : entryWindowLabel(m)}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <Labeled
-            label="Trailing stop-loss alerts"
-            hint={
-              wording === 'GENERAL'
-                ? 'Example: “Trail the stop-loss on trade T-0012 to 3,350.00.”'
-                : 'Example: “Stop-loss on trade T-0012 trailed from 3,300.00 to 3,350.00 (50 pts from 3,400.00).”'
-            }
-          >
-            <Segmented<TrailingStopWording>
-              label="Trailing stop-loss alerts"
-              value={wording}
-              onChange={(v) => setRule('trailingStopWording', v)}
-              options={[
-                { value: 'GENERAL', label: 'General message' },
-                { value: 'DETAILED', label: 'Show distance in points' },
-              ]}
-            />
-          </Labeled>
-        </Card>
-        <Card className="flex flex-col gap-4 p-4 sm:p-5">
-          <div>
-            <h2 className="text-sm font-semibold">Subscribers</h2>
-            <p className="mt-0.5 text-[13px] text-muted">What subscribers see and may do. Applied straight away.</p>
-          </div>
-          <Labeled
-            label="Each subscriber’s history"
-            hint={
-              historyScope === 'MEMBERSHIP'
-                ? 'Signals published or still live during their membership. Live signals are always shown.'
-                : 'Every published signal, including those from before they joined.'
-            }
-          >
-            <Segmented<HistoryScope>
-              label="Each subscriber’s history"
-              value={historyScope}
-              onChange={(v) => setRule('historyScope', v)}
-              options={[
-                { value: 'MEMBERSHIP', label: 'From their membership' },
-                { value: 'ALL', label: 'Everything' },
-              ]}
-            />
-          </Labeled>
-          <div className="rounded-lg border border-line px-3">
-            <Switch
-              label="Allow screenshots"
-              description="The default for subscribers. You can override it for one subscriber on their page."
-              checked={screenshots}
-              disabled={!canEdit}
-              onChange={(v) => setRule('screenshotsAllowedDefault', v)}
-            />
-          </div>
-          <p className="text-xs leading-relaxed text-subtle">
-            When screenshots are blocked: Android blocks screenshots, screen recording and the recent-apps preview.
-            iPhone has no supported way to block them; the app hides content from captures where iOS allows it, blurs
-            the app switcher and records a screenshot when it notices one. A web browser cannot block screenshots at
-            all.
+    <div className="flex flex-col gap-4 lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+      <div className="lg:sticky lg:top-6">
+        <Tabs<TabId>
+          label="Configuration"
+          idPrefix="config"
+          vertical
+          value={tab}
+          onChange={open}
+          items={TABS.map((t) => ({
+            ...t,
+            badge:
+              errorTabs.has(t.id) || (t.id === 'email' && emailBlocked) ? (
+                <span className="size-2 rounded-full bg-update" aria-label="Needs attention" />
+              ) : undefined,
+          }))}
+        />
+      </div>
+      <form
+        onSubmit={(ev) => void form.handleSubmit((v) => save.mutate(v), onInvalid)(ev)}
+        className="flex min-w-0 flex-col gap-4 pb-24"
+        noValidate
+      >
+        {!canEdit && tab !== 'email' && (
+          <p className="flex items-start gap-2 rounded-lg bg-neutral-soft p-3 text-[13px] text-muted" role="note">
+            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Only the Super Admin can change the configuration. You can see what is in force.
           </p>
-        </Card>
-        <Card className="flex flex-col gap-4 p-4 sm:p-5">
-          <h2 className="text-sm font-semibold">Service</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field label="Service name" error={e.serviceName?.message}>
-              {(c) => <Input {...c} {...form.register('serviceName')} />}
-            </Field>
-            <Field
-              label="Business timezone"
-              error={e.businessTimezone?.message}
-              hint="Decides when a subscription day starts and ends. IANA name, such as Asia/Kolkata."
+        )}
+        <fieldset disabled={!canEdit} className="flex min-w-0 flex-col gap-4">
+          <TabPanel idPrefix="config" id="general" active={tab === 'general'}>
+            <Section title="Your service" description="Shown on the website, in the app and in every email.">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Service name" error={e.serviceName?.message}>
+                  {(c) => <Input {...c} {...form.register('serviceName')} />}
+                </Field>
+                <Field
+                  label="Business time zone"
+                  error={e.businessTimezone?.message}
+                  hint="Decides when a subscription day starts and ends."
+                >
+                  {(c) => (
+                    <Select {...c} {...form.register('businessTimezone')}>
+                      {timezones(values.businessTimezone).map((z) => (
+                        <option key={z} value={z}>
+                          {z.replaceAll('_', ' ')}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </Field>
+              </div>
+              <Field
+                label="Short description"
+                error={e.serviceDescription?.message}
+                hint="On the home page. Do not state accuracy, returns or guarantees."
+              >
+                {(c) => <Textarea {...c} rows={2} {...form.register('serviceDescription')} />}
+              </Field>
+            </Section>
+            <Section
+              title="About us"
+              description="Who you are and how the desk works. Shown on the About page of the website and from the app."
             >
-              {(c) => <Input {...c} {...form.register('businessTimezone')} />}
-            </Field>
-            <Field label="Support contact" error={e.supportContact?.message} hint="Shown publicly and to subscribers.">
-              {(c) => <Input {...c} {...form.register('supportContact')} />}
-            </Field>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Field
-              label="Support WhatsApp number"
-              error={e.supportWhatsapp?.message}
-              hint="Subscription enquiries open WhatsApp to this number. Include the country code."
+              <Field
+                label="About us text"
+                error={e.aboutBody?.message}
+                hint="Plain text. Leave a blank line between paragraphs."
+              >
+                {(c) => <Textarea {...c} rows={7} {...form.register('aboutBody')} />}
+              </Field>
+            </Section>
+          </TabPanel>
+
+          <TabPanel idPrefix="config" id="contact" active={tab === 'contact'}>
+            <Section
+              title="Where enquiries go"
+              description="Subscription and renewal enquiries open WhatsApp to this number, or are emailed here."
             >
-              {(c) => <Input {...c} type="tel" inputMode="tel" {...form.register('supportWhatsapp')} />}
-            </Field>
-            <Field
-              label="Support email"
-              error={e.supportEmail?.message}
-              hint="Enquiries sent by email go here, from the server."
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field
+                  label="Support WhatsApp number"
+                  error={e.supportWhatsapp?.message}
+                  hint="Include the country code, such as +91."
+                >
+                  {(c) => <Input {...c} type="tel" inputMode="tel" {...form.register('supportWhatsapp')} />}
+                </Field>
+                <Field label="Support email" error={e.supportEmail?.message}>
+                  {(c) => <Input {...c} type="email" inputMode="email" {...form.register('supportEmail')} />}
+                </Field>
+              </div>
+            </Section>
+            <Section title="What people are told">
+              <Field
+                label="Support contact line"
+                error={e.supportContact?.message}
+                hint="Shown publicly and to members, such as “WhatsApp +91 99872 55414, 10am to 6pm”."
+              >
+                {(c) => <Input {...c} {...form.register('supportContact')} />}
+              </Field>
+              <Field
+                label="Message for members whose access ended"
+                error={e.renewalInstructions?.message}
+                hint="Optional. Shown with the renewal button."
+              >
+                {(c) => <Textarea {...c} rows={2} {...form.register('renewalInstructions')} />}
+              </Field>
+            </Section>
+          </TabPanel>
+
+          <TabPanel idPrefix="config" id="signup" active={tab === 'signup'}>
+            <Section
+              title="Sign-up"
+              description="Whether new people can create an account from the website and the app."
             >
-              {(c) => <Input {...c} type="email" inputMode="email" {...form.register('supportEmail')} />}
-            </Field>
+              <div className="rounded-lg border border-line px-3">
+                <Switch
+                  label="Allow new sign-ups"
+                  description={
+                    values.signupOpen
+                      ? 'Anyone can sign up with their email. They get no signals until you start a subscription or trial.'
+                      : 'Sign-up is paused. The sign-up screen tells people to contact support.'
+                  }
+                  checked={values.signupOpen ?? true}
+                  disabled={!canEdit}
+                  onChange={(v) => setRule('signupOpen', v)}
+                />
+              </div>
+              {emailBlocked && (
+                <p
+                  className="flex items-start gap-2 rounded-lg bg-update-soft p-3 text-[13px] text-update"
+                  role="status"
+                >
+                  <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span>
+                    Sign-up needs email to send a code, and email is not set up yet.{' '}
+                    <button
+                      type="button"
+                      className="font-semibold underline underline-offset-2"
+                      onClick={() => open('email')}
+                    >
+                      Set up email
+                    </button>
+                  </span>
+                </p>
+              )}
+            </Section>
+            <Section
+              title="Free trials"
+              description="Any administrator can give any member free days, from New Registrations or the member’s page."
+            >
+              <Field
+                label="Usual trial length (days)"
+                error={e.defaultTrialDays?.message}
+                hint="Filled in when a trial is granted. It can be changed each time, up to 90 days."
+              >
+                {(c) => (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      {...c}
+                      inputMode="numeric"
+                      className="w-24"
+                      {...form.register('defaultTrialDays', {
+                        setValueAs: (v: string) => (v === '' ? undefined : Number(v)),
+                      })}
+                    />
+                    {TRIAL_DAY_SHORTCUTS.map((d) => (
+                      <Button
+                        key={d}
+                        type="button"
+                        size="sm"
+                        variant={values.defaultTrialDays === d ? 'primary' : 'secondary'}
+                        onClick={() => setRule('defaultTrialDays', d)}
+                      >
+                        {d} days
+                      </Button>
+                    ))}
+                  </div>
+                )}
+              </Field>
+            </Section>
+          </TabPanel>
+
+          <TabPanel idPrefix="config" id="signals" active={tab === 'signals'}>
+            <Section
+              title="New signals"
+              description="Defaults for every new signal. Administrators can still choose differently when they publish one."
+            >
+              <Labeled
+                label="A new signal starts as"
+                hint={
+                  values.signalStartMode === 'AWAITING_ENTRY'
+                    ? 'It waits until an administrator activates it. If its entry window ends first, it is cancelled automatically and members are told not to enter.'
+                    : 'It is active as soon as it is published. Activation is recorded separately and is never a fill.'
+                }
+              >
+                <Segmented<SignalStartMode>
+                  label="A new signal starts as"
+                  value={values.signalStartMode}
+                  onChange={(v) => setRule('signalStartMode', v)}
+                  options={[
+                    { value: 'AWAITING_ENTRY', label: 'Awaiting entry' },
+                    { value: 'ACTIVE', label: 'Active immediately' },
+                  ]}
+                />
+              </Labeled>
+              <Field
+                label="Entry window"
+                error={e.entryExpiryMinutesDefault?.message}
+                hint="How long a new signal may wait for entry before it is cancelled automatically."
+              >
+                {(c) => (
+                  <Select
+                    {...c}
+                    value={String(values.entryExpiryMinutesDefault)}
+                    onChange={(ev) => setRule('entryExpiryMinutesDefault', Number(ev.target.value))}
+                  >
+                    {windowChoices.map((m) => (
+                      <option key={m} value={m}>
+                        {m === 0 ? 'No limit (never cancelled automatically)' : entryWindowLabel(m)}
+                      </option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+              <Labeled
+                label="Trailing stop-loss alerts"
+                hint={
+                  values.trailingStopWording === 'GENERAL'
+                    ? 'Example: “Trail the stop-loss on trade T-0012 to 3,350.00.”'
+                    : 'Example: “Stop-loss on trade T-0012 trailed from 3,300.00 to 3,350.00 (50 pts from 3,400.00).”'
+                }
+              >
+                <Segmented<TrailingStopWording>
+                  label="Trailing stop-loss alerts"
+                  value={values.trailingStopWording}
+                  onChange={(v) => setRule('trailingStopWording', v)}
+                  options={[
+                    { value: 'GENERAL', label: 'General message' },
+                    { value: 'DETAILED', label: 'Show distance in points' },
+                  ]}
+                />
+              </Labeled>
+            </Section>
+            <Section title="What members see" description="Applied straight away.">
+              <Labeled
+                label="Each member’s history"
+                hint={
+                  values.historyScope === 'MEMBERSHIP'
+                    ? 'Signals published or still live during their membership. Live signals are always shown.'
+                    : 'Every published signal, including those from before they joined.'
+                }
+              >
+                <Segmented<HistoryScope>
+                  label="Each member’s history"
+                  value={values.historyScope}
+                  onChange={(v) => setRule('historyScope', v)}
+                  options={[
+                    { value: 'MEMBERSHIP', label: 'From their membership' },
+                    { value: 'ALL', label: 'Everything' },
+                  ]}
+                />
+              </Labeled>
+              <div className="rounded-lg border border-line px-3">
+                <Switch
+                  label="Allow screenshots"
+                  description="The default for members. You can override it for one member on their page."
+                  checked={values.screenshotsAllowedDefault}
+                  disabled={!canEdit}
+                  onChange={(v) => setRule('screenshotsAllowedDefault', v)}
+                />
+              </div>
+              <p className="text-xs leading-relaxed text-subtle">
+                When screenshots are blocked: Android blocks screenshots, screen recording and the recent-apps preview.
+                iPhone has no supported way to block them; the app hides content from captures where iOS allows it,
+                blurs the app switcher and records a screenshot when it notices one. A web browser cannot block
+                screenshots at all.
+              </p>
+            </Section>
+          </TabPanel>
+
+          <TabPanel idPrefix="config" id="legal" active={tab === 'legal'}>
+            <Section
+              title="Legal text"
+              description="Have this reviewed by qualified counsel before opening to the public. See the compliance checklist."
+            >
+              <Field label="Legal entity name" error={e.legalEntityName?.message}>
+                {(c) => <Input {...c} {...form.register('legalEntityName')} />}
+              </Field>
+              <Field
+                label="Regulatory statement"
+                error={e.regulatoryStatement?.message}
+                hint="Empty until your status is established. Never claim a registration or authorisation you do not hold."
+              >
+                {(c) => <Textarea {...c} rows={3} {...form.register('regulatoryStatement')} />}
+              </Field>
+              <Field label="Risk disclosure" error={e.riskDisclosure?.message}>
+                {(c) => <Textarea {...c} rows={7} {...form.register('riskDisclosure')} />}
+              </Field>
+              <Field label="Privacy notice" error={e.privacyNotice?.message}>
+                {(c) => <Textarea {...c} rows={5} {...form.register('privacyNotice')} />}
+              </Field>
+            </Section>
+          </TabPanel>
+        </fieldset>
+
+        {tab === 'email' && (
+          <div role="tabpanel" id="config-panel-email" aria-labelledby="config-tab-email">
+            <EmailSettings canEdit={canEdit} defaultTestTo={me.data?.profile?.email ?? ''} />
           </div>
-          <Field
-            label="Service description"
-            error={e.serviceDescription?.message}
-            hint="Public. Do not state accuracy, returns or guarantees."
+        )}
+        {tab === 'legal' && <ComplianceGate canEdit={canEdit} />}
+
+        {canEdit && tab !== 'email' && (
+          <div
+            className={clsx(
+              'sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface p-3 shadow-lg transition-opacity',
+              dirty ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+            aria-hidden={!dirty}
           >
-            {(c) => <Textarea {...c} rows={2} {...form.register('serviceDescription')} />}
-          </Field>
-          <Field label="What an expired subscriber is told" error={e.renewalInstructions?.message}>
-            {(c) => <Textarea {...c} rows={2} {...form.register('renewalInstructions')} />}
-          </Field>
-          <Field
-            label="About us (public page)"
-            error={e.aboutBody?.message}
-            hint="Who you are and how the desk works. Public. Do not state accuracy, returns or guarantees."
-          >
-            {(c) => <Textarea {...c} rows={5} {...form.register('aboutBody')} />}
-          </Field>
-        </Card>
-        <Card className="flex flex-col gap-4 p-4 sm:p-5">
-          <div>
-            <h2 className="text-sm font-semibold">Legal text</h2>
-            <p className="mt-0.5 text-[13px] text-muted">
-              Have this reviewed by qualified counsel before opening to the public. See the compliance checklist.
-            </p>
+            <span className="text-sm font-medium">You have unsaved changes</span>
+            <div className="flex gap-2">
+              <Button type="button" variant="ghost" onClick={() => form.reset(initial)} tabIndex={dirty ? 0 : -1}>
+                Discard
+              </Button>
+              <Button type="submit" variant="primary" loading={save.isPending} tabIndex={dirty ? 0 : -1}>
+                Save changes
+              </Button>
+            </div>
           </div>
-          <Field label="Legal entity name" error={e.legalEntityName?.message}>
-            {(c) => <Input {...c} {...form.register('legalEntityName')} />}
-          </Field>
-          <Field
-            label="Regulatory statement"
-            error={e.regulatoryStatement?.message}
-            hint="Empty until your status is established. Never claim a registration or authorisation you do not hold."
-          >
-            {(c) => <Textarea {...c} rows={3} {...form.register('regulatoryStatement')} />}
-          </Field>
-          <Field label="Risk disclosure" error={e.riskDisclosure?.message}>
-            {(c) => <Textarea {...c} rows={7} {...form.register('riskDisclosure')} />}
-          </Field>
-          <Field label="Privacy notice" error={e.privacyNotice?.message}>
-            {(c) => <Textarea {...c} rows={5} {...form.register('privacyNotice')} />}
-          </Field>
-        </Card>
-      </fieldset>
-      <FormError error={save.error} />
-      {canEdit && (
-        <Button type="submit" variant="primary" size="lg" className="self-start" loading={save.isPending}>
-          Save settings
-        </Button>
-      )}
-    </form>
+        )}
+        <FormError error={save.error} />
+      </form>
+    </div>
   );
 }
 
@@ -356,7 +587,7 @@ function ComplianceGate({ canEdit }: { canEdit: boolean }) {
   if (!gate.data) return null;
   const g = gate.data;
   return (
-    <Card className="mt-4">
+    <Card>
       <CardHeader
         title="Public performance section"
         description="Showing past results publicly is regulated. It stays closed until both keys below are turned."
@@ -447,31 +678,22 @@ export default function SettingsPage() {
   const canEdit = me.data?.isMasterAdmin === true;
   const settings = useQuery({
     queryKey: ['admin', 'settings'],
-    queryFn: () =>
-      api.get<SettingsValues & { id: number; updatedAt: string; dataResetAt: string | null }>('/admin/settings'),
+    queryFn: () => api.get<AdminSettings>('/admin/settings'),
   });
-  const [initial, setInitial] = useState<SettingsValues | null>(null);
-  useEffect(() => {
-    if (settings.data && !initial) {
-      const { id: _id, updatedAt: _u, dataResetAt: _r, ...values } = settings.data;
-      setInitial(values);
-    }
-  }, [initial, settings.data]);
   return (
     <>
       <PageHeader
-        title="Settings"
-        description="Platform rules and service text. Changes are recorded in the audit log with their old and new values."
+        title="Configuration"
+        description="Everything you can change without a code update. Each change is recorded in the audit log."
       />
-      {settings.isPending && <Loading rows={3} label="Loading settings" />}
+      {settings.isPending && <Loading rows={3} label="Loading configuration" />}
       {settings.isError && <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />}
-      {initial && me.data && <SettingsForm initial={initial} canEdit={canEdit} />}
+      {settings.data && me.data && <Configuration settings={settings.data} canEdit={canEdit} />}
       {settings.data?.dataResetAt && (
         <p className="mt-3 text-[13px] text-muted">
           Demonstration data was cleared on {formatDateTime(settings.data.dataResetAt)}.
         </p>
       )}
-      <ComplianceGate canEdit={canEdit} />
     </>
   );
 }

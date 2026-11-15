@@ -115,6 +115,7 @@ function App() {
           <Stack.Screen name="admin/password-resets" options={{ title: 'Password Resets' }} />
           <Stack.Screen name="compose" options={{ presentation: 'fullScreenModal', headerShown: false }} />
           <Stack.Screen name="disclosures" options={{ title: 'Risk and privacy' }} />
+          <Stack.Screen name="about" options={{ title: 'About us' }} />
           <Stack.Screen name="trades/[id]" options={{ title: '' }} />
           <Stack.Screen name="admin/trades/[id]" options={{ title: '' }} />
           <Stack.Screen name="admin/subscribers/[id]" options={{ title: '' }} />
@@ -129,7 +130,7 @@ function App() {
           <Stack.Screen name="admin/announcements" options={{ title: 'Announcements' }} />
           <Stack.Screen name="admin/history" options={{ title: 'History' }} />
           <Stack.Screen name="admin/admins" options={{ title: 'Administrators' }} />
-          <Stack.Screen name="admin/settings" options={{ title: 'Platform settings' }} />
+          <Stack.Screen name="admin/settings" options={{ title: 'Configuration' }} />
           <Stack.Screen
             name="onboarding"
             options={{ presentation: 'fullScreenModal', headerShown: false, animation: 'fade' }}

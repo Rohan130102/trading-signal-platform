@@ -36,15 +36,20 @@
 - **Recovery is administrator-managed.** A proved address files one request. An administrator issues a temporary password, shown once, stored only as a hash, valid 24 hours; the old password and every session stop working, and the person must replace it before anything else. The audit log records who issued it and never the password.
 - **No paid access from sign-up.** A new account has no subscription and no trial; both come only from an administrator.
 - **Emails never carry a password.** Codes are sent at once and never stored readable; other email is queued in the database.
+- **The email account entered on the configuration screen.** Only the Master Admin can read or change it, or send a test.
+  The password is encrypted with `APP_ENCRYPTION_KEY` (AES-256-GCM) before it is stored, is never returned by any endpoint
+  (the screen learns only whether one is saved), and never appears in the audit log, which records which fields changed.
+  `GET /admin/settings` returns the platform settings only, never the email account.
 
 ## Secrets
 
-| Secret               | Where it lives                                                                                                                    |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `APP_ENCRYPTION_KEY` | Secret manager. **Losing it means every administrator must re-enrol MFA** (`npm run admin:reset`). There is no rotation tool yet. |
-| `VAPID_PRIVATE_KEY`  | Secret manager. Changing the pair invalidates every device's subscription.                                                        |
-| `DATABASE_URL`       | Secret manager. Use the restricted role from `deploy/app-role.sql`.                                                               |
-| `SMTP_PASS`          | Secret manager, or the server's `.env` only. With Gmail, use an app password, never the account password.                         |
+| Secret                                    | Where it lives                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ENCRYPTION_KEY`                      | Secret manager. **Losing it means every administrator must re-enrol MFA** (`npm run admin:reset`). There is no rotation tool yet. |
+| `VAPID_PRIVATE_KEY`                       | Secret manager. Changing the pair invalidates every device's subscription.                                                        |
+| `DATABASE_URL`                            | Secret manager. Use the restricted role from `deploy/app-role.sql`.                                                               |
+| `SMTP_PASS`                               | Secret manager, or the server's `.env` only. With Gmail, use an app password, never the account password.                         |
+| Email account on the configuration screen | Database, encrypted with `APP_ENCRYPTION_KEY`. Never returned or logged. Losing the key means entering the password again.        |
 
 `.env` is ignored by git. `scripts/setup-env.mjs` creates a local one with mode 600. No default password exists anywhere:
 `npm run admin:create` prints a temporary one once. Nothing logs passwords, tokens, request bodies or signal text.

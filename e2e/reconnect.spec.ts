@@ -17,6 +17,7 @@ test('reconnect journey: events missed while disconnected appear once, in order'
   });
 
   await signInFirstTime(page, sub);
+  await page.goto('/app/alerts');
   await expect(page.getByText('Live', { exact: true })).toBeVisible();
   const before = await publishViaApi(api);
   await expect(page.getByRole('link', { name: new RegExp(before.ref) }).first()).toBeVisible();

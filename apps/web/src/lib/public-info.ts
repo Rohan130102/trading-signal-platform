@@ -15,6 +15,9 @@ const FALLBACK: PublicInfo = {
   publicResultsAvailable: false,
   aboutBody: '',
   dataResetAt: null,
+  // Unknown while the API is unreachable: the form is shown, and the server's answer explains any problem.
+  signupOpen: true,
+  signupAvailable: true,
 };
 
 /** A server-side read, so public pages still render if the API is briefly unavailable. */

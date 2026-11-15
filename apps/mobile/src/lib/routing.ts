@@ -8,7 +8,7 @@ export type SessionPhase =
   | { phase: 'unreachable' }
   | { phase: 'signed-in'; me: MeResponse };
 
-const PUBLIC = new Set(['disclosures']);
+const PUBLIC = new Set(['disclosures', 'about']);
 /** The ways in, for someone not signed in. */
 const SIGNED_OUT = new Set(['login', 'signup', 'forgot-password']);
 

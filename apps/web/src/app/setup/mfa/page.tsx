@@ -43,6 +43,7 @@ export default function MfaSetupPage() {
   if (recovery) {
     return (
       <AuthFrame
+        focused
         title="Save your recovery codes"
         description="If you lose your phone, each of these lets you sign in once. They will not be shown again."
       >
@@ -80,6 +81,7 @@ export default function MfaSetupPage() {
 
   return (
     <AuthFrame
+      focused
       title="Set up two-step verification"
       description="Administrator accounts need a code from an authenticator app on your phone."
     >

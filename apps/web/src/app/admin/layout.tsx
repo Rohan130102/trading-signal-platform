@@ -46,7 +46,7 @@ const SECONDARY = [
   { href: '/admin/instruments', label: 'Instruments', icon: CandlestickChart },
   { href: '/admin/templates', label: 'Templates', icon: FileText },
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
-  { href: '/admin/settings', label: 'Settings', icon: Settings },
+  { href: '/admin/settings', label: 'Configuration', icon: Settings },
 ];
 /** The Master Admin's own pages. The API enforces this; the link is only hidden for everyone else. */
 const MASTER = [{ href: '/admin/admins', label: 'Administrators', icon: ShieldCheck }];

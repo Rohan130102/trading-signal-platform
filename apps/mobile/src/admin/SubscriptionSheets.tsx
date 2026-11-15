@@ -1,11 +1,12 @@
 import {
   ACTIONS,
-  computeInitialWindow,
+  type AdminSettings,
   computeRenewal,
   ENQUIRY_STATUS_LABELS,
   ENQUIRY_STATUSES,
   type EnquiryStatus,
   formatLocalDate,
+  grantTrialWindow,
   lastValidLocalDate,
   localDateToInstant,
   MAX_SUBSCRIPTION_DAYS,
@@ -15,7 +16,7 @@ import {
   type SubscriberDetail,
   TRIAL_DAY_SHORTCUTS,
 } from '@signaldesk/domain';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
@@ -223,62 +224,90 @@ export function StartSheet({ detail, onClose, onDone }: SheetProps) {
 export function TrialSheet({ detail, onClose, onDone }: SheetProps) {
   const toast = useToast();
   const tz = detail.subscription.timezone;
-  const [days, setDays] = useState('5');
+  const settings = useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => api.get<AdminSettings>('/admin/settings'),
+  });
+  const [chosen, setChosen] = useState<string | null>(null);
+  const days = chosen ?? String(settings.data?.defaultTrialDays ?? 7);
   const [date, setDate] = useState(() => todayIn(tz));
   const [note, setNote] = useState('');
-  const [again, setAgain] = useState(false);
   const [key] = useState(newKey);
-  const hadTrial = detail.trials.length > 0;
+  // Running access, paid or trial, gets the days added after its last day; otherwise a trial starts.
+  const running = detail.subscription.state === 'ACTIVE' || detail.subscription.state === 'SCHEDULED';
   const n = validDays(days, MAX_TRIAL_DAYS);
-  const trialWindow = useMemo(
-    () => (n ? safe(() => computeInitialWindow(startInstant(date, tz, new Date()), n, tz)) : null),
-    [date, n, tz],
+  const current = currentWindow(detail);
+  const kind = detail.subscription.kind ?? 'PAID';
+  const preview = useMemo(
+    () =>
+      n
+        ? safe(() => {
+            const now = new Date();
+            return grantTrialWindow(
+              current ? { ...current, kind } : null,
+              n,
+              now,
+              tz,
+              running ? undefined : startInstant(date, tz, now),
+            );
+          })
+        : null,
+    [current, date, kind, n, running, tz],
   );
   const grant = useMutation({
     mutationFn: () =>
       api.post<{ subscriber: Detail }>(`/admin/subscribers/${detail.id}/trial`, {
         durationDays: n,
-        activationDate: date === todayIn(tz) ? undefined : date,
+        activationDate: running || date === todayIn(tz) ? undefined : date,
         note: note.trim() || undefined,
-        allowRepeat: again,
         idempotencyKey: key,
       }),
     onSuccess: (r) => {
       onDone();
       toast({
         tone: 'success',
-        title: `Free trial through ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}`,
+        title: `${running ? 'Free days added' : 'Free trial started'}. Access until ${formatLocalDate(r.subscriber.subscription.lastValidDate as string)}.`,
       });
       onClose();
     },
   });
+  const earlier = detail.trials.length;
   return (
     <Sheet
       title={ACTIONS.grantFreeTrial}
-      subtitle="Same access as a subscription. They are told by email, in the app and by notification."
+      subtitle={
+        running
+          ? 'They already have access. The free days are added after their last day, so nothing is lost.'
+          : 'Same access as a subscription. They are told by email, in the app and by notification.'
+      }
       onClose={onClose}
       testID="trial-sheet"
       footer={
         <Button
           testID="trial-submit"
-          label={ACTIONS.grantFreeTrial}
+          label={!running ? ACTIONS.grantFreeTrial : n ? `Add ${n} free ${n === 1 ? 'day' : 'days'}` : 'Add free days'}
           variant="primary"
           large
-          disabled={!trialWindow || (hadTrial && !again)}
+          disabled={!preview}
           loading={grant.isPending}
           onPress={() => grant.mutate()}
         />
       }
     >
-      <Days value={days} onChange={setDays} shortcuts={TRIAL_DAY_SHORTCUTS} max={MAX_TRIAL_DAYS} />
-      <StartsOn value={date} onChange={setDate} tz={tz} />
-      <Preview before={null} after={trialWindow ? lastValidLocalDate(trialWindow.expiresAt, tz) : null} />
-      {hadTrial && (
-        <ToggleRow label="They already had a free trial. Grant another." value={again} onChange={setAgain} />
+      <Days value={days} onChange={setChosen} shortcuts={TRIAL_DAY_SHORTCUTS} max={MAX_TRIAL_DAYS} />
+      {!running && <StartsOn value={date} onChange={setDate} tz={tz} />}
+      <Preview
+        before={running ? detail.subscription.lastValidDate : null}
+        after={preview ? lastValidLocalDate(preview.expiresAt, tz) : null}
+      />
+      {earlier > 0 && (
+        <T v="small" c="muted">
+          {earlier === 1 ? 'They had one free trial before.' : `They had ${earlier} free trials before.`}
+        </T>
       )}
       <Field
         label="Internal remarks"
-        hint="Optional. Never shown to the subscriber."
+        hint="Optional. Never shown to the member."
         value={note}
         onChangeText={setNote}
         maxLength={500}

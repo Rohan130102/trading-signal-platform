@@ -1269,6 +1269,59 @@ const OTP_WAIT_MS = 62_000;
 const signUpEmail = `meera.${Date.now().toString(36)}@example.test`;
 const signUpPassword = 'quiet meadow lantern 42';
 
+J['admin-configuration-and-free-days'] = async () => {
+  // A member who already pays, made by the desk on the server.
+  const loginId = `paid${Date.now().toString(36)}`;
+  await server('POST', '/admin/subscribers', {
+    name: 'Ravi Paid',
+    loginId,
+    durationDays: 30,
+    idempotencyKey: randomUUID(),
+  });
+  await signInAdmin();
+  await d.tap({ id: 'tab-more' });
+  await tapMore('more-settings');
+  await d.waitFor({ id: 'config-tab-general' });
+  await d.screenshot('config-general');
+  // The tabs scroll sideways; the first four fit on a phone screen.
+  for (const tab of ['contact', 'email', 'signup']) {
+    await d.waitFor({ id: `config-tab-${tab}` });
+  }
+  await d.tap({ id: 'config-tab-email' });
+  // The test stack sends email to files, which counts as the server's own settings.
+  await expectText(/Using the server.s email settings/, 15_000);
+  await d.screenshot('config-email');
+  await d.tap({ id: 'config-tab-signup' });
+  await d.waitFor({ id: 'config-signup-open' });
+  await d.screenshot('config-signup');
+  await d.back();
+
+  await d.tap({ id: 'tab-subscribers' });
+  await d.waitFor({ id: 'subscribers-list' });
+  await d.type({ id: 'subscribers-search' }, loginId);
+  await d.hideKeyboard();
+  await d.tap({ id: `subscriber-${loginId}` }, 20_000);
+  await d.waitFor({ id: 'subscriber-detail' });
+  await d.scrollTo({ id: 'subscriber-trial' });
+  await d.tap({ id: 'subscriber-trial' });
+  await d.waitFor({ id: 'trial-sheet' });
+  await expectText(/They already have access/);
+  await expectText('Add 7 free days');
+  await d.screenshot('trial-free-days');
+  await d.tap({ id: 'trial-submit' });
+  await d.waitGone({ id: 'trial-sheet' }, 15_000);
+  // The member's page now counts the free days after the paid ones.
+  await expectText('37', 15_000);
+  await d.screenshot('trial-free-days-added');
+  const page = await server('GET', `/admin/subscribers?q=${encodeURIComponent(loginId)}`);
+  const id = page.subscribers[0]?.id;
+  assert(id, 'The member is listed');
+  const detail = await server('GET', `/admin/subscribers/${id}`);
+  assert(detail.subscription.daysRemaining === 37, 'The 7 days come after the 30 paid ones');
+  assert(detail.subscription.kind === 'PAID', 'A paying member stays a paying member');
+  await d.back();
+};
+
 J['sign-up'] = async () => {
   await signOutIfNeeded();
   await freePhone();

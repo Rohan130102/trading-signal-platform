@@ -51,13 +51,13 @@ requests, so it cannot drift from what the server enforces. Regenerate with `npm
 
 Public, rate limited per address and per client. The answer is the same whether or not an address has an account.
 
-| Route                                             | Purpose                                                                                                                                       |
-| ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /auth/register`                             | `{ firstName, lastName, email, mobile, age, consent }`. Emails a 6-digit code. Returns `{ challengeId, email, resendAvailableAt, expiresAt }` |
-| `POST /auth/register/resend`                      | A new code, at most once a minute. The old code stops working                                                                                 |
-| `POST /auth/register/verify`                      | `{ challengeId, code }`. Five tries per code, five minutes. Returns a single-use `setupToken` (15 minutes)                                    |
-| `POST /auth/register/complete`, `/complete-token` | `{ setupToken, password }`. Creates the account with no access and signs in: a cookie (web) or `{ token, expiresAt }` (native)                |
-| `POST /auth/password-reset`, `/resend`, `/verify` | Prove the address; `verify` files one request for the administrators and returns `{ status: 'REQUESTED' }`                                    |
+| Route                                             | Purpose                                                                                                                                                                                                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /auth/register`                             | `{ firstName, lastName, email, mobile, age, consent }`. Emails a 6-digit code. Returns `{ challengeId, email, resendAvailableAt, expiresAt }`. `403 SIGNUP_CLOSED` while sign-up is paused. `GET /public/info` says so in advance: `signupOpen`, `signupAvailable` |
+| `POST /auth/register/resend`                      | A new code, at most once a minute. The old code stops working                                                                                                                                                                                                      |
+| `POST /auth/register/verify`                      | `{ challengeId, code }`. Five tries per code, five minutes. Returns a single-use `setupToken` (15 minutes)                                                                                                                                                         |
+| `POST /auth/register/complete`, `/complete-token` | `{ setupToken, password }`. Creates the account with no access and signs in: a cookie (web) or `{ token, expiresAt }` (native)                                                                                                                                     |
+| `POST /auth/password-reset`, `/resend`, `/verify` | Prove the address; `verify` files one request for the administrators and returns `{ status: 'REQUESTED' }`                                                                                                                                                         |
 
 ## Native apps
 
@@ -98,9 +98,12 @@ Public, rate limited per address and per client. The answer is the same whether 
 | `PUT /admin/subscribers/:id/screenshots`                                                                   | Master Admin only. `{ screenshotsAllowed: true \| false \| null }`, null follows the platform default                   |
 | `PUT /admin/settings`                                                                                      | Master Admin only. Service text and platform rules                                                                      |
 | `PUT /admin/settings/support`                                                                              | Master Admin only. `{ supportWhatsapp, supportEmail }`, audited with before and after                                   |
+| `GET /admin/settings/email`                                                                                | Master Admin only. The email account, with `passwordSet` instead of the password, and `status`                          |
+| `PUT /admin/settings/email`                                                                                | Master Admin only. Saves the account; an empty `password` keeps the saved one. Audited without the password             |
+| `POST /admin/settings/email/test`                                                                          | Master Admin only. `{ to }`. Sends one email with the saved account; a failure answers `EMAIL_TEST_FAILED` in words     |
 | `GET /admin/registrations`, `GET /admin/inbox`                                                             | Self-registered people with filters; counts behind the New Registrations and Password Resets badges                     |
 | `POST /admin/subscribers/:id/start`                                                                        | Any number of days, optional `activationDate`. Refused on running paid access; `confirmShorter` to cut a trial short    |
-| `POST /admin/subscribers/:id/trial`                                                                        | A free trial for any number of days up to 90. Never on running access; a second needs `allowRepeat`                     |
+| `POST /admin/subscribers/:id/trial`                                                                        | Free days for any member, up to 90. Running access is extended after its last day; otherwise a trial starts             |
 | `POST /admin/subscribers/:id/renew`                                                                        | Now also takes `activationDate`, used when the subscription has expired                                                 |
 | `PUT /admin/subscribers/:id/enquiry`, `POST /admin/subscribers/:id/seen`                                   | Move an enquiry along; take a registration off the badge                                                                |
 | `/admin/password-resets` (+ `/:id/issue`, `/complete`, `/dismiss`)                                         | Recovery requests. `issue` returns a 24-hour temporary password once and signs the person out everywhere                |

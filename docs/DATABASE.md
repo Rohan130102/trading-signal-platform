@@ -85,7 +85,9 @@ latest change and page with a cursor. It runs while the writer already holds the
 
 ## Migrations and rollback
 
-Migrations are additive. `20261114000000_onboarding_trials` adds the sign-up, enquiry, trial, recovery and notice
+Migrations are additive. `20261115000000_configuration` adds the sign-up switch, the usual trial length and the email
+account to `app_settings` (the SMTP password encrypted); its rollback removes them and email comes from the environment
+again. `20261114000000_onboarding_trials` adds the sign-up, enquiry, trial, recovery and notice
 tables, three subscription columns and lets a range trade be published before its levels; its rollback refuses to run
 while such a trade is waiting, and keeps every account. `20261108000000_mobile_experience` adds tables and columns only and backfills an announcement
 record for every announcement already sent. To reverse it, stop the application, take a backup, roll the code back,
