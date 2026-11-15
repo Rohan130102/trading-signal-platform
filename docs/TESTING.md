@@ -292,5 +292,7 @@ phones after the first look showed a cramped table. iOS was not run.
 A CI run of the website suite failed once on the iPhone profile: a password typed while the page finished loading
 ended up at the start of the username. The server-rendered sign-in pages carried the browser's own `autofocus`, which
 Safari's engine can apply late; they now focus the first field only if nothing else has the cursor. The failure did not
-reproduce locally in 26 runs before the change, so the fix rests on the trace and on removing the attribute. The
-"New version ready" notice was not photographed: it shows for ten seconds and had gone by the time of the screenshot.
+reproduce locally in 26 runs before the change, so the fix rests on the trace and on removing the attribute. On a
+second run with the app reset to its APK code, the "New version ready" notice appeared about a second after launch,
+once the update had downloaded; tapping "Restart now" restarted the app into the update, and the next start reported
+the update to the server and was told it was current.
