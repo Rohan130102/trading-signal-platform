@@ -309,7 +309,8 @@ function Configuration({ settings, canEdit }: { settings: AdminSettings; canEdit
                 >
                   <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                   <span>
-                    Sign-up needs email to send a code, and email is not set up yet.{' '}
+                    Email is not set up, so sign-up codes cannot be sent. Until it is, people who sign up are asked to
+                    send you their details on WhatsApp.{' '}
                     <button
                       type="button"
                       className="font-semibold underline underline-offset-2"

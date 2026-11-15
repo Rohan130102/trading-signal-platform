@@ -4,8 +4,9 @@ import { ACTIONS, loginSchema, type MeResponse } from '@signaldesk/domain';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useState } from 'react';
-import { AuthTabs, PasswordInput } from '@/components/auth/parts';
-import { AuthFrame } from '@/components/shell/auth-frame';
+import { PasswordInput } from '@/components/auth/parts';
+import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
+import { buttonClass } from '@/components/styles';
 import { Button, Field, FormError, Input } from '@/components/ui';
 import { api } from '@/lib/api';
 import { nextStepPath } from '@/lib/session';
@@ -18,6 +19,9 @@ function LoginForm() {
   const [error, setError] = useState<unknown>(null);
   const [missing, setMissing] = useState<{ identifier?: string; password?: string }>({});
   const [busy, setBusy] = useState(false);
+  const info = usePublicInfo();
+  // One way to create an account: this button. Hidden only while the Super Admin has paused sign-up.
+  const canSignUp = info.data?.signupOpen ?? true;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -45,9 +49,8 @@ function LoginForm() {
   return (
     <AuthFrame
       title="Welcome back"
-      description={params.get('expired') ? 'Your session ended. Log in again.' : undefined}
+      description={params.get('expired') ? 'Your session ended. Log in again.' : 'Log in to your account.'}
     >
-      <AuthTabs current="login" />
       <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
         <Field label="Email or username" error={missing.identifier}>
           {(control) => (
@@ -86,13 +89,19 @@ function LoginForm() {
         <Button type="submit" variant="primary" size="lg" loading={busy} className="w-full">
           {ACTIONS.logIn}
         </Button>
-        <p className="text-center text-[13px] text-muted">
-          New here?{' '}
-          <Link href="/signup" className="rounded font-semibold text-text hover:underline">
+      </form>
+      {canSignUp && (
+        <div className="mt-6">
+          <p className="flex items-center gap-3 text-[13px] text-subtle">
+            <span className="h-px flex-1 bg-line" aria-hidden />
+            New here?
+            <span className="h-px flex-1 bg-line" aria-hidden />
+          </p>
+          <Link href="/signup" className={buttonClass('secondary', 'lg', 'mt-3 w-full')}>
             {ACTIONS.createAccount}
           </Link>
-        </p>
-      </form>
+        </div>
+      )}
     </AuthFrame>
   );
 }

@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { buttonClass } from '@/components/styles';
 import { Logo } from '@/components/ui';
 
-export function PublicHeader({ name, signupAvailable = true }: { name: string; signupAvailable?: boolean }) {
+/** Log In, and Create Account while sign-up is open. The one name for signing up, everywhere. */
+export function PublicHeader({ name, signupOpen = true }: { name: string; signupOpen?: boolean }) {
   return (
     <header className="sticky top-0 z-20 border-b border-transparent bg-bg/80 backdrop-blur supports-[backdrop-filter]:bg-bg/70">
       <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
@@ -21,9 +22,9 @@ export function PublicHeader({ name, signupAvailable = true }: { name: string; s
           <Link href="/login" className={buttonClass('ghost', 'sm')}>
             {ACTIONS.logIn}
           </Link>
-          {signupAvailable && (
+          {signupOpen && (
             <Link href="/signup" className={buttonClass('primary', 'sm')}>
-              {ACTIONS.signUp}
+              {ACTIONS.createAccount}
             </Link>
           )}
         </nav>

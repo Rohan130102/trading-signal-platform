@@ -28,8 +28,9 @@ proxies in front of the API. Keep `PUBLIC_PERFORMANCE_ENABLED=false` unless comp
 
 ## Email
 
-Sign-up codes, recovery codes, subscription enquiries to support and account messages are sent by email. Without it, sign-up
-says plainly that it opens soon, offers WhatsApp and email to support instead, and nothing pretends to be sent.
+Sign-up codes, recovery codes, subscription enquiries to support and account messages are sent by email. Without it, the
+sign-up form still takes the person's details, but no code can be sent: the website then says so and offers to send the
+details to the team on WhatsApp (or by email when there is no WhatsApp number). Nothing pretends to be sent.
 
 **The usual way: the configuration screen.** The Super Admin opens Configuration, Email (website or app), picks Gmail,
 Outlook or Other, enters the sending address and its password (for Gmail an app password), saves, and sends a test email.

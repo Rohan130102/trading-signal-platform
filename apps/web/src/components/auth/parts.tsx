@@ -3,31 +3,8 @@
 import { ACTIONS, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
 import { clsx } from 'clsx';
 import { Check, Eye, EyeOff } from 'lucide-react';
-import Link from 'next/link';
 import { forwardRef, type InputHTMLAttributes, useEffect, useState } from 'react';
 import { Button, Input } from '@/components/ui';
-
-/** Two clearly separate ways in. The current one is marked for assistive technology too. */
-export function AuthTabs({ current }: { current: 'login' | 'signup' }) {
-  const tab = (href: string, label: string, active: boolean) => (
-    <Link
-      href={href}
-      aria-current={active ? 'page' : undefined}
-      className={clsx(
-        'flex h-10 flex-1 items-center justify-center rounded-lg text-sm font-semibold transition-colors',
-        active ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text',
-      )}
-    >
-      {label}
-    </Link>
-  );
-  return (
-    <nav aria-label="Account" className="mb-6 flex gap-1 rounded-xl bg-neutral-soft p-1">
-      {tab('/login', ACTIONS.logIn, current === 'login')}
-      {tab('/signup', ACTIONS.signUp, current === 'signup')}
-    </nav>
-  );
-}
 
 export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function PasswordInput(props, ref) {

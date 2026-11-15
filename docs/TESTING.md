@@ -234,3 +234,15 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 | Load beyond 1,000 sockets, multiple API instances               | Not measured. Multiple workers are tested                                                      | Load test on staging hardware                                                                                     |
 | Slow mobile networks                                            | Not simulated beyond disconnects                                                               | Throttled test on staging                                                                                         |
 | Independent security testing                                    | Self-review only                                                                               | Commission a penetration test                                                                                     |
+
+### 15 November, later: sign-up form back, one way in, login design (website only)
+
+| Gate                                 | Result                                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Unit tests                           | **226 of 226**                                                                                                                                                           |
+| Integration tests                    | **291 of 291**                                                                                                                                                           |
+| Website end-to-end                   | **85 of 85**. The sign-up tests were rewritten: one Create Account, the details form shown without email, the WhatsApp hand-off carrying the details, and the four steps |
+| Types, lint, formatting, secret scan | Pass                                                                                                                                                                     |
+
+The four-step sign-up test stubs the server's answers, because the test server sends no email; the server side of each
+step is covered by the integration tests. The phone app was not changed in this round, so its tests were not rerun.
