@@ -2,6 +2,8 @@ name: Shareable Android build
 
 # A test APK for someone outside this network: pushing to this branch builds it against SHARE_API_URL, a
 # repository variable holding an HTTPS address. It is signed with the debug key, so it is for testing only.
+# The same run packages the code as an over-the-air update (docs/MOBILE.md, "Updates without a new APK"); it is
+# published to the server by hand, and only if its fingerprint matches the APK's.
 on:
   push:
     branches: ['share/android']
@@ -52,6 +54,27 @@ jobs:
         working-directory: apps/mobile/android
         env:
           NODE_ENV: production
+      # Same checkout and environment as the APK, so the update's code and fingerprint match it.
+      - name: Package the over-the-air update
+        working-directory: apps/mobile
+        env:
+          NODE_ENV: production
+        run: node scripts/export-update.mjs "$RUNNER_TEMP/app-update"
+      - name: The update must suit this APK
+        run: |
+          apk_fingerprint=$(unzip -p apps/mobile/android/app/build/outputs/apk/release/app-release.apk assets/fingerprint)
+          update_fingerprint=$(tr -d '\n' < "$RUNNER_TEMP/app-update/runtime-version.txt")
+          echo "APK: $apk_fingerprint"
+          echo "Update: $update_fingerprint"
+          if [ -z "$apk_fingerprint" ] || [ "$apk_fingerprint" != "$update_fingerprint" ]; then
+            echo "::error::The update's fingerprint differs from the APK's, so no installed APK would run it."
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: signaldesk-app-update
+          path: ${{ runner.temp }}/app-update
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: signaldesk-share-apk
