@@ -3,8 +3,37 @@
 import { ACTIONS, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
 import { clsx } from 'clsx';
 import { Check, Eye, EyeOff } from 'lucide-react';
-import { forwardRef, type InputHTMLAttributes, useEffect, useState } from 'react';
+import { forwardRef, type InputHTMLAttributes, type RefObject, useEffect, useState } from 'react';
 import { Button, Input } from '@/components/ui';
+
+/**
+ * What a form's named fields hold right now, as the browser sees them. On a slow connection people type, and password
+ * managers fill in, before the page's scripts have run; that text is in the fields but not yet in React's state.
+ */
+export function readFields(form: HTMLFormElement | null): Record<string, string | boolean> {
+  const values: Record<string, string | boolean> = {};
+  if (!form) return values;
+  for (const element of Array.from(form.elements)) {
+    if (!(element instanceof HTMLInputElement) || !element.name) continue;
+    values[element.name] = element.type === 'checkbox' ? element.checked : element.value;
+  }
+  return values;
+}
+
+/** Once the page is interactive, takes in anything typed or filled in before it was, so nothing is lost. */
+export function useEarlyInput(
+  form: RefObject<HTMLFormElement | null>,
+  apply: (values: Record<string, string | boolean>) => void,
+) {
+  useEffect(() => {
+    const values = Object.fromEntries(
+      Object.entries(readFields(form.current)).filter(([, v]) => v !== '' && v !== false),
+    );
+    if (Object.keys(values).length > 0) apply(values);
+    // Only once, when the page becomes interactive. Later typing arrives through the fields' own events.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
 
 export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   function PasswordInput(props, ref) {

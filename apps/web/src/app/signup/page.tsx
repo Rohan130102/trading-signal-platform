@@ -15,9 +15,9 @@ import { clsx } from 'clsx';
 import { Mail, MessageCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useRef, useState } from 'react';
 import { CodeStep } from '@/components/auth/code-step';
-import { Hints, issuesByField, PasswordInput } from '@/components/auth/parts';
+import { Hints, issuesByField, PasswordInput, readFields, useEarlyInput } from '@/components/auth/parts';
 import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
 import { buttonClass } from '@/components/styles';
 import { EnquiryActions } from '@/components/subscriber/enquiry';
@@ -45,6 +45,17 @@ interface Checked {
 }
 
 const EMPTY: Details = { firstName: '', lastName: '', email: '', mobile: '', age: '', consent: false };
+
+/** The form's fields as the browser holds them, over what React has, so early typing and autofill count. */
+function withFields(form: Details, fields: Record<string, string | boolean>): Details {
+  const next = { ...form };
+  for (const key of ['firstName', 'lastName', 'email', 'mobile', 'age'] as const) {
+    const value = fields[key];
+    if (typeof value === 'string') next[key] = key === 'age' ? value.replace(/\D/g, '') : value;
+  }
+  if (typeof fields.consent === 'boolean') next.consent = fields.consent;
+  return next;
+}
 
 const STEP_NAMES = ['Your details', 'Verify email', 'Create password'] as const;
 
@@ -81,6 +92,8 @@ function DetailsStep({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEarlyInput(formRef, (fields) => setForm((f) => withFields(f, fields)));
   // Editing a field clears its message: it was about the old value.
   const set = (key: keyof Details) => (value: string | boolean) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -92,7 +105,9 @@ function DetailsStep({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const body = { ...form, age: form.age.trim() === '' ? undefined : Number(form.age) };
+    const current = withFields(form, readFields(formRef.current));
+    setForm(() => current);
+    const body = { ...current, age: current.age.trim() === '' ? undefined : Number(current.age) };
     const parsed = registrationSchema.safeParse(body);
     if (!parsed.success) {
       const next: Record<string, string> = {};
@@ -118,12 +133,13 @@ function DetailsStep({
   };
 
   return (
-    <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
+    <form ref={formRef} onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" error={errors.firstName}>
           {(control) => (
             <Input
               {...control}
+              name="firstName"
               autoComplete="given-name"
               autoFocus
               value={form.firstName}
@@ -135,6 +151,7 @@ function DetailsStep({
           {(control) => (
             <Input
               {...control}
+              name="lastName"
               autoComplete="family-name"
               value={form.lastName}
               onChange={(e) => set('lastName')(e.target.value)}
@@ -148,6 +165,7 @@ function DetailsStep({
             {...control}
             type="email"
             inputMode="email"
+            name="email"
             autoComplete="email"
             autoCapitalize="none"
             spellCheck={false}
@@ -166,6 +184,7 @@ function DetailsStep({
             {...control}
             type="tel"
             inputMode="tel"
+            name="mobile"
             autoComplete="tel"
             placeholder="+91 98765 43210"
             value={form.mobile}
@@ -177,6 +196,7 @@ function DetailsStep({
         {(control) => (
           <Input
             {...control}
+            name="age"
             inputMode="numeric"
             pattern="[0-9]*"
             maxLength={3}
@@ -188,6 +208,7 @@ function DetailsStep({
       <label className="flex items-start gap-2.5 text-[13px] text-muted">
         <input
           type="checkbox"
+          name="consent"
           className="mt-0.5 size-4 accent-current"
           checked={form.consent}
           onChange={(e) => set('consent')(e.target.checked)}

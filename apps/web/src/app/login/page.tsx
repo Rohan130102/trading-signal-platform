@@ -3,8 +3,8 @@
 import { ACTIONS, loginSchema, type MeResponse } from '@signaldesk/domain';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { type FormEvent, Suspense, useState } from 'react';
-import { PasswordInput } from '@/components/auth/parts';
+import { type FormEvent, Suspense, useRef, useState } from 'react';
+import { PasswordInput, readFields, useEarlyInput } from '@/components/auth/parts';
 import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
 import { buttonClass } from '@/components/styles';
 import { Button, Field, FormError, Input } from '@/components/ui';
@@ -22,14 +22,25 @@ function LoginForm() {
   const info = usePublicInfo();
   // One way to create an account: this button. Hidden only while the Super Admin has paused sign-up.
   const canSignUp = info.data?.signupOpen ?? true;
+  const formRef = useRef<HTMLFormElement>(null);
+  useEarlyInput(formRef, (values) => {
+    if (typeof values.username === 'string') setIdentifier(values.username);
+    if (typeof values.password === 'string') setPassword(values.password);
+  });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const parsed = loginSchema.safeParse({ identifier, password });
+    // The fields themselves, so a password manager's fill that sent no event still counts.
+    const fields = readFields(formRef.current);
+    const typedId = typeof fields.username === 'string' ? fields.username : identifier;
+    const typedPassword = typeof fields.password === 'string' ? fields.password : password;
+    setIdentifier(typedId);
+    setPassword(typedPassword);
+    const parsed = loginSchema.safeParse({ identifier: typedId, password: typedPassword });
     if (!parsed.success) {
       setMissing({
-        identifier: identifier.trim() ? undefined : 'Enter your email or username',
-        password: password ? undefined : 'Enter your password',
+        identifier: typedId.trim() ? undefined : 'Enter your email or username',
+        password: typedPassword ? undefined : 'Enter your password',
       });
       return;
     }
@@ -51,7 +62,7 @@ function LoginForm() {
       title="Welcome back"
       description={params.get('expired') ? 'Your session ended. Log in again.' : 'Log in to your account.'}
     >
-      <form onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
+      <form ref={formRef} onSubmit={(e) => void submit(e)} className="flex flex-col gap-4" noValidate>
         <Field label="Email or username" error={missing.identifier}>
           {(control) => (
             <Input

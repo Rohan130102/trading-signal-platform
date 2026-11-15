@@ -247,6 +247,12 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 The four-step sign-up test stubs the server's answers, because the test server sends no email; the server side of each
 step is covered by the integration tests.
 
+A later CI run failed two iPhone tests: the login ID typed by the test was lost. The cause was real: anything typed
+or filled in by a password manager before the page's scripts have run was ignored, so Log In said "Enter your email
+or username". Login and sign-up now take in what the fields already hold, and Log In reads the fields themselves.
+Two tests hold the page's scripts back, type, then continue; the login one failed before the fix. Website end-to-end:
+**87 of 87**.
+
 Then the phone app got the same changes:
 
 | Gate                                       | Result                                                                                                                                                                                              |
