@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   createAdminSchema,
   entryWindowLabel,
-  membershipStart,
+  announcementVisibleToMember,
+  entitlementPeriods,
   removeTradesSchema,
   resolveEntryExpiry,
   screenshotsAllowedFor,
@@ -47,36 +48,66 @@ describe('screenshots', () => {
   });
 });
 
-describe('membership history', () => {
-  const from = new Date('2026-11-01T00:00:00Z');
-  it('shows trades published or still live during the membership', () => {
-    expect(
-      visibleToMember(
-        { status: 'CLOSED', publishedAt: '2026-10-01T00:00:00Z', closedAt: '2026-10-02T00:00:00Z' },
-        from,
-      ),
-    ).toBe(false);
-    expect(
-      visibleToMember(
-        { status: 'CLOSED', publishedAt: '2026-10-30T00:00:00Z', closedAt: '2026-11-02T00:00:00Z' },
-        from,
-      ),
-    ).toBe(true);
-    expect(
-      visibleToMember(
-        { status: 'CLOSED', publishedAt: '2026-11-03T00:00:00Z', closedAt: '2026-11-04T00:00:00Z' },
-        from,
-      ),
-    ).toBe(true);
-    expect(visibleToMember({ status: 'ACTIVE', publishedAt: '2026-01-01T00:00:00Z', closedAt: null }, from)).toBe(true);
-    expect(visibleToMember({ status: 'CLOSED', publishedAt: '2020-01-01T00:00:00Z', closedAt: null }, null)).toBe(true);
+describe('entitlement periods', () => {
+  const d = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const change = (at: string, startsAt: string, expiresAt: string) => ({
+    at: d(at),
+    startsAt: d(startsAt),
+    expiresAt: d(expiresAt),
   });
 
-  it('starts at the earliest membership period', () => {
-    expect(membershipStart([])).toBeNull();
-    expect(membershipStart([undefined, new Date('2026-05-01'), new Date('2026-02-01')])?.toISOString()).toBe(
-      '2026-02-01T00:00:00.000Z',
+  it('keeps a lapse between two memberships out, and keeps both memberships', () => {
+    // Nov 1-10, expired Nov 11-14, renewed Nov 15-30.
+    const periods = entitlementPeriods([
+      change('2026-11-01', '2026-11-01', '2026-11-11'),
+      change('2026-11-15', '2026-11-15', '2026-12-01'),
+    ]);
+    expect(periods).toEqual([
+      { from: d('2026-11-01'), to: d('2026-11-11') },
+      { from: d('2026-11-15'), to: d('2026-12-01') },
+    ]);
+    const trade = (publishedAt: string) => ({ publishedAt: d(publishedAt) });
+    expect(visibleToMember(trade('2026-11-05'), periods)).toBe(true);
+    expect(visibleToMember(trade('2026-11-12'), periods)).toBe(false);
+    expect(visibleToMember(trade('2026-11-16'), periods)).toBe(true);
+    expect(visibleToMember(trade('2026-10-30'), periods)).toBe(false);
+  });
+
+  it('joins a renewal made while the membership was running', () => {
+    const periods = entitlementPeriods([
+      change('2026-11-01', '2026-11-01', '2026-11-11'),
+      change('2026-11-05', '2026-11-01', '2026-12-11'),
+    ]);
+    expect(periods).toEqual([{ from: d('2026-11-01'), to: d('2026-12-11') }]);
+  });
+
+  it('ends a window early when a later change shortened it', () => {
+    const periods = entitlementPeriods([
+      change('2026-11-01', '2026-11-01', '2026-12-01'),
+      change('2026-11-10', '2026-11-01', '2026-11-10'),
+    ]);
+    expect(periods).toEqual([{ from: d('2026-11-01'), to: d('2026-11-10') }]);
+  });
+
+  it('uses the current window when no change was recorded, and nothing without one', () => {
+    expect(entitlementPeriods([], { startsAt: d('2026-11-01'), expiresAt: d('2026-11-08') })).toEqual([
+      { from: d('2026-11-01'), to: d('2026-11-08') },
+    ]);
+    expect(entitlementPeriods([], null)).toEqual([]);
+    expect(visibleToMember({ publishedAt: d('2026-11-02') }, [])).toBe(false);
+  });
+
+  it('administrators have no restriction', () => {
+    expect(visibleToMember({ publishedAt: d('2020-01-01') }, null)).toBe(true);
+  });
+
+  it('applies the same rule to announcements, except notices about the service', () => {
+    const periods = [{ from: d('2026-11-15'), to: d('2026-12-01') }];
+    expect(announcementVisibleToMember({ category: 'MARKET_UPDATE', publishedAt: d('2026-11-13') }, periods)).toBe(
+      false,
     );
+    expect(announcementVisibleToMember({ category: 'GENERAL', publishedAt: d('2026-11-16') }, periods)).toBe(true);
+    expect(announcementVisibleToMember({ category: 'MAINTENANCE', publishedAt: d('2026-11-13') }, periods)).toBe(true);
   });
 });
 

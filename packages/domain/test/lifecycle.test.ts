@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  exitBasis,
   ACTION_FROM,
   allowedActions,
   canTransition,
@@ -656,7 +657,7 @@ describe('corrections', () => {
     expect(d.next.status).toBe('CLOSED');
     expect(d.events[1]?.payload.changes).toEqual([
       { field: 'Actual entry', from: null, to: '3,310.00' },
-      { field: 'Result', from: null, to: '+150 pts (recorded entry)' },
+      { field: 'Result', from: null, to: '+150 pts' },
     ]);
 
     // The stored state is still the replay of its events.
@@ -1004,5 +1005,23 @@ describe('update wording for subscribers', () => {
     // Kept for administrators and the audit trail.
     expect(d.events[0]?.payload.correctionReason).toBe('Fat finger by the desk');
     expect(changeLine({ field: 'Actual entry', from: null, to: '3,310.00' })).toBe('Actual entry: 3,310.00');
+  });
+});
+
+describe('the basis of an exit, when the administrator does not choose one', () => {
+  const state = (overrides: Record<string, unknown>) =>
+    ({
+      closureBasis: null,
+      execution: null,
+      entry: { type: 'SINGLE', low: '100', high: '100' },
+      ...overrides,
+    }) as never;
+  it('follows earlier exits, then a recorded entry, then the signal entry or the entry typed for a range', () => {
+    expect(exitBasis(state({ closureBasis: 'NONE' }), '101')).toBe('NONE');
+    expect(exitBasis(state({ execution: { entryPrice: '100' } }))).toBe('ADMIN_DECLARED_EXECUTION');
+    expect(exitBasis(state({}))).toBe('HYPOTHETICAL_OUTCOME');
+    expect(exitBasis(state({ entry: { type: 'RANGE', low: '100', high: '110' } }), '105')).toBe('HYPOTHETICAL_OUTCOME');
+    // A range with nothing to measure from records the exit without a result, never an invented one.
+    expect(exitBasis(state({ entry: { type: 'RANGE', low: '100', high: '110' } }))).toBe('NONE');
   });
 });

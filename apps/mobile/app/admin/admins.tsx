@@ -1,3 +1,4 @@
+import { Redirect } from 'expo-router';
 import type { AdminAccount } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
@@ -11,7 +12,6 @@ import {
   Badge,
   Button,
   Card,
-  EmptyState,
   ErrorState,
   errorMessage,
   Field,
@@ -158,15 +158,8 @@ export default function Admins() {
       },
     ]);
 
-  if (!master) {
-    return (
-      <Screen edges={['bottom']} testID="admins">
-        <EmptyState icon="shield-checkmark-outline" title="Master Admin only">
-          Only the Master Admin registers and manages administrators.
-        </EmptyState>
-      </Screen>
-    );
-  }
+  // Only the Master Admin has this screen. Anyone else is sent back, as if it did not exist.
+  if (!master) return <Redirect href="/" />;
   return (
     <Screen edges={['bottom']} refresh={refresh} testID="admins">
       <Button

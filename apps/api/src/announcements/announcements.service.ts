@@ -21,6 +21,7 @@ import {
 import { AppError, notFound } from '../common/http.js';
 import { isUniqueViolation, Prisma, PrismaService, type Tx, TX_OPTIONS } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { AudienceService } from '../feed/audience.service.js';
 import { EventStore } from '../trades/event-store.js';
 
 type Row = Prisma.AnnouncementRecordGetPayload<{ include: { createdBy: { select: { name: true } } } }>;
@@ -115,20 +116,22 @@ export class AnnouncementsService {
     private readonly prisma: PrismaService,
     private readonly events: EventStore,
     private readonly audit: AuditService,
+    private readonly audience: AudienceService,
   ) {}
 
   /* ---------- Subscribers ---------- */
 
+  /** The board, by the same rule as trades: what was published while this person was entitled, and service notices. */
   async visible(userId: string, page: number, pageSize: number): Promise<AnnouncementsPage> {
-    const hidden = await this.prisma.userHiddenItem.findMany({
-      where: { userId, itemType: 'ANNOUNCEMENT' },
-      select: { itemId: true },
-    });
+    const [hidden, periods] = await Promise.all([
+      this.prisma.userHiddenItem.findMany({ where: { userId, itemType: 'ANNOUNCEMENT' }, select: { itemId: true } }),
+      this.audience.periods(userId),
+    ]);
     const now = new Date();
     const where: Prisma.AnnouncementRecordWhereInput = {
       status: 'PUBLISHED',
       deletedAt: null,
-      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+      AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, this.audience.announcementWhere(periods)],
       ...(hidden.length > 0 ? { id: { notIn: hidden.map((h) => h.itemId) } } : {}),
     };
     const [rows, total] = await Promise.all([

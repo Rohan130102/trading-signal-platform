@@ -33,6 +33,7 @@ import { type FieldErrors, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import { EmailSettings } from '@/components/admin/email-settings';
+import { MasterOnly } from '@/components/admin/master-only';
 import {
   Badge,
   Button,
@@ -197,12 +198,6 @@ function Configuration({ settings, canEdit }: { settings: AdminSettings; canEdit
         className="flex min-w-0 flex-col gap-4 pb-24"
         noValidate
       >
-        {!canEdit && tab !== 'email' && (
-          <p className="flex items-start gap-2 rounded-lg bg-neutral-soft p-3 text-[13px] text-muted" role="note">
-            <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-            Only the Super Admin can change the configuration. You can see what is in force.
-          </p>
-        )}
         <fieldset disabled={!canEdit} className="flex min-w-0 flex-col gap-4">
           <TabPanel idPrefix="config" id="general" active={tab === 'general'}>
             <Section title="Your service" description="Shown on the website, in the app and in every email.">
@@ -682,11 +677,8 @@ export default function SettingsPage() {
     queryFn: () => api.get<AdminSettings>('/admin/settings'),
   });
   return (
-    <>
-      <PageHeader
-        title="Configuration"
-        description="Everything you can change without a code update. Each change is recorded in the audit log."
-      />
+    <MasterOnly>
+      <PageHeader title="Configuration" />
       {settings.isPending && <Loading rows={3} label="Loading configuration" />}
       {settings.isError && <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />}
       {settings.data && me.data && <Configuration settings={settings.data} canEdit={canEdit} />}
@@ -695,6 +687,6 @@ export default function SettingsPage() {
           Demonstration data was cleared on {formatDateTime(settings.data.dataResetAt)}.
         </p>
       )}
-    </>
+    </MasterOnly>
   );
 }

@@ -1,12 +1,6 @@
 'use client';
 
-import {
-  type AdminEvent,
-  type AdminTradeDetail,
-  BASIS_LABELS,
-  CLOSE_REASON_LABELS,
-  formatPrice,
-} from '@signaldesk/domain';
+import { type AdminEvent, type AdminTradeDetail, CLOSE_REASON_LABELS, formatPrice } from '@signaldesk/domain';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
@@ -47,7 +41,7 @@ const PRIMARY: { kind: ActionKind; label: string; icon: typeof Play; key?: strin
     { kind: 'CLOSE', label: 'Close Trade', icon: CircleCheck, key: 'C', variant: 'primary' },
     { kind: 'URGENT', label: 'Urgent Instruction', icon: Siren, key: 'U' },
     { kind: 'MODIFY_TARGETS', label: 'Change Targets', icon: PencilLine },
-    { kind: 'RECORD_EXECUTION', label: 'Record Execution', icon: Lock },
+    { kind: 'RECORD_EXECUTION', label: 'Record Entry', icon: Lock },
     { kind: 'CANCEL', label: 'Cancel Signal', icon: Ban, variant: 'danger' },
     { kind: 'EXPIRE', label: 'Expired, No Entry', icon: OctagonX },
     { kind: 'CORRECT', label: 'Correct Trade', icon: PencilLine },
@@ -167,8 +161,7 @@ export default function AdminTradePage() {
             />
             {t.execution && (
               <p className="mt-3 border-t border-line pt-3 text-[13px] text-muted">
-                <Lock className="mr-1 inline size-3.5" aria-hidden /> Declared execution (private): entry{' '}
-                <span className="num text-text">{formatPrice(t, t.execution.entryPrice)}</span>
+                Your entry <span className="num text-text">{formatPrice(t, t.execution.entryPrice)}</span>
                 {t.execution.quantity && (
                   <>
                     , quantity{' '}
@@ -177,13 +170,13 @@ export default function AdminTradePage() {
                     </span>
                   </>
                 )}
-                . Not independently verified.
+                . Only administrators see this.
               </p>
             )}
           </Card>
           {aggregate && (
             <Card>
-              <CardHeader title="Result" description={BASIS_LABELS[aggregate.basis]} />
+              <CardHeader title="Result" />
               <dl className="grid grid-cols-2 border-t border-line sm:grid-cols-4">
                 <Stat label="Closed" value={percent(aggregate.closedFraction)} />
                 <Stat

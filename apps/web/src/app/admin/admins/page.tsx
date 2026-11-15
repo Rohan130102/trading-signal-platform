@@ -3,25 +3,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type AdminAccount, createAdminSchema } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Crown, ShieldCheck, UserPlus } from 'lucide-react';
+import { Crown, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import type { z } from 'zod';
+import { MasterOnly } from '@/components/admin/master-only';
 import { CredentialsCard } from '@/components/admin/subscriber-parts';
-import {
-  Badge,
-  Button,
-  Card,
-  Dialog,
-  EmptyState,
-  ErrorState,
-  Field,
-  FormError,
-  Input,
-  Loading,
-  PageHeader,
-} from '@/components/ui';
+import { Badge, Button, Card, Dialog, ErrorState, Field, FormError, Input, Loading, PageHeader } from '@/components/ui';
 import { api } from '@/lib/api';
 import { formatDateTime, newKey } from '@/lib/format';
 import { useMe } from '@/lib/session';
@@ -202,18 +191,8 @@ export default function AdminsPage() {
     queryFn: () => api.get<{ admins: AdminAccount[] }>('/admin/admins'),
     enabled: me.data?.isMasterAdmin === true,
   });
-  if (me.data && !me.data.isMasterAdmin) {
-    return (
-      <>
-        <PageHeader title="Administrators" />
-        <EmptyState icon={<ShieldCheck className="size-5" aria-hidden />} title="Master Admin only">
-          Only the Master Admin registers and manages administrators.
-        </EmptyState>
-      </>
-    );
-  }
   return (
-    <>
+    <MasterOnly>
       <PageHeader
         title="Administrators"
         description="Who can run the desk. Every change here is recorded in the audit log."
@@ -282,6 +261,6 @@ export default function AdminsPage() {
       )}
       {creating && <CreateDialog onClose={() => setCreating(false)} />}
       {action && <ActionDialog action={action} onClose={() => setAction(null)} />}
-    </>
+    </MasterOnly>
   );
 }

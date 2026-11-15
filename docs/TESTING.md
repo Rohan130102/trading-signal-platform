@@ -263,3 +263,17 @@ Then the phone app got the same changes:
 
 The tenth, the large-text journey, needs an open signal left by journeys that were not in this run; it stopped on an
 empty Signals list after signing in. The screens it checks were not changed.
+
+### 15 November, fourth round: one performance view, hidden Master Admin functions, one access rule
+
+| Gate                                       | Result                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unit tests                                 | **234 of 234** (new: the six-signal example from the brief, points kept per instrument, breakeven in the win rate, entitlement periods with a lapse, the automatic exit basis)                                                                                                                        |
+| Integration tests                          | **298 of 298** (new: trades and announcements before and after joining, old identifiers, alerts and unread counts, the live stream, pushes, a renewal after a lapse, the ordinary administrator's refusals, dashboard and audit log, a closed trade in the results with no other step)                |
+| Native app unit and component tests (Jest) | **103 of 103**                                                                                                                                                                                                                                                                                        |
+| Website end-to-end                         | **88 of 88** (new: a range trade closed with and without a typed entry, an ordinary administrator with no Master Admin pages)                                                                                                                                                                         |
+| Native app journeys, Android emulator      | **6 of 6** for the changed screens: first sign-in (subscriber and admin), a live signal to its result, publishing and closing with no basis question, the Performance screen, Configuration and free days. Two failed first on old wording in the journeys themselves and passed after it was updated |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                                                                                                                  |
+
+The rendered Performance page was checked at computer and phone width; the finished trades became a compact list on
+phones after the first look showed a cramped table. iOS was not run.

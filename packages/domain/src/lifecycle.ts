@@ -407,6 +407,21 @@ interface ResolvedOutcome {
 }
 
 /**
+ * What an exit is measured from when the administrator does not say: the basis of earlier exits (they cannot be
+ * mixed), else their recorded entry, else the signal's own entry, or for a range the entry they typed. Without any
+ * of these the exit is recorded with no result, never an invented one.
+ */
+export function exitBasis(
+  s: Pick<TradeState, 'closureBasis' | 'execution' | 'entry'>,
+  hypotheticalEntry?: string,
+): CalculationBasis {
+  if (s.closureBasis) return s.closureBasis;
+  if (s.execution) return 'ADMIN_DECLARED_EXECUTION';
+  if (s.entry.type === 'SINGLE' || hypotheticalEntry !== undefined) return 'HYPOTHETICAL_OUTCOME';
+  return 'NONE';
+}
+
+/**
  * Decides what an outcome may honestly be measured from. A recommended range is never treated as a
  * fill: a hypothetical outcome on a range must name its entry, and a declared outcome must have a
  * recorded execution.
@@ -475,8 +490,7 @@ function movementText(basis: CalculationBasis, points: string | null): string | 
   if (points === null) return null;
   const value = toDec(points);
   const signed = `${value.greaterThan(0) ? '+' : ''}${formatPoints(value)} pts`;
-  const label = basis === 'HYPOTHETICAL_OUTCOME' ? 'signal result' : 'recorded entry';
-  return `${signed} (${label})`;
+  return signed;
 }
 
 function remainingQuantity(s: TradeState): Dec | null {
@@ -754,7 +768,11 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     }
     case 'BOOK_PARTIAL': {
       requirePrice(s.spec, command.exitPrice, 'exitPrice', 'Exit price');
-      const outcome = resolveOutcome(s, command.basis, command.hypotheticalEntry);
+      const outcome = resolveOutcome(
+        s,
+        command.basis ?? exitBasis(s, command.hypotheticalEntry),
+        command.hypotheticalEntry,
+      );
       let fraction: Dec;
       let quantity: string | null = null;
       if (command.quantity !== undefined) {
@@ -825,7 +843,11 @@ export function decide(s: TradeState, command: TradeCommand, now: Date): Decisio
     }
     case 'CLOSE': {
       requirePrice(s.spec, command.exitPrice, 'exitPrice', 'Exit price');
-      const outcome = resolveOutcome(s, command.basis, command.hypotheticalEntry);
+      const outcome = resolveOutcome(
+        s,
+        command.basis ?? exitBasis(s, command.hypotheticalEntry),
+        command.hypotheticalEntry,
+      );
       const fraction = new Dec(1).minus(toDec(s.closedFraction));
       const quantity =
         outcome.basis === 'ADMIN_DECLARED_EXECUTION' && s.execution?.quantity

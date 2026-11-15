@@ -91,13 +91,7 @@ export function EmailSettings({ canEdit, defaultTestTo }: { canEdit: boolean; de
     onError: (error) => setResult({ ok: false, message: (error as Error).message }),
   });
 
-  if (!canEdit) {
-    return (
-      <Notice tone="neutral" icon="lock-closed-outline">
-        Only the Super Admin can see and change the email account.
-      </Notice>
-    );
-  }
+  if (!canEdit) return null;
   if (view.isError) return <ErrorState error={view.error} onRetry={() => void view.refetch()} />;
   if (!view.data || !draft) return <Loading rows={3} label="Loading email settings" />;
 

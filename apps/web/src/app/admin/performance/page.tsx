@@ -1,17 +1,11 @@
 'use client';
 
-import {
-  BASIS_LABELS,
-  type CalculationBasis,
-  type PerformanceReport,
-  type PerformanceStats,
-  formatPrice,
-  toDec,
-} from '@signaldesk/domain';
+import { type FinishedTrade, formatPrice, type PerformanceReport, toDec } from '@signaldesk/domain';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { BarChart3, Info } from 'lucide-react';
+import { clsx } from 'clsx';
+import { BarChart3 } from 'lucide-react';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { CumulativeChart } from '@/components/admin/cumulative-chart';
 import { DirectionBadge, StatusBadge } from '@/components/trade';
 import {
@@ -28,76 +22,33 @@ import {
   Stat,
 } from '@/components/ui';
 import { api, queryString } from '@/lib/api';
-import { formatDateTime, money, signedPoints } from '@/lib/format';
-
-type Report = PerformanceReport;
+import { formatDateTime, signedPoints } from '@/lib/format';
 
 const pct = (value: string | null) =>
-  value === null ? 'n/a' : `${toDec(value).times(100).toDecimalPlaces(1).toFixed()}%`;
-const pts = (value: string | null) => (value === null ? 'n/a' : signedPoints(value));
+  value === null ? '–' : `${toDec(value).times(100).toDecimalPlaces(1).toFixed()}%`;
+const results = (n: number) => `${n} ${n === 1 ? 'result' : 'results'}`;
 
-function BasisCard({
-  basis,
-  stats,
-  comparable,
-  currency,
-}: {
-  basis: CalculationBasis;
-  stats: PerformanceStats;
-  comparable: boolean;
-  currency: string | null;
-}) {
-  const measured = stats.winRateDenominator;
+function ResultCell({ trade }: { trade: FinishedTrade }) {
+  if (trade.points === null) return <span className="text-subtle">–</span>;
   return (
-    <Card>
-      <CardHeader
-        title={BASIS_LABELS[basis]}
-        description={
-          basis === 'HYPOTHETICAL_OUTCOME'
-            ? 'Measured from a stated entry. No real position.'
-            : 'Entered by you. Not independently verified.'
-        }
-      />
-      {measured === 0 ? (
-        <p className="border-t border-line px-4 py-4 text-sm text-muted sm:px-5">
-          No measured trades on this basis yet.
-        </p>
-      ) : (
-        <dl className="grid grid-cols-2 border-t border-line sm:grid-cols-4">
-          <Stat label="Win rate" value={pct(stats.winRate)} hint={`${stats.wins} of ${measured} measured`} />
-          <Stat label="Wins / losses / flat" value={`${stats.wins} / ${stats.losses} / ${stats.breakevens}`} />
-          {comparable ? (
-            <>
-              <Stat label="Average win" value={pts(stats.averageWinPoints)} />
-              <Stat label="Average loss" value={pts(stats.averageLossPoints)} />
-              <Stat label="Net move" value={signedPoints(stats.netPoints)} />
-            </>
-          ) : (
-            <Stat
-              label="Point averages"
-              value="By instrument"
-              hint="Choose one instrument: a point differs between them."
-            />
-          )}
-          {stats.netPnl !== null && currency && (
-            <Stat
-              label="Net result"
-              value={money(stats.netPnl, currency)}
-              hint={`${stats.monetaryTrades} of ${measured} trades have money`}
-            />
-          )}
-          {stats.monetaryTrades > 0 && !currency && (
-            <Stat label="Net result" value="By instrument" hint="More than one quote currency in this view." />
-          )}
-        </dl>
+    <span
+      className={clsx(
+        'num font-semibold',
+        trade.outcome === 'WIN' && 'text-success',
+        trade.outcome === 'LOSS' && 'text-stop',
       )}
-    </Card>
+    >
+      {signedPoints(trade.points)}
+    </span>
   );
 }
 
+/**
+ * One dashboard: how many signals, how they finished, and every finished trade. Figures come from the server's
+ * single calculation; points are only ever shown for one instrument at a time.
+ */
 export default function PerformancePage() {
   const [symbol, setSymbol] = useState('');
-  const [basis, setBasis] = useState<CalculationBasis | ''>('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const instruments = useQuery({
@@ -105,48 +56,24 @@ export default function PerformancePage() {
     queryFn: () => api.get<{ instruments: { id: string; symbol: string }[] }>('/admin/instruments'),
   });
   const report = useQuery({
-    queryKey: ['admin', 'performance', symbol, basis, from, to],
-    queryFn: () => api.get<Report>(`/admin/performance${queryString({ symbol, basis, from, to })}`),
+    queryKey: ['admin', 'performance', symbol, from, to],
+    queryFn: () => api.get<PerformanceReport>(`/admin/performance${queryString({ symbol, from, to })}`),
     placeholderData: keepPreviousData,
   });
   const r = report.data;
-
-  const chartBasis: CalculationBasis =
-    basis === 'ADMIN_DECLARED_EXECUTION' ? 'ADMIN_DECLARED_EXECUTION' : 'HYPOTHETICAL_OUTCOME';
-  const chartPoints = useMemo(
-    () =>
-      (r?.records ?? [])
-        .filter(
-          (t) => t.status === 'CLOSED' && t.aggregate?.basis === chartBasis && t.aggregate.weightedPoints !== null,
-        )
-        .map((t) => ({ ref: t.ref, at: t.closedAt ?? t.publishedAt, points: t.aggregate?.weightedPoints as string }))
-        .sort((a, b) => a.at.localeCompare(b.at)),
-    [chartBasis, r],
-  );
+  const single = r && r.instruments.length === 1 ? r.instruments[0] : undefined;
 
   return (
     <>
-      <PageHeader
-        title="Performance"
-        description="Internal analytics. Nothing on this page is visible to subscribers or the public."
-      />
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label="Instrument">
+      <PageHeader title="Performance" />
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+        <Field label="Instrument" className="col-span-2 sm:col-span-1">
           {(c) => (
             <Select {...c} value={symbol} onChange={(e) => setSymbol(e.target.value)}>
-              <option value="">All</option>
+              <option value="">All instruments</option>
               {instruments.data?.instruments.map((i) => (
                 <option key={i.id}>{i.symbol}</option>
               ))}
-            </Select>
-          )}
-        </Field>
-        <Field label="Basis">
-          {(c) => (
-            <Select {...c} value={basis} onChange={(e) => setBasis(e.target.value as CalculationBasis | '')}>
-              <option value="">Both, kept separate</option>
-              <option value="HYPOTHETICAL_OUTCOME">Hypothetical</option>
-              <option value="ADMIN_DECLARED_EXECUTION">Declared execution</option>
             </Select>
           )}
         </Field>
@@ -159,125 +86,177 @@ export default function PerformancePage() {
       </div>
       {report.isPending && <Loading rows={3} label="Calculating" />}
       {report.isError && <ErrorState error={report.error} onRetry={() => void report.refetch()} />}
-      {r && r.lifecycle.totalRecords === 0 && (
-        <EmptyState icon={<BarChart3 className="size-5" aria-hidden />} title="No signals in this view yet">
-          Publish and close some trades, or widen the filters.
-        </EmptyState>
+      {r && r.counts.total === 0 && (
+        <EmptyState icon={<BarChart3 className="size-5" aria-hidden />} title="No signals yet" />
       )}
-      {r && r.lifecycle.totalRecords > 0 && (
-        <div className={`flex flex-col gap-4 transition-opacity ${report.isPlaceholderData ? 'opacity-60' : ''}`}>
+      {r && r.counts.total > 0 && (
+        <div className={clsx('flex flex-col gap-4 transition-opacity', report.isPlaceholderData && 'opacity-60')}>
           <Card>
-            <CardHeader
-              title="Every record in this period"
-              description="Nothing is dropped: all of these add up to the total."
-            />
-            <dl className="grid grid-cols-2 border-t border-line sm:grid-cols-3 lg:grid-cols-6">
-              <Stat label="Total" value={r.lifecycle.totalRecords} />
-              <Stat label="Closed" value={r.lifecycle.finalized} hint={`${r.lifecycle.unresolved} not measurable`} />
-              <Stat label="Open" value={r.lifecycle.open} />
-              <Stat label="Awaiting entry" value={r.lifecycle.awaitingEntry} />
-              <Stat label="Cancelled" value={r.lifecycle.cancelled} />
-              <Stat label="Expired, no entry" value={r.lifecycle.expiredWithoutEntry} />
+            <dl className="grid grid-cols-2 sm:grid-cols-5" aria-label="Signals">
+              <Stat label="Total signals" value={r.counts.total} />
+              <Stat label="Closed" value={r.counts.closed} />
+              <Stat label="Active" value={r.counts.active} />
+              <Stat label="Awaiting entry" value={r.counts.awaitingEntry} />
+              <Stat label="Cancelled" value={r.counts.cancelled} />
+            </dl>
+            <dl className="grid grid-cols-2 border-t border-line sm:grid-cols-5" aria-label="Results">
+              <Stat
+                label="Win rate"
+                value={pct(r.results.winRate)}
+                hint={<span title="Closed trades with a result">of {results(r.results.measured)}</span>}
+              />
+              <Stat label="Wins" value={r.results.wins} tone={r.results.wins > 0 ? 'success' : undefined} />
+              <Stat label="Losses" value={r.results.losses} tone={r.results.losses > 0 ? 'stop' : undefined} />
+              <Stat label="Breakeven" value={r.results.breakevens} />
+              {single && (
+                <Stat
+                  label="Average result"
+                  value={single.averagePoints === null ? '–' : signedPoints(single.averagePoints)}
+                  hint={single.symbol}
+                />
+              )}
             </dl>
           </Card>
-          {r.byBasis.map((b) => (
-            <BasisCard
-              key={b.basis}
-              basis={b.basis}
-              stats={b.stats}
-              comparable={r.pointsComparable}
-              currency={r.quoteCurrency}
-            />
-          ))}
-          <Card>
-            <CardHeader
-              title={symbol ? `Running total of points, ${symbol}` : 'Running total of points'}
-              description={BASIS_LABELS[chartBasis]}
-            />
-            <div className="border-t border-line pt-3">
-              {symbol ? (
-                <CumulativeChart points={chartPoints} title={`Running total of points on ${symbol}`} unit="points" />
-              ) : (
-                <p className="flex items-start gap-2 px-4 pb-4 pt-1 text-sm text-muted sm:px-5">
-                  <Info className="mt-0.5 size-4 shrink-0" aria-hidden /> Choose one instrument. A point on one
-                  instrument is not worth the same as a point on another, so adding them up would mislead.
-                </p>
-              )}
-            </div>
-          </Card>
-          <Card>
-            <CardHeader title="Finished records" description="Newest first. Includes cancelled and expired signals." />
-            <div className="overflow-x-auto border-t border-line">
-              <table className="w-full min-w-[760px] text-left text-[13px]">
-                <caption className="sr-only">Finished trades with outcomes</caption>
-                <thead className="text-xs text-muted">
-                  <tr>
-                    {['Trade', 'Direction', 'State', 'Entry', 'Average exit', 'Move', 'Net', 'Outcome', 'Closed'].map(
-                      (h) => (
+
+          {!single && r.instruments.length > 1 && (
+            <Card>
+              <CardHeader title="By instrument" />
+              <div className="overflow-x-auto border-t border-line">
+                <table className="w-full min-w-[520px] text-left text-[13px]">
+                  <thead className="text-xs text-muted">
+                    <tr>
+                      {['Instrument', 'Results', 'Win rate', 'Points', 'Average'].map((h) => (
                         <th key={h} scope="col" className="px-4 py-2.5 font-medium">
                           {h}
                         </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody>
-                  {r.records.map((t) => (
-                    <tr key={t.id} className="border-t border-line hover:bg-neutral-soft">
-                      <td className="px-4 py-2">
-                        <Link
-                          href={`/admin/trades/${t.id}`}
-                          className="font-semibold underline-offset-2 hover:underline"
-                        >
-                          {t.symbol}
-                        </Link>
-                        <span className="num ml-2 text-xs text-subtle">{t.ref}</span>
-                        {t.corrected && (
-                          <Badge tone="update" className="ml-2">
-                            Corrected
-                          </Badge>
-                        )}
-                      </td>
-                      <td className="px-4 py-2">
-                        <DirectionBadge direction={t.direction} />
-                      </td>
-                      <td className="px-4 py-2">
-                        <StatusBadge status={t.status} />
-                      </td>
-                      <td className="num px-4 py-2">
-                        {formatPrice(t, t.entryLow)}
-                        {t.entryType === 'RANGE' ? ` – ${formatPrice(t, t.entryHigh)}` : ''}
-                      </td>
-                      <td className="num px-4 py-2">
-                        {t.aggregate?.averageExit ? formatPrice(t, t.aggregate.averageExit) : 'n/a'}
-                      </td>
-                      <td className="num px-4 py-2">
-                        {t.aggregate?.weightedPoints ? signedPoints(t.aggregate.weightedPoints) : 'n/a'}
-                      </td>
-                      <td className="num px-4 py-2">
-                        {t.aggregate?.netPnl ? money(t.aggregate.netPnl, t.quoteCurrency) : 'n/a'}
-                      </td>
-                      <td className="px-4 py-2">
-                        {t.aggregate
-                          ? { WIN: 'Win', LOSS: 'Loss', BREAKEVEN: 'Flat', UNRESOLVED: 'Unresolved' }[
-                              t.aggregate.outcome
-                            ]
-                          : 'n/a'}
-                      </td>
-                      <td className="px-4 py-2 text-muted">{t.closedAt ? formatDateTime(t.closedAt) : 'n/a'}</td>
+                      ))}
                     </tr>
+                  </thead>
+                  <tbody>
+                    {r.instruments.map((i) => (
+                      <tr key={i.symbol} className="border-t border-line hover:bg-neutral-soft">
+                        <td className="px-4 py-2">
+                          <button
+                            type="button"
+                            className="rounded font-semibold underline-offset-2 hover:underline"
+                            onClick={() => setSymbol(i.symbol)}
+                          >
+                            {i.symbol}
+                          </button>
+                        </td>
+                        <td className="num px-4 py-2">{i.measured}</td>
+                        <td className="num px-4 py-2">{pct(i.winRate)}</td>
+                        <td className="num px-4 py-2">{signedPoints(i.netPoints)}</td>
+                        <td className="num px-4 py-2">
+                          {i.averagePoints === null ? '–' : signedPoints(i.averagePoints)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          )}
+
+          {single && r.running && r.running.length > 1 && (
+            <Card>
+              <CardHeader
+                title="Running total"
+                action={<span className="num text-sm font-semibold">{signedPoints(single.netPoints)}</span>}
+              />
+              <div className="border-t border-line pt-3">
+                <CumulativeChart
+                  points={r.running.map((p) => ({ ref: p.ref, at: p.at, points: p.points }))}
+                  title={`Running total of points on ${single.symbol}`}
+                  unit="points"
+                />
+              </div>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader title="Finished trades" />
+            {r.trades.length === 0 ? (
+              <p className="border-t border-line px-4 py-4 text-sm text-muted sm:px-5">No finished trades yet.</p>
+            ) : (
+              <>
+                <ul className="border-t border-line sm:hidden" aria-label="Finished trades, newest first">
+                  {r.trades.map((t) => (
+                    <li key={t.id} className="border-t border-line first:border-t-0">
+                      <Link
+                        href={`/admin/trades/${t.id}`}
+                        className="flex flex-col gap-1 px-4 py-3 hover:bg-neutral-soft"
+                      >
+                        <span className="flex items-center gap-2">
+                          <DirectionBadge direction={t.direction} />
+                          <span className="font-semibold">{t.symbol}</span>
+                          <span className="num text-xs text-subtle">{t.ref}</span>
+                          <span className="ml-auto">
+                            <ResultCell trade={t} />
+                          </span>
+                        </span>
+                        <span className="num flex items-center gap-2 text-xs text-muted">
+                          <span className="truncate">
+                            {formatPrice(t, t.entryLow)}
+                            {t.exit ? ` → ${formatPrice(t, t.exit)}` : ''}
+                          </span>
+                          <span className="ml-auto shrink-0">{t.finishedAt ? formatDateTime(t.finishedAt) : '–'}</span>
+                        </span>
+                      </Link>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-          <Card className="p-4 sm:p-5">
-            <h2 className="text-sm font-semibold">How this is calculated ({r.methodology.version})</h2>
-            <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-[13px] text-muted">
-              {r.methodology.statements.map((s) => (
-                <li key={s}>{s}</li>
-              ))}
-            </ul>
+                </ul>
+                <div className="hidden overflow-x-auto border-t border-line sm:block">
+                  <table className="w-full min-w-[680px] text-left text-[13px] whitespace-nowrap">
+                    <caption className="sr-only">Finished trades, newest first</caption>
+                    <thead className="text-xs text-muted">
+                      <tr>
+                        {['Trade', 'Side', 'Entry', 'Exit', 'Result', 'Status', 'Closed'].map((h) => (
+                          <th key={h} scope="col" className="px-4 py-2.5 font-medium">
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {r.trades.map((t) => (
+                        <tr key={t.id} className="border-t border-line hover:bg-neutral-soft">
+                          <td className="px-4 py-2">
+                            <Link
+                              href={`/admin/trades/${t.id}`}
+                              className="font-semibold underline-offset-2 hover:underline"
+                            >
+                              {t.symbol}
+                            </Link>
+                            <span className="num ml-2 text-xs text-subtle">{t.ref}</span>
+                            {t.corrected && (
+                              <Badge tone="update" className="ml-2">
+                                Corrected
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-2">
+                            <DirectionBadge direction={t.direction} />
+                          </td>
+                          <td className="num px-4 py-2">
+                            {formatPrice(t, t.entryLow)}
+                            {t.entryType === 'RANGE' ? ` – ${formatPrice(t, t.entryHigh)}` : ''}
+                          </td>
+                          <td className="num px-4 py-2">{t.exit ? formatPrice(t, t.exit) : '–'}</td>
+                          <td className="px-4 py-2">
+                            <ResultCell trade={t} />
+                          </td>
+                          <td className="px-4 py-2">
+                            <StatusBadge status={t.status} />
+                          </td>
+                          <td className="px-4 py-2 text-muted">{t.finishedAt ? formatDateTime(t.finishedAt) : '–'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </Card>
         </div>
       )}

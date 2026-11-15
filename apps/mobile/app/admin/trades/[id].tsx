@@ -2,7 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {
   type AdminEvent,
   type AdminTradeDetail,
-  BASIS_LABELS,
   CLOSE_REASON_LABELS,
   formatDateTime,
   formatPrice,
@@ -181,7 +180,7 @@ export default function AdminTrade() {
                 <View style={styles.identity}>
                   <LockIcon />
                   <T v="small" c="muted" num style={{ flex: 1 }}>
-                    {`Declared execution (private): entry ${formatPrice(t, t.execution.entryPrice)}${t.execution.quantity ? `, quantity ${t.execution.quantity} ${t.unitLabel}` : ''}. Not independently verified.`}
+                    {`Your entry ${formatPrice(t, t.execution.entryPrice)}${t.execution.quantity ? `, quantity ${t.execution.quantity} ${t.unitLabel}` : ''}. Only administrators see this.`}
                   </T>
                 </View>
               </>
@@ -206,9 +205,6 @@ export default function AdminTrade() {
             <>
               <SectionTitle>Result</SectionTitle>
               <Card style={{ gap: space.md }} testID="trade-result">
-                <T v="small" c="muted">
-                  {BASIS_LABELS[t.aggregate.basis]}
-                </T>
                 <View style={styles.stats}>
                   <Stat label="Closed" value={percent(t.aggregate.closedFraction)} />
                   <Stat

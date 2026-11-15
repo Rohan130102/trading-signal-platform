@@ -3364,8 +3364,7 @@
                       "action",
                       "expectedVersion",
                       "idempotencyKey",
-                      "exitPrice",
-                      "basis"
+                      "exitPrice"
                     ],
                     "additionalProperties": false
                   },
@@ -3436,7 +3435,6 @@
                       "expectedVersion",
                       "idempotencyKey",
                       "exitPrice",
-                      "basis",
                       "reason",
                       "confirm"
                     ],
@@ -8449,46 +8447,6 @@
               "type": "string",
               "maxLength": 24
             }
-          },
-          {
-            "name": "basis",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "NONE",
-                "HYPOTHETICAL_OUTCOME",
-                "ADMIN_DECLARED_EXECUTION",
-                "EXTERNALLY_VERIFIED"
-              ]
-            }
-          },
-          {
-            "name": "direction",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "BUY",
-                "SELL"
-              ]
-            }
-          },
-          {
-            "name": "outcome",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "WIN",
-                "LOSS",
-                "BREAKEVEN",
-                "UNRESOLVED"
-              ]
-            }
           }
         ],
         "responses": {
@@ -8510,7 +8468,7 @@
     },
     "/api/v1/admin/audit": {
       "get": {
-        "summary": "Audit log",
+        "summary": "Audit log. Actions only the Master Admin can take are listed for the Master Admin only.",
         "tags": [
           "Admin"
         ],
@@ -9269,46 +9227,6 @@
             "schema": {
               "type": "string",
               "maxLength": 24
-            }
-          },
-          {
-            "name": "basis",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "NONE",
-                "HYPOTHETICAL_OUTCOME",
-                "ADMIN_DECLARED_EXECUTION",
-                "EXTERNALLY_VERIFIED"
-              ]
-            }
-          },
-          {
-            "name": "direction",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "BUY",
-                "SELL"
-              ]
-            }
-          },
-          {
-            "name": "outcome",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "WIN",
-                "LOSS",
-                "BREAKEVEN",
-                "UNRESOLVED"
-              ]
             }
           }
         ],

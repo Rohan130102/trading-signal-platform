@@ -256,7 +256,7 @@ export default function SubscriberScreen() {
  * The app installations bound to this subscriber. Releasing one lets another account sign in on that phone
  * and signs this subscriber out of it. Every release is in the audit log with its reason.
  */
-/** Screenshot permission for this subscriber. Only the Master Admin changes it; their app applies it at once. */
+/** Screenshot permission for this subscriber. Only the Master Admin sees and changes it; their app applies it at once. */
 function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
   const master = useSession().me?.isMasterAdmin === true;
   const toast = useToast();
@@ -270,6 +270,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
     onError: (error) => toast({ tone: 'error', title: 'Not saved', body: errorMessage(error) }),
   });
   const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  if (!master) return null;
   return (
     <>
       <SectionTitle>Screenshots</SectionTitle>
@@ -277,25 +278,18 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
         <T v="small" c="muted">
           {detail.screenshotsEffective ? 'Allowed for this subscriber now.' : 'Blocked for this subscriber now.'}
         </T>
-        {master ? (
-          <Segmented<'DEFAULT' | 'BLOCK' | 'ALLOW'>
-            label="Screenshot permission"
-            value={value}
-            onChange={(v) => !save.isPending && save.mutate(v === 'DEFAULT' ? null : v === 'ALLOW')}
-            options={[
-              { value: 'DEFAULT', label: 'Default', testID: 'screens-default' },
-              { value: 'BLOCK', label: 'Block', testID: 'screens-block' },
-              { value: 'ALLOW', label: 'Allow', testID: 'screens-allow' },
-            ]}
-          />
-        ) : (
-          <T v="caption" c="subtle">
-            Only the Master Admin can change this.
-          </T>
-        )}
+        <Segmented<'DEFAULT' | 'BLOCK' | 'ALLOW'>
+          label="Screenshot permission"
+          value={value}
+          onChange={(v) => !save.isPending && save.mutate(v === 'DEFAULT' ? null : v === 'ALLOW')}
+          options={[
+            { value: 'DEFAULT', label: 'Default', testID: 'screens-default' },
+            { value: 'BLOCK', label: 'Block', testID: 'screens-block' },
+            { value: 'ALLOW', label: 'Allow', testID: 'screens-allow' },
+          ]}
+        />
         <T v="caption" c="subtle">
-          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
-          screenshot when it sees one.
+          iPhone cannot fully block screenshots.
         </T>
       </Card>
     </>

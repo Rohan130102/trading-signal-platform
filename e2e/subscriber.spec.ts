@@ -16,7 +16,7 @@ test('complete subscriber journey', async ({ page }) => {
       await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible();
     }
     await nav.getByRole('link', { name: /^Alerts/ }).click();
-    await expect(page.getByRole('heading', { name: 'Alerts' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Alerts', exact: true })).toBeVisible();
   });
 
   const entry = nextPrice();

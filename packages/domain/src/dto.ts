@@ -1,7 +1,7 @@
 import type { DraftInput } from './contracts.js';
 import type { EventPayload, EventSnapshot, TargetState } from './lifecycle.js';
 import type { InstrumentSpec } from './instrument.js';
-import type { CalculationBasis, PerformanceStats, TradeAggregate } from './pnl.js';
+import type { CalculationBasis, PerformanceSummary, TradeAggregate } from './pnl.js';
 import type { Direction, EntryType } from './signal.js';
 import type { CloseReason, EventCategory, EventType, Priority, TradeStatus } from './status.js';
 import type {
@@ -219,41 +219,46 @@ export interface PublicInfo {
 }
 
 /** One finished trade on the public page. Times are when the desk published, activated and closed it. */
+/** A finished signal as anyone may see it: no prices, no position sizes. */
 export interface PublicTradeRecord {
   ref: string | null;
   symbol: string;
   direction: Direction | null;
   status: TradeStatus;
   publishedAt: string | null;
-  /** When the desk marked the signal active. Not a fill, and not a subscriber's execution. */
-  activatedAt: string | null;
-  /** Time of the last recorded exit. */
-  exitedAt: string | null;
-  closedAt: string | null;
-  basis: CalculationBasis | null;
+  /** When the trade finished: its close, or the last exit. */
+  finishedAt: string | null;
   weightedPoints: string | null;
   outcome: TradeAggregate['outcome'] | null;
-  /** The record was corrected after publication. The history shows what changed and why. */
+  /** The record was corrected after publication. */
   corrected: boolean;
 }
 
-export interface PublicPerformanceResponse {
+export interface PublicPerformanceResponse extends PerformanceSummary {
   measurementPeriod: { from: string | null; to: string | null };
-  lifecycle: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
-  hypothetical: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
-  declared: Omit<PerformanceStats, 'grossPnl' | 'netPnl' | 'averageWinNet' | 'averageLossNet' | 'monetaryTrades'>;
   records: PublicTradeRecord[];
-  /** Finished trades taken off subscriber screens. They are still counted in every figure above. */
-  removedFromScreens: number;
-  symbols: string[];
-  pointsComparable: boolean;
   dataResetAt: string | null;
-  methodology: { version: string; statements: string[]; definitions: { term: string; meaning: string }[] };
   disclosures: {
     riskDisclosure: string;
     regulatoryStatement: string;
     approval: { jurisdiction: string; scope: string; documentReference: string; expiresAt: string };
   };
+}
+
+/** A finished signal on the administrators' dashboard. */
+export interface FinishedTrade extends TradeSummary {
+  /** Exit price, averaged over partial exits by the share each closed. */
+  exit: string | null;
+  points: string | null;
+  outcome: TradeAggregate['outcome'] | null;
+  finishedAt: string | null;
+  corrected: boolean;
+}
+
+/** The administrators' Performance page: one report, from the same calculation as the public results. */
+export interface PerformanceReport extends PerformanceSummary {
+  trades: FinishedTrade[];
+  truncated: boolean;
 }
 
 export interface DraftRow {
@@ -496,19 +501,6 @@ export interface SubscribersPage {
   total: number;
   page: number;
   pageSize: number;
-}
-
-export interface PerformanceReport {
-  lifecycle: PerformanceStats;
-  byBasis: { basis: CalculationBasis; stats: PerformanceStats }[];
-  byInstrument: { symbol: string; byBasis: { basis: CalculationBasis; stats: PerformanceStats }[] }[];
-  records: (TradeSummary & { aggregate: TradeAggregate | null; corrected: boolean })[];
-  truncated: boolean;
-  quoteCurrency: string | null;
-  pointsComparable: boolean;
-  methodology: { version: string; statements: string[] };
-  /** Finished trades taken off subscriber screens. Counted in every figure above. */
-  removedFromScreens: number;
 }
 
 export interface InstrumentRow extends InstrumentSpec {

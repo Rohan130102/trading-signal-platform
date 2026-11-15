@@ -85,8 +85,8 @@ export default function NewsPage() {
       {board.isPending && <Loading rows={2} label="Loading announcements" />}
       {board.isError && <ErrorState error={board.error} onRetry={() => void board.refetch()} />}
       {board.isSuccess && items.length === 0 && (
-        <EmptyState icon={<Megaphone className="size-5" aria-hidden />} title="No announcements">
-          Market notes, schedule changes and other news from the desk appear here.
+        <EmptyState icon={<Megaphone className="size-5" aria-hidden />} title="No announcements yet">
+          New announcements will appear here.
         </EmptyState>
       )}
       <div className="flex flex-col gap-3">

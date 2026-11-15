@@ -1,7 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {
-  BASIS_LABELS,
-  basisShort,
   eventHeading,
   CLOSE_REASON_LABELS,
   type Direction,
@@ -262,7 +260,7 @@ export function ChangeLine({ event }: { event: FeedEvent }) {
         <T v="price">{fmt(p.exitPrice)}</T>
         {p.movementPoints && (
           <T v="small" c="muted" num>
-            {signedPoints(p.movementPoints)} ({basisShort(p.basis)})
+            {signedPoints(p.movementPoints)}
           </T>
         )}
       </View>
@@ -536,16 +534,14 @@ export function Timeline({
 /** What a subscriber is told about an outcome. Explicitly not a statement of their own result. */
 export function OutcomeSummary({ outcome, precision }: { outcome: PublicOutcome; precision: number }) {
   const c = useColors();
-  const label = { WIN: 'Favourable', LOSS: 'Unfavourable', BREAKEVEN: 'Breakeven', UNRESOLVED: 'Not measured' }[
-    outcome.outcome
-  ];
+  const label = { WIN: 'Win', LOSS: 'Loss', BREAKEVEN: 'Breakeven', UNRESOLVED: null }[outcome.outcome];
   const tone = ({ WIN: 'success', LOSS: 'stop', BREAKEVEN: 'neutral', UNRESOLVED: 'neutral' } as const)[
     outcome.outcome
   ];
   return (
     <View style={[styles.outcome, { backgroundColor: c.raised }]} testID="outcome">
       <View style={styles.identity}>
-        <Badge tone={tone}>{label}</Badge>
+        {label && <Badge tone={tone}>{label}</Badge>}
         {outcome.reason && (
           <T v="small" c="muted">
             {CLOSE_REASON_LABELS[outcome.reason]}
@@ -554,15 +550,14 @@ export function OutcomeSummary({ outcome, precision }: { outcome: PublicOutcome;
       </View>
       <View style={styles.levels}>
         {outcome.averageExit && (
-          <PriceCell label="Average exit" value={formatPrice({ pricePrecision: precision }, outcome.averageExit)} />
+          <PriceCell
+            label={outcome.closedFraction === '1' ? 'Exit' : 'Average exit'}
+            value={formatPrice({ pricePrecision: precision }, outcome.averageExit)}
+          />
         )}
-        {outcome.weightedPoints && <PriceCell label="Move recorded" value={signedPoints(outcome.weightedPoints)} />}
+        {outcome.weightedPoints && <PriceCell label="Result" value={signedPoints(outcome.weightedPoints)} />}
         {outcome.closedFraction !== '1' && <PriceCell label="Closed so far" value={percent(outcome.closedFraction)} />}
       </View>
-      <T v="caption" c="subtle">
-        {BASIS_LABELS[outcome.basis]}. This describes the signal, not what any subscriber achieved. Your result depends
-        on your own entry, size and costs.
-      </T>
     </View>
   );
 }

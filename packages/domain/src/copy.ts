@@ -119,7 +119,7 @@ export function subscriberStatus(me: MeResponse): SubscriberStatusCopy | null {
           return {
             key: 'NONE',
             title: 'No Active Subscription',
-            body: 'Activate a subscription to start receiving trading signals.',
+            body: 'Activate a subscription to start receiving signals and updates.',
             primary: { label: ACTIONS.enquireSubscription, purpose: 'SUBSCRIPTION', kind: 'ENQUIRE' },
             secondary: null,
             tone: 'neutral',
