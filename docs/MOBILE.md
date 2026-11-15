@@ -157,8 +157,11 @@ EXPO_PUBLIC_API_URL=https://api.your-domain npx eas-cli build --profile producti
 
 Nothing is ever submitted to a store by these commands, or by CI.
 
-Without an Expo account, CI compiles an installable test APK on every push: see the `android-apk` job. The `ios-build` workflow
-compiles for the iOS simulator when run by hand. Its macOS minutes cost ten times as much, so it does not run automatically.
+Without an Expo account, CI compiles an installable test APK: see the `android-apk` job. To stay within the
+repository's free monthly runner minutes, it compiles only for a native fingerprint (see
+[Updates without a new APK](#updates-without-a-new-apk)) it has not compiled yet, or when CI is started by hand. The
+JavaScript is still bundled for both platforms on every run. The `ios-build` workflow compiles for the iOS simulator
+when run by hand. Its macOS minutes cost ten times as much, so it does not run automatically.
 
 ## Sharing a test build with someone elsewhere
 
@@ -170,10 +173,10 @@ cloudflared tunnel --url http://localhost:4000
 
 This puts your development server on the public internet for as long as it runs. The address changes every time, and your computer has to stay on and awake.
 
-| Their phone | How                                                                                                                                                                               |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Rebuild if the address changes |
-| iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                |
+| Their phone | How                                                                                                                                                                                                                                                                                                                          |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Android     | Set the `SHARE_API_URL` repository variable to that address and push to the `share/android` branch. CI builds an APK, which they install directly. Later pushes compile a new APK only when the native parts or the address change; otherwise they package an update. Put `[new apk]` in the commit message for a fresh copy |
+| iPhone      | TestFlight, which needs an Apple Developer account. Expo Go only opens a project on iPhone when the phone and your computer are signed in to the same Expo account                                                                                                                                                           |
 
 The APK is signed with a public debug key, so phones warn about it and it must not be used for anything beyond testing. Until notifications are set up it says "Not set up in this build" under Alerts, and alerts arrive only while the app is open.
 
@@ -204,8 +207,9 @@ involved.
 - **Recovery.** If an update crashes at launch, the library returns to the previous working version. Publishing a
   `rollback` folder (see [DEPLOYMENT.md](DEPLOYMENT.md#app-updates)) sends every phone back to the code inside its APK.
 - **Packaging.** `node scripts/export-update.mjs <folder>` in `apps/mobile`, in the same environment as the APK build.
-  The `share/android` workflow does this after compiling the APK and refuses to publish an artifact whose fingerprint
-  differs from the APK's.
+  The `share/android` workflow does this on every push. It compiles an APK only for a fingerprint it has not compiled
+  one for, or when the last commit message says `[new apk]`, and refuses an update whose fingerprint differs from the
+  APK's.
 
 Development builds use Metro and never check for updates, and neither do builds without an HTTPS server address.
 

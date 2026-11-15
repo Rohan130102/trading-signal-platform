@@ -135,10 +135,11 @@ place, so a half-copied update is never served:
 ```bash
 RUNTIME=$(cat runtime-version.txt); STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 ssh server "mkdir -p ~/signaldesk/app-updates/android/$RUNTIME"
-tar -C update -c . | ssh server "mkdir ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && tar -x -C ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && mv ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP ~/signaldesk/app-updates/android/$RUNTIME/$STAMP"
+tar --no-xattrs -C update -c . | ssh server "mkdir ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && tar -x -C ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && mv ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP ~/signaldesk/app-updates/android/$RUNTIME/$STAMP"
 ```
 
-The newest folder (by its UTC name) is what phones get. To withdraw an update, publish a newer empty folder holding
+The newest folder (by its UTC name) is what phones get. Files already inside the APK are not downloaded again, so an
+update that changes only screens and wording costs a phone about the size of the app's code (5 MB today). To withdraw an update, publish a newer empty folder holding
 only a file named `rollback`: phones go back to the code inside their APK. Deleting a folder brings back the one
 before it for phones that have not yet downloaded it. Keep older folders for a day or two; a phone that started
 downloading one finishes from it.

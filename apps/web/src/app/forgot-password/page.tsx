@@ -5,6 +5,7 @@ import { CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { type FormEvent, useState } from 'react';
 import { CodeStep } from '@/components/auth/code-step';
+import { useFocusOnLoad } from '@/components/auth/parts';
 import { AuthFrame } from '@/components/shell/auth-frame';
 import { Button, buttonClass, Field, FormError, Input } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -15,6 +16,7 @@ import { api } from '@/lib/api';
  */
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
+  const firstField = useFocusOnLoad<HTMLInputElement>();
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -89,7 +91,7 @@ export default function ForgotPasswordPage() {
               autoComplete="email"
               autoCapitalize="none"
               spellCheck={false}
-              autoFocus
+              ref={firstField}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />

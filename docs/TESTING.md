@@ -277,3 +277,37 @@ empty Signals list after signing in. The screens it checks were not changed.
 
 The rendered Performance page was checked at computer and phone width; the finished trades became a compact list on
 phones after the first look showed a cramped table. iOS was not run.
+
+### 15 November, fifth round: app updates without a new APK
+
+| Gate                                       | Result                                                                                                                                                                                                                                                                                |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Integration tests                          | **304 of 304** (new: nothing published, malformed requests, a signed manifest whose file hashes match the files served, a phone already up to date, a newer update, other fingerprints, a half-copied folder, unknown files, rollback, a changed byte breaking the signature)         |
+| Native app unit and component tests (Jest) | **108 of 108** (new: checking again on return after half an hour, nothing new or offline, builds without updates, restarting only when asked, the version label)                                                                                                                      |
+| Website end-to-end                         | **90 of 90** (new: the cursor stays in the password field when the page finishes loading; no browser autofocus in the server-rendered sign-in pages)                                                                                                                                  |
+| Fingerprint                                | The share build compared the APK's fingerprint with the update's and they matched (`15bdd694…`)                                                                                                                                                                                       |
+| On an Android emulator, live server        | The new APK asked the server and was told there was nothing new; after publishing, it downloaded the update (the signature was verified on the phone, only the app's code was fetched, images came from the APK), and on the next start it ran the update and was told it was current |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                                                                                                  |
+
+A CI run of the website suite failed once on the iPhone profile: a password typed while the page finished loading
+ended up at the start of the username. The server-rendered sign-in pages carried the browser's own `autofocus`, which
+Safari's engine can apply late; they now focus the first field only if nothing else has the cursor. The failure did not
+reproduce locally in 26 runs before the change, so the fix rests on the trace and on removing the attribute. On a
+second run with the app reset to its APK code, the "New version ready" notice appeared about a second after launch,
+once the update had downloaded; tapping "Restart now" restarted the app into the update, and the next start reported
+the update to the server and was told it was current.
+
+### 16 November: CI within the free runner minutes
+
+GitHub stopped starting CI jobs. The repository is private on the free plan, and its 2,000 monthly runner minutes were
+used up: about 2,079 since 1 November, more than half of them compiling Android builds. CI now compiles the Android app
+only for a native fingerprint it has not compiled yet, a newer push to a pull request cancels the run it replaces, and
+build artifacts are kept for days rather than weeks. The share build packages an update on every push and compiles an
+APK only for a new fingerprint.
+
+| Check                       | Result                                                                                                                                                                                                                                                                 |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Fingerprint, locally        | Unchanged after a JavaScript edit and after generating the Android project; changed by an app configuration edit                                                                                                                                                       |
+| New workflow steps, locally | Run with bash as a runner would: the fingerprint step, the build-or-skip decision in each case (built before, never built, started by hand, `[new apk]`), and the fingerprint check (passes when they match, fails when the update or APK differs or the APK has none) |
+| Workflows parse, formatting | Pass                                                                                                                                                                                                                                                                   |
+| On GitHub                   | **Not run.** GitHub starts no jobs until the minutes reset, so the cache lookups, the skipped Android job and the cancelled runs are unverified until then                                                                                                             |

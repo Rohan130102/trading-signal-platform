@@ -4,7 +4,7 @@ import { ACTIONS, loginSchema, type MeResponse } from '@signaldesk/domain';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { type FormEvent, Suspense, useRef, useState } from 'react';
-import { PasswordInput, readFields, useEarlyInput } from '@/components/auth/parts';
+import { PasswordInput, readFields, useEarlyInput, useFocusOnLoad } from '@/components/auth/parts';
 import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
 import { buttonClass } from '@/components/styles';
 import { Button, Field, FormError, Input } from '@/components/ui';
@@ -23,6 +23,7 @@ function LoginForm() {
   // One way to create an account: this button. Hidden only while the Super Admin has paused sign-up.
   const canSignUp = info.data?.signupOpen ?? true;
   const formRef = useRef<HTMLFormElement>(null);
+  const firstField = useFocusOnLoad<HTMLInputElement>();
   useEarlyInput(formRef, (values) => {
     if (typeof values.username === 'string') setIdentifier(values.username);
     if (typeof values.password === 'string') setPassword(values.password);
@@ -74,7 +75,7 @@ function LoginForm() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              autoFocus
+              ref={firstField}
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
             />
