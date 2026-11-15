@@ -1,9 +1,13 @@
 name: Shareable Android build
 
-# A test APK for someone outside this network: pushing to this branch builds it against SHARE_API_URL, a
-# repository variable holding an HTTPS address. It is signed with the debug key, so it is for testing only.
-# The same run packages the code as an over-the-air update (docs/MOBILE.md, "Updates without a new APK"); it is
-# published to the server by hand, and only if its fingerprint matches the APK's.
+# A test APK for someone outside this network, built against SHARE_API_URL, a repository variable holding an HTTPS
+# address. It is signed with the debug key, so it is for testing only.
+#
+# Every push to this branch packages the code as an over-the-air update (docs/MOBILE.md, "Updates without a new
+# APK"), which is published to the server by hand. An APK is compiled only when the native parts have changed:
+# installed APKs pick up everything else as an update, and compiling took most of the repository's monthly runner
+# minutes. Put [new apk] in the last commit's message to compile one anyway, for example for a new tester after the
+# last APK has expired from GitHub.
 on:
   push:
     branches: ['share/android']
@@ -13,7 +17,7 @@ permissions:
 
 jobs:
   apk:
-    name: Build the APK
+    name: Build the update, and the APK if needed
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -28,10 +32,6 @@ jobs:
         with:
           node-version: 22.23
           cache: npm
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
       - run: npm ci --no-audit --no-fund
       - run: npm run build -w @signaldesk/domain
       # Android notifications need Firebase compiled in. The file is written to a temporary folder outside the
@@ -47,9 +47,49 @@ jobs:
           else
             echo "::warning::Notifications are not in this APK. Set the EAS_PROJECT_ID variable and the GOOGLE_SERVICES_JSON secret (docs/MOBILE.md)."
           fi
-      - run: npx expo prebuild --platform android --no-install --clean
+      # Expo's hash of everything native, with the same settings as the APK. Installed APKs run only updates with
+      # their own fingerprint, so a new APK is needed only for a fingerprint no APK was built for.
+      - name: Fingerprint of the native parts
+        id: fingerprint
+        working-directory: apps/mobile
+        run: |
+          fingerprint=$(npx expo-updates runtimeversion:resolve --platform android | node -e 'process.stdout.write(JSON.parse(require("fs").readFileSync(0, "utf8")).runtimeVersion ?? "")')
+          if ! printf '%s' "$fingerprint" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Could not work out the native fingerprint (got '$fingerprint')."
+            exit 1
+          fi
+          echo "Native fingerprint: $fingerprint"
+          echo "value=$fingerprint" >> "$GITHUB_OUTPUT"
+      # A marker saved by the run that compiled an APK for this fingerprint. GitHub removes it after seven days
+      # unused; the next push then compiles an APK again.
+      - name: Was an APK already compiled for these native parts?
+        id: built
+        uses: actions/cache/restore@v4
+        with:
+          path: .share-apk-built
+          key: share-apk-${{ steps.fingerprint.outputs.value }}
+      - name: Decide whether to compile an APK
+        id: plan
+        env:
+          BUILT_BEFORE: ${{ steps.built.outputs.cache-hit }}
+          ASKED: ${{ contains(github.event.head_commit.message, '[new apk]') }}
+        run: |
+          if [ "$BUILT_BEFORE" = "true" ] && [ "$ASKED" != "true" ]; then
+            echo "apk=false" >> "$GITHUB_OUTPUT"
+            echo "No new APK: run $(cat .share-apk-built) compiled one for these native parts, and installed APKs get this code as an update. Put [new apk] in the commit message to compile one anyway." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "apk=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.plan.outputs.apk == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - if: steps.plan.outputs.apk == 'true'
+        run: npx expo prebuild --platform android --no-install --clean
         working-directory: apps/mobile
       - name: Compile the APK
+        if: steps.plan.outputs.apk == 'true'
         run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
         working-directory: apps/mobile/android
         env:
@@ -60,23 +100,42 @@ jobs:
         env:
           NODE_ENV: production
         run: node scripts/export-update.mjs "$RUNNER_TEMP/app-update"
-      - name: The update must suit this APK
+      - name: The update must suit the APK
+        env:
+          EXPECTED: ${{ steps.fingerprint.outputs.value }}
+          COMPILED: ${{ steps.plan.outputs.apk }}
         run: |
-          apk_fingerprint=$(unzip -p apps/mobile/android/app/build/outputs/apk/release/app-release.apk assets/fingerprint)
           update_fingerprint=$(tr -d '\n' < "$RUNNER_TEMP/app-update/runtime-version.txt")
-          echo "APK: $apk_fingerprint"
-          echo "Update: $update_fingerprint"
-          if [ -z "$apk_fingerprint" ] || [ "$apk_fingerprint" != "$update_fingerprint" ]; then
-            echo "::error::The update's fingerprint differs from the APK's, so no installed APK would run it."
+          echo "Native parts: $EXPECTED"
+          echo "Update:       $update_fingerprint"
+          if [ "$update_fingerprint" != "$EXPECTED" ]; then
+            echo "::error::The update's fingerprint differs from the native parts', so no installed APK would run it."
             exit 1
+          fi
+          if [ "$COMPILED" = "true" ]; then
+            apk_fingerprint=$(unzip -p apps/mobile/android/app/build/outputs/apk/release/app-release.apk assets/fingerprint || true)
+            echo "APK:          $apk_fingerprint"
+            if [ "$apk_fingerprint" != "$EXPECTED" ]; then
+              echo "::error::The APK's fingerprint differs from the update's, so it would not run this update."
+              exit 1
+            fi
           fi
       - uses: actions/upload-artifact@v4
         with:
           name: signaldesk-app-update
           path: ${{ runner.temp }}/app-update
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      - if: steps.plan.outputs.apk == 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: signaldesk-share-apk
           path: apps/mobile/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 7
+      - name: Remember that an APK exists for these native parts
+        if: steps.plan.outputs.apk == 'true' && steps.built.outputs.cache-hit != 'true'
+        run: echo "${{ github.run_id }}" > .share-apk-built
+      - if: steps.plan.outputs.apk == 'true' && steps.built.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .share-apk-built
+          key: share-apk-${{ steps.fingerprint.outputs.value }}
