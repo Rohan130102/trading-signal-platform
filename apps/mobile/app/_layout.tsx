@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { LiveAlertBanner, type ShownAlert } from '@/alerts/LiveAlertBanner';
+import { useUpdateChecks, useUpdateReady } from '@/lib/app-updates';
 import { API } from '@/lib/config';
 import { listenForNotifications, syncPushToken } from '@/lib/push';
 import { connectQueryToDevice, createQueryClient } from '@/lib/query';
@@ -15,7 +16,7 @@ import { gateRedirect, resolveDeepLink } from '@/lib/routing';
 import { SessionProvider, useSession } from '@/lib/session';
 import { ThemeProvider, useColors, useTheme } from '@/theme';
 import { space } from '@/theme/tokens';
-import { Button, EmptyState, Loading, Logo, T, ToastProvider } from '@/ui';
+import { Button, EmptyState, Loading, Logo, T, ToastProvider, useToast } from '@/ui';
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -138,6 +139,7 @@ function App() {
         </Stack>
         <NotificationBridge onOpen={setPending} />
         <LiveAlerts admin={me?.role === 'ADMIN'} />
+        <UpdateNotice />
         {API.problem && <Blocking title="This build cannot start" body={API.problem} />}
         {!API.problem && (state.phase === 'loading' || state.phase === 'starting') && <Starting />}
         {!API.problem && state.phase === 'unreachable' && <Unreachable />}
@@ -152,6 +154,30 @@ function NotificationBridge({ onOpen }: { onOpen: (path: string) => void }) {
   const arrived = useRef(pushArrived);
   arrived.current = pushArrived;
   useEffect(() => listenForNotifications(onOpen, (arrival) => arrived.current(arrival)), [onOpen]);
+  return null;
+}
+
+/**
+ * A new version downloaded in the background is mentioned once. It starts by itself next time; restarting now is
+ * the person's choice, never forced, and the notice waits while they are composing or taking the tour.
+ */
+function UpdateNotice() {
+  useUpdateChecks();
+  const { ready, restart } = useUpdateReady();
+  const toast = useToast();
+  const pathname = usePathname();
+  const told = useRef(false);
+  useEffect(() => {
+    if (!ready || told.current || pathname === '/compose' || pathname === '/onboarding') return;
+    told.current = true;
+    toast({
+      tone: 'info',
+      title: 'New version ready',
+      body: 'It starts the next time you open the app.',
+      action: { label: 'Restart now', onPress: restart },
+      duration: 10_000,
+    });
+  }, [pathname, ready, restart, toast]);
   return null;
 }
 

@@ -118,7 +118,15 @@ Plain text only: control characters are removed and nothing is rendered as HTML.
 addresses without credentials, is checked by the server and the database, and opens in the browser after a
 confirmation.
 
-## Known limits
+## App updates
+
+New app code can reach phones without a new APK, so the update channel is guarded like the APK itself. Every
+update answer is signed (RSA-SHA256) with a private key held only in the server's `.env`; the app carries the
+certificate and rejects anything else, and each downloaded file must match a hash inside the signed manifest. The
+endpoints are public because the same code ships in every APK; they serve only folders named like a publish time,
+files by the hash the manifest gave them, and nothing outside the update folder. Anyone with the server's `.env` (or
+SSH access) could publish code to phones, the same people who could already change the API. If the key leaks,
+remove it from `.env` at once (updates stop) and ship a new APK with a new certificate.
 
 - The general request limit is per instance and held in memory. Sign-in throttling is shared through PostgreSQL.
 - A session gets its own request allowance only after it has passed authentication, so subscribers sharing a mobile network's public address do not use up each other's. A made-up credential earns nothing and counts against its address.

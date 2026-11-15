@@ -3,6 +3,8 @@ import { APP_FILTER, APP_GUARD } from '@nestjs/core';
 import { AdminController } from './admin/admin.controller.js';
 import { AdminsController } from './admins/admins.controller.js';
 import { AdminsService } from './admins/admins.service.js';
+import { AppUpdatesController } from './app-updates/app-updates.controller.js';
+import { AppUpdatesService } from './app-updates/app-updates.service.js';
 import { AnnouncementsController } from './announcements/announcements.controller.js';
 import { AnnouncementsService } from './announcements/announcements.service.js';
 import { AuditService } from './audit/audit.service.js';
@@ -69,11 +71,13 @@ export const CONTROLLERS = [
   NotificationsController,
   AdminController,
   PublicController,
+  AppUpdatesController,
   HealthController,
 ];
 
 const SERVICES = [
   PrismaService,
+  AppUpdatesService,
   ListenerService,
   AuditService,
   SettingsService,

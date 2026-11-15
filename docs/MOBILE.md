@@ -185,6 +185,30 @@ To switch notifications on in that APK (all three are needed; nothing secret goe
 
 The app checks that the build contains Firebase before it offers to turn alerts on, so a half-configured build says it is not set up rather than failing. Do not expose the development bundler on the internet: only the API needs to be reachable, because the APK carries the app itself. Use made-up signals only.
 
+## Updates without a new APK
+
+Release builds that talk to an HTTPS server fetch new versions of their screens, wording and images from that server
+(`/api/v1/app-updates/manifest`, version 1 of the Expo Updates protocol). No Expo account or third-party service is
+involved.
+
+- **When it arrives.** The app asks at launch without delaying it, and again when it returns to the foreground at most
+  every half hour. A downloaded version starts the next time the app is opened; a short notice and a row on the
+  Account screen offer to restart now. Nothing restarts on its own while someone is reading a signal.
+- **Signed.** Every answer is signed with a private key that only the server holds; its certificate,
+  `code-signing/certificate.pem`, is compiled into the APK. The app rejects anything unsigned or signed by another
+  key, and checks every file against a hash inside the signed manifest. Losing the key means a new APK with a new
+  certificate; a leaked key means the same, at once. The key is never in the repository, CI or chat.
+- **Which phones.** `runtimeVersion` is a fingerprint of everything native: Expo SDK, native libraries, permissions,
+  plugins, icons. An update reaches only APKs with the same fingerprint, so code that needs a newer APK can never be
+  sent to an older one. Changes like those need a new APK; screens, wording, logic and images do not.
+- **Recovery.** If an update crashes at launch, the library returns to the previous working version. Publishing a
+  `rollback` folder (see [DEPLOYMENT.md](DEPLOYMENT.md#app-updates)) sends every phone back to the code inside its APK.
+- **Packaging.** `node scripts/export-update.mjs <folder>` in `apps/mobile`, in the same environment as the APK build.
+  The `share/android` workflow does this after compiling the APK and refuses to publish an artifact whose fingerprint
+  differs from the APK's.
+
+Development builds use Metro and never check for updates, and neither do builds without an HTTPS server address.
+
 ## What you need to provide
 
 Nothing below can be done on your behalf, and none of it is needed until the step it unlocks.
