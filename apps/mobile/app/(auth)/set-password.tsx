@@ -36,6 +36,7 @@ export default function SetPassword() {
 
   return (
     <AuthFrame
+      focused
       title="Choose your password"
       description="The password you were given only works once. Pick one that only you know."
     >

@@ -123,11 +123,14 @@ export const EMAIL_STATUS_COPY: Record<EmailStatus, { title: string; body: strin
   },
   NOT_SET_UP: {
     title: 'Email is not set up',
-    body: 'People cannot sign up until it is, because sign-up sends a code by email.',
+    body: 'Sign-up codes cannot be sent until it is. Meanwhile, people who sign up are asked to send their details to you on WhatsApp.',
   },
 };
 
-/** Sign-up needs both: the Super Admin allows it, and a code can actually be sent. */
+/**
+ * Whether sign-up can finish online right now: the Super Admin allows it, and a code can actually be sent. The
+ * form is shown whenever sign-up is open; without email it ends by sending the details to the team instead.
+ */
 export function signupAvailable(signupOpen: boolean, emailStatus: EmailStatus): boolean {
   return signupOpen && emailStatus !== 'NOT_SET_UP';
 }

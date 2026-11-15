@@ -96,7 +96,8 @@ The website's screens were checked in a browser, and its end-to-end suite covers
 ## Not built, or not verified
 
 - **Email delivery** needs an email account, entered by the Super Admin on the configuration screen (or SMTP settings
-  in the server's `.env`). Until then sign-up says it opens soon. Tests use the file transport; no real inbox was used.
+  in the server's `.env`). Until then no sign-up code can be sent, and the website asks the person to send their
+  details to the team on WhatsApp instead. Tests use the file transport; no real inbox was used.
 - **iOS** was not run on a simulator or iPhone: this Mac has no Xcode. The native iOS app does compile: the "iOS
   build" workflow built it for the simulator on 15 November with Xcode 26.6, after it was changed to use the macOS 26
   runner. Installing on an iPhone needs an Apple Developer account for signing.
@@ -123,3 +124,17 @@ website-only and are unchanged.
 
 Found and fixed while building this round: the admin settings endpoint returned the whole settings row, so any secret
 added to it would have reached every administrator. It now returns the platform settings only.
+
+## Third round, 15 November: sign-up form back, one way in, login design
+
+| Asked for                                        | What was done                                                                                                                                                                                                                                              |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sign-up must take the details, as before         | The form is always shown while sign-up is open: details, then the email code, then a password, then contacting the team (WhatsApp, or email when there is no WhatsApp number). A three-step bar shows where the person is. Going back keeps what was typed |
+| When email is not set up                         | The details step still works. If no code can be sent, the page says so and offers one tap to send the details to the team on WhatsApp, or by email. Email verification is not skipped                                                                      |
+| "Create account" and a "Sign up" tab: only one   | The Log In / Sign Up tabs are gone. "Create Account" is the one name, in the header, on the landing page and under the login form                                                                                                                          |
+| The login page did not look different on a phone | On phones and tablets the form now sits on a card under the brand, with a soft light behind it and three short points. Wide screens keep the brand panel beside it                                                                                         |
+
+The phone app then got the same changes: the sign-up form without email, the WhatsApp hand-off, the three steps,
+one Create Account button under the login form, and the brand on a soft light above a card. Security steps (a new
+password, two-step verification) and the "access ended" screen keep a small brand row only. "Sign Up" is no longer a
+name used anywhere.

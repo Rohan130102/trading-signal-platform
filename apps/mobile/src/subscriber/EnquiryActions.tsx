@@ -5,6 +5,7 @@ import {
   enquiryMessage,
   type MeResponse,
   whatsappAppLink,
+  whatsappDigits,
 } from '@signaldesk/domain';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -26,7 +27,7 @@ export function whatsappLinkFor(me: MeResponse, purpose: EnquiryPurpose): string
 }
 
 /**
- * The enquiry, from the phone. WhatsApp is opened directly; if the system reports that it cannot open it, WhatsApp
+ * The enquiry, from the phone: WhatsApp first, and email when the business has no WhatsApp number. WhatsApp is opened directly; if the system reports that it cannot open it, WhatsApp
  * is not installed, so the enquiry is emailed to support from the server instead, after this same tap. Opening
  * WhatsApp is never reported as a message sent.
  */
@@ -45,6 +46,7 @@ export function EnquiryActions({
   const [opened, setOpened] = useState(false);
   const [email, setEmail] = useState<(EnquiryResult & { fallback: boolean }) | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const hasWhatsapp = whatsappDigits(me.support.whatsapp) !== null;
 
   const sendEmail = async (fallback: boolean) => {
     const result = await api.post<EnquiryResult>('/me/enquiries', {
@@ -112,17 +114,19 @@ export function EnquiryActions({
 
   return (
     <View style={{ gap: space.sm }}>
-      <Button
-        testID="enquiry-whatsapp"
-        label={primaryLabel}
-        icon="logo-whatsapp"
-        variant="primary"
-        large
-        full
-        loading={busy === 'WHATSAPP'}
-        disabled={busy !== null}
-        onPress={() => void openWhatsapp()}
-      />
+      {hasWhatsapp && (
+        <Button
+          testID="enquiry-whatsapp"
+          label={primaryLabel}
+          icon="logo-whatsapp"
+          variant="primary"
+          large
+          full
+          loading={busy === 'WHATSAPP'}
+          disabled={busy !== null}
+          onPress={() => void openWhatsapp()}
+        />
+      )}
       {opened && (
         <T v="small" c="muted" accessibilityLiveRegion="polite">
           WhatsApp opened. Send the message there to reach support.
@@ -130,8 +134,9 @@ export function EnquiryActions({
       )}
       <Button
         testID="enquiry-email"
-        label={ACTIONS.emailSupportInstead}
+        label={hasWhatsapp ? ACTIONS.emailSupportInstead : primaryLabel}
         icon="mail-outline"
+        variant={hasWhatsapp ? undefined : 'primary'}
         large
         full
         loading={busy === 'EMAIL'}

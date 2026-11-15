@@ -30,7 +30,7 @@ function Content() {
   if (!copy) return null;
   const digits = me.support.whatsapp.replace(/\D/g, '');
   return (
-    <AuthFrame title={copy.title} description={copy.body}>
+    <AuthFrame focused title={copy.title} description={copy.body}>
       {copy.primary && <EnquiryActions me={me} purpose={copy.primary.purpose} primaryLabel={copy.primary.label} />}
       {copy.secondary && (
         <Button

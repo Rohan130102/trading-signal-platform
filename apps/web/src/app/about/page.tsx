@@ -72,7 +72,7 @@ export default async function AboutPage() {
   const about = info.aboutBody || info.serviceDescription;
   return (
     <div className="flex min-h-dvh flex-col">
-      <PublicHeader name={info.serviceName} signupAvailable={info.signupAvailable} />
+      <PublicHeader name={info.serviceName} signupOpen={info.signupOpen} />
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 sm:px-6">
         <section className="pb-10 pt-8 sm:pt-14">
           <p className="text-sm font-medium text-muted">About us</p>

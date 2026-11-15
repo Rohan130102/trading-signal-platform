@@ -1,9 +1,10 @@
 'use client';
 
-import { ACTIONS, type EnquiryOutcome, type EnquiryPurpose } from '@signaldesk/domain';
+import { ACTIONS, type EnquiryOutcome, type EnquiryPurpose, whatsappDigits } from '@signaldesk/domain';
 import { useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Mail, MessageCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { usePublicInfo } from '@/components/shell/auth-frame';
 import { Button, FormError } from '@/components/ui';
 import { api } from '@/lib/api';
 
@@ -14,8 +15,9 @@ interface EnquiryResult {
 }
 
 /**
- * The enquiry, from a browser. A browser cannot tell whether WhatsApp is installed or whether the message was sent,
- * so this only says that WhatsApp was opened, and always offers email alongside. The email goes from the server.
+ * The enquiry, from a browser: WhatsApp first, and email when the business has no WhatsApp number. A browser cannot
+ * tell whether WhatsApp is installed or whether the message was sent, so this only says that WhatsApp was opened,
+ * and offers email alongside. The email goes from the server.
  */
 export function EnquiryActions({
   purpose,
@@ -27,6 +29,9 @@ export function EnquiryActions({
   hideEmail?: boolean;
 }) {
   const client = useQueryClient();
+  const info = usePublicInfo();
+  // Until the facts arrive, WhatsApp is assumed: it is the usual way in.
+  const hasWhatsapp = info.data ? whatsappDigits(info.data.supportWhatsapp) !== null : true;
   const [opened, setOpened] = useState(false);
   const [email, setEmail] = useState<EnquiryResult | null>(null);
   const [busy, setBusy] = useState<'WHATSAPP' | 'EMAIL' | null>(null);
@@ -77,25 +82,27 @@ export function EnquiryActions({
 
   return (
     <div className="flex flex-col gap-3">
-      <Button
-        variant="primary"
-        size="lg"
-        className="w-full"
-        loading={busy === 'WHATSAPP'}
-        disabled={busy !== null}
-        onClick={() => void send('WHATSAPP')}
-      >
-        <MessageCircle className="size-4" aria-hidden />
-        {primaryLabel}
-      </Button>
+      {hasWhatsapp && (
+        <Button
+          variant="primary"
+          size="lg"
+          className="w-full"
+          loading={busy === 'WHATSAPP'}
+          disabled={busy !== null}
+          onClick={() => void send('WHATSAPP')}
+        >
+          <MessageCircle className="size-4" aria-hidden />
+          {primaryLabel}
+        </Button>
+      )}
       {opened && (
         <p className="text-[13px] text-muted" role="status">
           WhatsApp opened in a new tab. Send the message there to reach support.
         </p>
       )}
-      {!hideEmail && (
+      {(!hideEmail || !hasWhatsapp) && (
         <Button
-          variant="secondary"
+          variant={hasWhatsapp ? 'secondary' : 'primary'}
           size="lg"
           className="w-full"
           loading={busy === 'EMAIL'}
@@ -103,7 +110,7 @@ export function EnquiryActions({
           onClick={() => void send('EMAIL')}
         >
           <Mail className="size-4" aria-hidden />
-          {ACTIONS.emailSupportInstead}
+          {hasWhatsapp ? ACTIONS.emailSupportInstead : primaryLabel}
         </Button>
       )}
       {email && (
@@ -114,7 +121,9 @@ export function EnquiryActions({
               <span>Your enquiry was emailed to support.</span>
             </>
           ) : email.outcome === 'EMAIL_FAILED' ? (
-            <span className="text-stop">The email could not be sent. Try again, or use WhatsApp.</span>
+            <span className="text-stop">
+              The email could not be sent. {hasWhatsapp ? 'Try again, or use WhatsApp.' : 'Try again.'}
+            </span>
           ) : (
             <span className="text-muted">Sending your enquiry…</span>
           )}

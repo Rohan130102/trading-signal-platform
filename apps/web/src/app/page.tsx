@@ -61,14 +61,14 @@ const STEPS = [
 export default async function HomePage() {
   const info = await getPublicInfo();
   const whatsapp = whatsappDigits(info.supportWhatsapp);
-  const primary = info.signupAvailable
+  const primary = info.signupOpen
     ? { href: '/signup', label: ACTIONS.createAccount }
     : whatsapp
       ? { href: `https://wa.me/${whatsapp}`, label: 'Message us on WhatsApp' }
       : { href: '/login', label: ACTIONS.logIn };
   return (
     <div className="flex min-h-dvh flex-col">
-      <PublicHeader name={info.serviceName} signupAvailable={info.signupAvailable} />
+      <PublicHeader name={info.serviceName} signupOpen={info.signupOpen} />
       <main className="flex-1">
         <section className="relative overflow-hidden">
           <div
@@ -101,7 +101,7 @@ export default async function HomePage() {
                   {ACTIONS.logIn}
                 </Link>
               </div>
-              {!info.signupAvailable && info.signupOpen === false && (
+              {!info.signupOpen && (
                 <p className="mt-3 text-sm text-muted">New sign-ups are paused. Contact us to join.</p>
               )}
             </div>
@@ -188,7 +188,7 @@ export default async function HomePage() {
             <div>
               <h2 className="text-xl font-semibold tracking-tight">Ready when you are</h2>
               <p className="mt-1 text-muted">
-                {info.signupAvailable
+                {info.signupOpen
                   ? 'Create your account in a minute. You choose a subscription with our team afterwards.'
                   : 'Message our team to join.'}
               </p>

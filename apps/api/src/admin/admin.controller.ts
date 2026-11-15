@@ -103,14 +103,14 @@ export class AdminController {
         href: '/admin/notifications',
       });
     }
-    // Sign-up sends a code by email, so without email nobody new can join.
+    // Sign-up sends a code by email. Without email, new people can only send their details on WhatsApp.
     const [{ signupOpen }, emailStatus] = await Promise.all([this.settings.get(), this.email.status()]);
     if (signupOpen && emailStatus === 'NOT_SET_UP') {
       alerts.push({
         level: 'WARNING',
         message: auth.user.isMasterAdmin
-          ? 'Email is not set up, so new people cannot sign up. Set it up in Configuration, Email.'
-          : 'Email is not set up, so new people cannot sign up. Ask the Super Admin to set it up.',
+          ? 'Email is not set up, so sign-up codes cannot be sent. Set it up in Configuration, Email.'
+          : 'Email is not set up, so sign-up codes cannot be sent. Ask the Super Admin to set it up.',
         href: '/admin/settings?tab=email',
       });
     }
