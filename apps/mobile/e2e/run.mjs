@@ -216,6 +216,8 @@ async function login(id, password) {
     await d.type({ id: 'login-id' }, id);
     await d.hideKeyboard();
   }
+  // The brand sits above the form, so on a short screen the button can be below the fold.
+  await d.scrollTo({ id: 'login-submit' });
   await d.tap({ id: 'login-submit' });
 }
 
@@ -255,6 +257,7 @@ J['sign-in-errors'] = async () => {
   await signOutIfNeeded();
   await d.screenshot('login');
   await d.hideKeyboard();
+  await d.scrollTo({ id: 'login-submit' });
   await d.tap({ id: 'login-submit' });
   await expectText('Enter your email or username');
   await login(state.subscriber.loginId, 'definitely-wrong-password');
@@ -268,6 +271,7 @@ J['sign-in-errors'] = async () => {
 
 J['disclosures-before-sign-in'] = async () => {
   await signOutIfNeeded();
+  await d.scrollTo({ id: 'login-disclosures' });
   await d.tap({ id: 'login-disclosures' });
   await expectText('Risk disclosure');
   await expectText(/substantial risk/);
@@ -1325,8 +1329,13 @@ J['admin-configuration-and-free-days'] = async () => {
 J['sign-up'] = async () => {
   await signOutIfNeeded();
   await freePhone();
-  await d.tap({ id: 'tab-signup' });
+  // One way to create an account: the button under the login form. No Sign Up tab.
+  assert(!(await d.has({ id: 'tab-signup' })), 'No Sign Up tab');
+  await d.scrollTo({ id: 'login-create' });
+  await d.screenshot('login');
+  await d.tap({ id: 'login-create' });
   await d.waitFor({ id: 'signup-first' });
+  assert(await d.has({ any: /Step 1 of 3/ }), 'Sign-up shows its three steps');
   await d.screenshot('signup-empty');
   await d.scrollTo({ id: 'signup-submit' });
   await d.hideKeyboard();
@@ -1436,6 +1445,7 @@ J['upcoming-trade'] = async () => {
 
 J['forgot-password'] = async () => {
   await signOutIfNeeded();
+  await d.scrollTo({ id: 'login-forgot' });
   await d.tap({ id: 'login-forgot' });
   await d.waitFor({ id: 'reset-email' });
   const before = inbox(signUpEmail).length;

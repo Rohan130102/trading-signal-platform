@@ -1,26 +1,9 @@
 import { ACTIONS, type ChallengeResponse, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
-import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View } from 'react-native';
 import { api } from '@/lib/api';
 import { space } from '@/theme/tokens';
-import { Button, Field, FormError, Segmented, T } from '@/ui';
-
-/** Two clearly separate ways in. */
-export function AuthTabs({ current }: { current: 'login' | 'signup' }) {
-  const router = useRouter();
-  return (
-    <Segmented<'login' | 'signup'>
-      label="Account"
-      value={current}
-      onChange={(v) => v !== current && router.replace(v === 'login' ? '/login' : '/signup')}
-      options={[
-        { value: 'login', label: ACTIONS.logIn, testID: 'tab-login' },
-        { value: 'signup', label: ACTIONS.signUp, testID: 'tab-signup' },
-      ]}
-    />
-  );
-}
+import { Button, Field, FormError, T } from '@/ui';
 
 /** Field messages from the server's validation, keyed by field name. */
 export function issuesByField(error: unknown): Record<string, string> {

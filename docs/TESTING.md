@@ -245,4 +245,15 @@ Automated scans catch a limited share of accessibility issues. Keyboard paths ar
 | Types, lint, formatting, secret scan | Pass                                                                                                                                                                     |
 
 The four-step sign-up test stubs the server's answers, because the test server sends no email; the server side of each
-step is covered by the integration tests. The phone app was not changed in this round, so its tests were not rerun.
+step is covered by the integration tests.
+
+Then the phone app got the same changes:
+
+| Gate                                       | Result                                                                                                                                                                                              |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native app unit and component tests (Jest) | **103 of 103** (sign-up without email, the WhatsApp hand-off with the typed details, email first without a WhatsApp number, paused sign-up)                                                         |
+| Native app journeys, Android emulator      | **9 of 10** chosen for the screens that changed: sign-in errors, disclosures, first sign-in (subscriber, admin), expiry, keyboard, sign-up with a real emailed code, trial welcome, forgot password |
+| Types, lint, formatting, secret scan       | Pass                                                                                                                                                                                                |
+
+The tenth, the large-text journey, needs an open signal left by journeys that were not in this run; it stopped on an
+empty Signals list after signing in. The screens it checks were not changed.

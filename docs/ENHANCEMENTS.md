@@ -125,7 +125,7 @@ website-only and are unchanged.
 Found and fixed while building this round: the admin settings endpoint returned the whole settings row, so any secret
 added to it would have reached every administrator. It now returns the platform settings only.
 
-## Third round, 15 November: sign-up form back, one way in, login design (website first)
+## Third round, 15 November: sign-up form back, one way in, login design
 
 | Asked for                                        | What was done                                                                                                                                                                                                                                              |
 | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -134,4 +134,7 @@ added to it would have reached every administrator. It now returns the platform 
 | "Create account" and a "Sign up" tab: only one   | The Log In / Sign Up tabs are gone. "Create Account" is the one name, in the header, on the landing page and under the login form                                                                                                                          |
 | The login page did not look different on a phone | On phones and tablets the form now sits on a card under the brand, with a soft light behind it and three short points. Wide screens keep the brand panel beside it                                                                                         |
 
-The phone app still has the earlier sign-up screens. It gets the same changes once the website is approved.
+The phone app then got the same changes: the sign-up form without email, the WhatsApp hand-off, the three steps,
+one Create Account button under the login form, and the brand on a soft light above a card. Security steps (a new
+password, two-step verification) and the "access ended" screen keep a small brand row only. "Sign Up" is no longer a
+name used anywhere.

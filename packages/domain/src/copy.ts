@@ -7,7 +7,6 @@ import type { MeResponse } from './dto.js';
  */
 export const ACTIONS = {
   logIn: 'Log In',
-  signUp: 'Sign Up',
   createAccount: 'Create Account',
   forgotPassword: 'Forgot Password?',
   verifyEmail: 'Verify Email',

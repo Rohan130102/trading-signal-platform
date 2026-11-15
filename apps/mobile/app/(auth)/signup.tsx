@@ -7,22 +7,85 @@ import {
   type PublicInfo,
   registrationSchema,
   whatsappDigits,
+  whatsappWebLink,
 } from '@signaldesk/domain';
-import { useQuery } from '@tanstack/react-query';
 import { Link, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
-import { AuthTabs, CodeStep, issuesByField } from '@/subscriber/AuthParts';
+import { CodeStep, issuesByField } from '@/subscriber/AuthParts';
 import { useColors } from '@/theme';
-import { space } from '@/theme/tokens';
-import { AuthFrame, Button, Field, FormError, type InputHandle, T, ToggleRow } from '@/ui';
+import { radius, space } from '@/theme/tokens';
+import { AuthFrame, Button, Field, FormError, type InputHandle, T, ToggleRow, usePublicInfo } from '@/ui';
 
-type Step = 'details' | 'code' | 'password';
+type Step = 'details' | 'code' | 'password' | 'contact';
 
-function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void }) {
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', mobile: '', age: '', consent: false });
+interface Form {
+  firstName: string;
+  lastName: string;
+  email: string;
+  mobile: string;
+  age: string;
+  consent: boolean;
+}
+
+/** What was typed, checked: the mobile number has its country code. */
+interface Checked {
+  firstName: string;
+  lastName: string;
+  email: string;
+  mobile: string;
+  age: number;
+}
+
+const EMPTY: Form = { firstName: '', lastName: '', email: '', mobile: '', age: '', consent: false };
+const STEP_NAMES = ['Your details', 'Verify email', 'Create password'] as const;
+/** Email could not send a code. Nothing is lost: the details go to the team, who set up the account. */
+const EMAIL_PROBLEMS = new Set(['EMAIL_NOT_CONFIGURED', 'EMAIL_SEND_FAILED']);
+
+/** How far through sign-up the person is, as a bar and in words. */
+function Progress({ step }: { step: 1 | 2 | 3 }) {
+  const c = useColors();
+  return (
+    <View
+      style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}
+      accessible
+      accessibilityLabel={`Step ${step} of 3: ${STEP_NAMES[step - 1]}`}
+      testID="signup-progress"
+    >
+      <View style={{ flex: 1, flexDirection: 'row', gap: 6 }}>
+        {[1, 2, 3].map((n) => (
+          <View
+            key={n}
+            style={{
+              flex: 1,
+              height: 4,
+              borderRadius: radius.pill,
+              backgroundColor: n <= step ? c.text : c.lineStrong,
+            }}
+          />
+        ))}
+      </View>
+      <T v="caption" c="muted" style={{ fontWeight: '600' }}>
+        Step {step} of 3
+      </T>
+    </View>
+  );
+}
+
+function Details({
+  form,
+  setForm,
+  onSent,
+  onEmailProblem,
+}: {
+  form: Form;
+  setForm: (update: (form: Form) => Form) => void;
+  onSent: (challenge: ChallengeResponse) => void;
+  onEmailProblem: (details: Checked) => void;
+}) {
+  const router = useRouter();
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
@@ -33,7 +96,7 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
     age: useRef<InputHandle>(null),
   };
   // Editing a field clears its message: it was about the old value.
-  const set = (key: keyof typeof form) => (value: string | boolean) => {
+  const set = (key: keyof Form) => (value: string | boolean) => {
     setForm((f) => ({ ...f, [key]: value }));
     setErrors((e) => {
       const { [key]: _cleared, ...rest } = e;
@@ -55,9 +118,14 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
     try {
       onSent(await api.post<ChallengeResponse>('/auth/register', body));
     } catch (caught) {
+      setBusy(false);
+      if (caught instanceof ApiError && EMAIL_PROBLEMS.has(caught.code)) {
+        const { consent: _consent, ...details } = parsed.data;
+        onEmailProblem(details);
+        return;
+      }
       setErrors(issuesByField(caught));
       setError(caught);
-      setBusy(false);
     }
   };
   return (
@@ -100,6 +168,7 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
         value={form.email}
         onChangeText={set('email')}
         error={errors.email}
+        hint="We send a code to this address to confirm it."
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
@@ -116,7 +185,7 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
         value={form.mobile}
         onChangeText={set('mobile')}
         error={errors.mobile}
-        hint="Without a country code, +91 is used."
+        hint="Your WhatsApp number if you have one. Without a country code, +91 is used."
         placeholder="+91 98765 43210"
         keyboardType="phone-pad"
         autoComplete="tel"
@@ -148,22 +217,36 @@ function Details({ onSent }: { onSent: (challenge: ChallengeResponse) => void })
         </T>
       ) : null}
       <FormError error={Object.keys(errors).length > 0 ? null : error} />
+      <Link href="/disclosures" asChild>
+        <Pressable accessibilityRole="link" hitSlop={10} style={{ alignSelf: 'flex-start' }}>
+          <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
+            Read the privacy notice
+          </T>
+        </Pressable>
+      </Link>
       <Button
         testID="signup-submit"
-        label={ACTIONS.createAccount}
+        label="Continue"
         variant="primary"
         large
         full
         loading={busy}
         onPress={() => void submit()}
       />
-      <Link href="/disclosures" asChild>
-        <Pressable accessibilityRole="link" hitSlop={10} style={{ alignSelf: 'center' }}>
-          <T v="small" c="muted" style={{ textDecorationLine: 'underline' }}>
-            Privacy notice
+      <Pressable
+        accessibilityRole="link"
+        hitSlop={10}
+        style={{ alignSelf: 'center' }}
+        testID="signup-login"
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/login'))}
+      >
+        <T v="small" c="muted">
+          Already have an account?{' '}
+          <T v="small" style={{ fontWeight: '700' }}>
+            {ACTIONS.logIn}
           </T>
-        </Pressable>
-      </Link>
+        </T>
+      </Pressable>
     </View>
   );
 }
@@ -224,7 +307,7 @@ function Password({ setupToken }: { setupToken: string }) {
       <FormError error={error} />
       <Button
         testID="signup-create-password"
-        label={ACTIONS.createPassword}
+        label={ACTIONS.createAccount}
         variant="primary"
         large
         full
@@ -236,22 +319,86 @@ function Password({ setupToken }: { setupToken: string }) {
 }
 
 /**
- * Shown instead of the form when an account cannot be created right now: sign-up is paused, or email is not set
- * up so no code could be sent. Says so before anything is typed, and offers a way to reach the team.
+ * When no code could be emailed. The person's details are not lost: one tap sends them to the team on WhatsApp,
+ * or by email when there is no WhatsApp number, and the team sets up the account.
  */
-function SignupUnavailable({ info }: { info: PublicInfo }) {
+function Contact({ details, info, onBack }: { details: Checked; info: PublicInfo | undefined; onBack: () => void }) {
+  const c = useColors();
+  const message = [
+    `Hello, I would like to create a ${info?.serviceName ?? 'SignalDesk'} account.`,
+    `Name: ${details.firstName} ${details.lastName}`,
+    `Email: ${details.email}`,
+    `Mobile: ${details.mobile}`,
+    `Age: ${details.age}`,
+  ].join('\n');
+  const whatsapp = whatsappWebLink(info?.supportWhatsapp ?? '', message);
+  const email = info?.supportEmail
+    ? `mailto:${info.supportEmail}?subject=${encodeURIComponent(`New account: ${details.firstName} ${details.lastName}`)}&body=${encodeURIComponent(message)}`
+    : null;
+  const rows: [string, string][] = [
+    ['Name', `${details.firstName} ${details.lastName}`],
+    ['Email', details.email],
+    ['Mobile', details.mobile],
+  ];
+  return (
+    <View style={{ gap: space.md }} testID="signup-contact">
+      <View
+        style={{
+          borderRadius: radius.md,
+          borderWidth: 1,
+          borderColor: c.line,
+          backgroundColor: c.bg,
+          padding: space.md,
+          gap: 6,
+        }}
+      >
+        {rows.map(([label, value]) => (
+          <View key={label} style={{ flexDirection: 'row', gap: space.md }}>
+            <T v="small" c="muted" style={{ width: 56 }}>
+              {label}
+            </T>
+            <T v="small" numberOfLines={1} style={{ flex: 1, fontWeight: '600' }}>
+              {value}
+            </T>
+          </View>
+        ))}
+      </View>
+      {whatsapp ? (
+        <Button
+          testID="signup-whatsapp"
+          icon="logo-whatsapp"
+          label="Send my details on WhatsApp"
+          variant="primary"
+          large
+          full
+          onPress={() => void Linking.openURL(whatsapp)}
+        />
+      ) : null}
+      {email ? (
+        <Button
+          testID="signup-email"
+          icon="mail-outline"
+          label={whatsapp ? 'Email them instead' : 'Email my details'}
+          variant={whatsapp ? undefined : 'primary'}
+          large
+          full
+          onPress={() => void Linking.openURL(email)}
+        />
+      ) : null}
+      {!whatsapp && !email ? <T c="muted">Please try again later. Your details have not been sent anywhere.</T> : null}
+      <Button testID="signup-retry" variant="ghost" label="Try again" full onPress={onBack} />
+    </View>
+  );
+}
+
+/** Shown instead of the form only while the Super Admin has paused sign-up, with a way to reach the team. */
+function SignupPaused({ info }: { info: PublicInfo }) {
   const digits = whatsappDigits(info.supportWhatsapp);
-  const paused = !info.signupOpen;
   return (
     <AuthFrame
-      title={paused ? 'Sign-up is paused' : 'Sign-up opens soon'}
-      description={
-        paused
-          ? 'New accounts cannot be created at the moment. Message our team and they will help you join.'
-          : 'We cannot create new accounts in the app just yet. Message our team and they will set you up.'
-      }
+      title="Sign-up is paused"
+      description="New accounts cannot be created at the moment. Message our team and they will help you join."
     >
-      <AuthTabs current="signup" />
       <View style={{ gap: space.md }} testID="signup-unavailable">
         {digits ? (
           <Button
@@ -269,6 +416,8 @@ function SignupUnavailable({ info }: { info: PublicInfo }) {
             testID="signup-email"
             icon="mail-outline"
             label={`Email ${info.supportEmail}`}
+            variant={digits ? undefined : 'primary'}
+            large
             full
             onPress={() => void Linking.openURL(`mailto:${info.supportEmail}`)}
           />
@@ -279,23 +428,47 @@ function SignupUnavailable({ info }: { info: PublicInfo }) {
 }
 
 export default function SignUp() {
-  const info = useQuery({ queryKey: ['public-info'], queryFn: () => api.get<PublicInfo>('/public/info') });
+  const info = usePublicInfo();
   const [step, setStep] = useState<Step>('details');
+  // Kept here, so going back from a later step shows what was typed.
+  const [form, setForm] = useState<Form>(EMPTY);
   const [challenge, setChallenge] = useState<ChallengeResponse | null>(null);
   const [setupToken, setSetupToken] = useState<string | null>(null);
-  if (step === 'details' && info.data && !info.data.signupAvailable) return <SignupUnavailable info={info.data} />;
+  const [checked, setChecked] = useState<Checked | null>(null);
+
+  if (step === 'details' && info.data && !info.data.signupOpen) return <SignupPaused info={info.data} />;
+  if (step === 'contact' && checked) {
+    return (
+      <AuthFrame
+        title="We could not send your code"
+        description="Email codes are not working on our side right now. Send your details to our team and they will set up your account."
+      >
+        <Contact details={checked} info={info.data} onBack={() => setStep('details')} />
+      </AuthFrame>
+    );
+  }
+  const n = step === 'details' ? 1 : step === 'code' ? 2 : 3;
   const title =
     step === 'details' ? 'Create your account' : step === 'code' ? ACTIONS.verifyEmail : ACTIONS.createPassword;
   const description =
-    step === 'code' && challenge ? `Enter the code we sent to ${maskEmail(challenge.email)}.` : undefined;
+    step === 'details'
+      ? 'It takes a minute. You get signals once your subscription or trial starts.'
+      : step === 'code' && challenge
+        ? `Enter the 6-digit code we sent to ${maskEmail(challenge.email)}.`
+        : 'You will use it with your email address to log in.';
   return (
-    <AuthFrame title={title} description={description}>
-      {step === 'details' && <AuthTabs current="signup" />}
+    <AuthFrame title={title} description={description} eyebrow={<Progress step={n} />}>
       {step === 'details' && (
         <Details
+          form={form}
+          setForm={setForm}
           onSent={(c) => {
             setChallenge(c);
             setStep('code');
+          }}
+          onEmailProblem={(details) => {
+            setChecked(details);
+            setStep('contact');
           }}
         />
       )}
