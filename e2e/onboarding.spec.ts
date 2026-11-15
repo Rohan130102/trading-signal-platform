@@ -125,3 +125,49 @@ test('Create Account goes details, email code, password, then contact with the t
     '/api/v1/auth/register/complete',
   ]);
 });
+
+test('what is typed or autofilled before the page has finished loading is still used to log in', async ({ page }) => {
+  // On a slow connection the fields appear before the page's scripts run, and people (or password managers) fill
+  // them in. Holding the scripts back recreates that.
+  let release = () => {};
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/_next/static/chunks/**/*.js', async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  await page.getByLabel('Email or username').fill('nobody.here');
+  const password = page.getByLabel('Password', { exact: true });
+  await password.fill('wrong-password');
+  release();
+  // The page is ready once its own controls respond.
+  await expect(async () => {
+    await page.getByRole('button', { name: /show password/i }).click();
+    await expect(password).toHaveAttribute('type', 'text', { timeout: 500 });
+  }).toPass();
+  await page.getByRole('button', { name: 'Log In', exact: true }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'That email, username or password is not right.' }),
+  ).toBeVisible();
+  await expect(page.getByText('Enter your email or username')).toHaveCount(0);
+});
+
+test('sign-up details typed before the page has finished loading are kept', async ({ page }) => {
+  let release = () => {};
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/_next/static/chunks/**/*.js', async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.goto('/signup', { waitUntil: 'domcontentloaded' });
+  await fillDetails(page);
+  // The page asks for the service's details as soon as it is interactive.
+  const ready = page.waitForResponse('**/api/v1/public/info');
+  release();
+  await ready;
+  await page.getByRole('button', { name: 'Continue' }).click();
+  // The test server sends no email, so the details are offered to the team instead: all of them arrived.
+  await expect(page.getByRole('heading', { name: 'We could not send your code' })).toBeVisible();
+  await expect(page.getByText('asha.rao@example.test')).toBeVisible();
+  await expect(page.getByText('+919876543210')).toBeVisible();
+});
