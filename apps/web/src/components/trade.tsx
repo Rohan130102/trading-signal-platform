@@ -1,9 +1,6 @@
 'use client';
 
 import {
-  BASIS_LABELS,
-  basisShort,
-  type CalculationBasis,
   eventHeading,
   CLOSE_REASON_LABELS,
   type Direction,
@@ -258,7 +255,7 @@ function ChangeLine({ event }: { event: FeedEvent }) {
         <span className="num font-semibold">{fmt(p.exitPrice)}</span>
         {p.movementPoints && (
           <span className="ml-2 text-[13px] text-muted">
-            <span className="num">{signedPoints(p.movementPoints)}</span> ({basisShort(p.basis)})
+            <span className="num">{signedPoints(p.movementPoints)}</span>
           </span>
         )}
       </p>
@@ -480,33 +477,27 @@ export function Timeline({
   );
 }
 
-export function BasisNote({ basis }: { basis: CalculationBasis }) {
-  return <span className="text-xs text-subtle">{BASIS_LABELS[basis]}</span>;
-}
-
-/** What a subscriber is told about an outcome. Explicitly not a statement of their own result. */
+/** How a trade finished: its result and exit. */
 export function OutcomeSummary({ outcome, precision }: { outcome: PublicOutcome; precision: number }) {
-  const label = { WIN: 'Favourable', LOSS: 'Unfavourable', BREAKEVEN: 'Breakeven', UNRESOLVED: 'Not measured' }[
-    outcome.outcome
-  ];
+  const label = { WIN: 'Win', LOSS: 'Loss', BREAKEVEN: 'Breakeven', UNRESOLVED: null }[outcome.outcome];
   const tone = { WIN: 'success', LOSS: 'stop', BREAKEVEN: 'neutral', UNRESOLVED: 'neutral' }[outcome.outcome] as
     'success' | 'stop' | 'neutral';
   return (
     <div className="rounded-lg bg-bg p-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone={tone}>{label}</Badge>
+        {label && <Badge tone={tone}>{label}</Badge>}
         {outcome.reason && <span className="text-sm text-muted">{CLOSE_REASON_LABELS[outcome.reason]}</span>}
       </div>
       <dl className="mt-2 grid grid-cols-2 gap-3">
         {outcome.averageExit && (
-          <PriceCell label="Average exit" value={formatPrice({ pricePrecision: precision }, outcome.averageExit)} />
+          <PriceCell
+            label={outcome.closedFraction === '1' ? 'Exit' : 'Average exit'}
+            value={formatPrice({ pricePrecision: precision }, outcome.averageExit)}
+          />
         )}
-        {outcome.weightedPoints && <PriceCell label="Move recorded" value={signedPoints(outcome.weightedPoints)} />}
+        {outcome.weightedPoints && <PriceCell label="Result" value={signedPoints(outcome.weightedPoints)} />}
         {outcome.closedFraction !== '1' && <PriceCell label="Closed so far" value={percent(outcome.closedFraction)} />}
       </dl>
-      <p className="mt-2 text-xs leading-relaxed text-subtle">
-        {BASIS_LABELS[outcome.basis]}. Not any subscriber&rsquo;s own result.
-      </p>
     </div>
   );
 }

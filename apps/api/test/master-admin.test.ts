@@ -109,11 +109,30 @@ describe('Master Admin', () => {
         screenshotsAllowed: true,
       }),
       await client.post(`/admin/admins/${id}/master`, { isMasterAdmin: true }),
+      await client.get('/admin/settings/email'),
+      await client.req('PUT', '/admin/settings/email', { enabled: false }),
+      await client.post('/admin/settings/email/test', { to: 'someone@example.test' }),
+      await client.req('PUT', '/admin/settings/support', {
+        supportWhatsapp: '+919876543210',
+        supportEmail: 'x@example.test',
+      }),
     ];
     for (const res of denied) {
       expect(res.status).toBe(403);
-      expect(res.body.error.code).toBe('MASTER_ADMIN_REQUIRED');
+      // The ordinary refusal, which says nothing about who could do this.
+      expect(res.body.error.code).toBe('FORBIDDEN');
+      expect(JSON.stringify(res.body)).not.toMatch(/master|super/i);
     }
+
+    // Nothing on their screens mentions a higher role or what it did.
+    const dashboard = await client.get('/admin/dashboard');
+    expect(JSON.stringify(dashboard.body)).not.toMatch(/master admin|super admin/i);
+    const audit = await client.get('/admin/audit?pageSize=100');
+    expect(audit.status).toBe(200);
+    const actions = audit.body.entries.map((e: { action: string }) => e.action);
+    expect(actions.some((a: string) => /^ADMIN_|^MASTER_ADMIN|SETTINGS_UPDATED|TRADES_REMOVED/.test(a))).toBe(false);
+    const rootAudit = await admin().get('/admin/audit?action=ADMIN_CREATED');
+    expect(rootAudit.body.entries.length).toBeGreaterThan(0);
     const list = await admin().get('/admin/admins');
     const row = list.body.admins.find((a: { id: string }) => a.id === id);
     expect(row).toMatchObject({ isMasterAdmin: false, mfaEnabled: true, status: 'ACTIVE', createdBy: 'Root Admin' });
@@ -310,8 +329,9 @@ describe('removing trades from subscriber screens', () => {
     const listed = (await admin().get('/admin/trades?removed=REMOVED&pageSize=100')).body.trades;
     expect(listed.find((t: { id: string }) => t.id === closed.id)?.removedAt).toEqual(expect.any(String));
     const after = (await admin().get('/admin/performance')).body;
-    expect(after.lifecycle.losses).toBe(before.lifecycle.losses);
-    expect(after.removedFromScreens).toBe(before.removedFromScreens + 1);
+    // Still counted: hiding a trade from subscribers never changes the results.
+    expect(after.results.losses).toBe(before.results.losses);
+    expect(after.counts.total).toBe(before.counts.total);
     const correct = await act(detail, 'CORRECT', { reason: 'Should not alert anyone', exitPrice: '1' });
     expect(correct.status).toBe(409);
     expect(correct.body.error.code).toBe('TRADE_REMOVED');
@@ -331,7 +351,7 @@ describe('removing trades from subscriber screens', () => {
 });
 
 describe('each subscriber’s own history', () => {
-  it('starts with their membership, except live trades; the ALL scope shows everything', async () => {
+  it('starts with their membership, live trades included; the ALL scope shows everything', async () => {
     const earlier = await closedTrade();
     const stillLive = await activeTrade();
     const sub = await newSubscriber(30);
@@ -339,7 +359,8 @@ describe('each subscriber’s own history', () => {
       (await sub.client.get('/trades/history?pageSize=100')).body.trades.map((t: { id: string }) => t.id);
 
     expect(await ids()).not.toContain(earlier.id);
-    expect(await ids()).toContain(stillLive.id);
+    // A trade published before they joined stays out even while it is live: its updates would have no context.
+    expect(await ids()).not.toContain(stillLive.id);
     expect((await sub.client.get(`/trades/${earlier.id}`)).status).toBe(404);
     const alerts = (await sub.client.get('/notifications?limit=50')).body;
     expect(alerts.items).toHaveLength(0);
@@ -347,6 +368,7 @@ describe('each subscriber’s own history', () => {
 
     await setRules({ historyScope: 'ALL' });
     expect(await ids()).toContain(earlier.id);
+    expect(await ids()).toContain(stillLive.id);
     await setRules({ historyScope: 'MEMBERSHIP' });
   });
 
@@ -423,17 +445,18 @@ describe('public results page', () => {
       status: 'CLOSED',
       outcome: 'LOSS',
       publishedAt: expect.any(String),
-      activatedAt: expect.any(String),
-      exitedAt: expect.any(String),
+      finishedAt: expect.any(String),
     });
-    expect(all.removedFromScreens).toBeGreaterThanOrEqual(1);
-    expect(all.methodology.definitions.map((d: { term: string }) => d.term)).toEqual(
-      expect.arrayContaining(['Published', 'Activated', 'Exit', 'Win rate']),
-    );
+    // One set of results, the same calculation as the administrators' dashboard.
+    const internal = (await admin().get('/admin/performance')).body;
+    expect(all.counts).toEqual(internal.counts);
+    expect(all.results).toEqual(internal.results);
+    expect(JSON.stringify(all)).not.toMatch(/basis|HYPOTHETICAL|DECLARED|verified/i);
 
+    // Asking for winners only changes nothing: figures are never chosen by outcome.
     const wins = (await gated.get('/public/performance?outcome=WIN')).body;
-    expect(wins.records.every((r: { outcome: string }) => r.outcome === 'WIN')).toBe(true);
-    expect(wins.lifecycle).toEqual(all.lifecycle);
+    expect(wins.results).toEqual(all.results);
+    expect(wins.records).toHaveLength(all.records.length);
 
     const info = (await new Client().get('/public/info')).body;
     expect(info).toHaveProperty('aboutBody');

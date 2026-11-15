@@ -1,6 +1,7 @@
 import { createDecipheriv, createECDH, hkdfSync, randomBytes, randomUUID } from 'node:crypto';
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
+  activeTrade,
   admin,
   act,
   control,
@@ -232,6 +233,23 @@ describe('web push', () => {
     expect(health.body.recentFailures.length).toBeGreaterThan(0);
     const detail = await admin().get(`/admin/trades/${trade.id}`);
     expect(detail.body.events[0].dispatch.failed).toBeGreaterThanOrEqual(1);
+  });
+
+  it('never tells a member about an update to a trade published before they joined', async () => {
+    const older = await activeTrade();
+    const { client } = await newSubscriber(30);
+    const device = newDevice();
+    await register(client, device);
+    await act(older, 'MOVE_STOP', { price: String(Number(older.stopLoss) + 5) });
+    const moved = await withDb(
+      async (db) =>
+        (await db.query('SELECT id FROM signal_events WHERE trade_id = $1 ORDER BY seq DESC LIMIT 1', [older.id]))
+          .rows[0].id as string,
+    );
+    const fresh = await publish();
+    await waitForPush(device, 1);
+    expect(await deliveries(fresh.events[0].id, device)).toHaveLength(1);
+    expect(await deliveries(moved, device)).toHaveLength(0);
   });
 
   it('never sends to an expired subscriber', async () => {

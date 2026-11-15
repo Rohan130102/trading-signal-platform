@@ -24,7 +24,7 @@ import {
   ZQuery,
 } from '../common/http.js';
 import { env } from '../config/env.js';
-import { PrismaService } from '../db/prisma.service.js';
+import { Prisma, PrismaService } from '../db/prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { NotificationsService } from '../notifications/notifications.service.js';
 import { PerformanceService } from '../performance/performance.service.js';
@@ -32,6 +32,31 @@ import { EmailTransport } from '../email/email-transport.js';
 import { SettingsService } from '../settings/settings.service.js';
 import { TradesQueries } from '../trades/trades.queries.js';
 import { TradesService } from '../trades/trades.service.js';
+
+/** Records of what only the Master Admin can do: other administrators never see these, or that they exist. */
+const PRIVILEGED_AUDIT: Prisma.AuditLogWhereInput = {
+  OR: [
+    { action: { startsWith: 'ADMIN_' } },
+    { action: { startsWith: 'MASTER_ADMIN' } },
+    {
+      action: {
+        in: [
+          'SETTINGS_UPDATED',
+          'SUPPORT_CONTACT_UPDATED',
+          'EMAIL_SETTINGS_UPDATED',
+          'EMAIL_TEST_SENT',
+          'EMAIL_TEST_FAILED',
+          'PUBLIC_PERFORMANCE_APPROVAL_RECORDED',
+          'PUBLIC_PERFORMANCE_APPROVAL_REVOKED',
+          'SUBSCRIBER_SCREENSHOT_PERMISSION_SET',
+          'TRADES_REMOVED_FROM_SCREENS',
+          'TRADES_RESTORED_TO_SCREENS',
+          'DEMO_DATA_RESET',
+        ],
+      },
+    },
+  ],
+};
 
 @Controller('admin')
 @AdminOnly()
@@ -103,14 +128,12 @@ export class AdminController {
         href: '/admin/notifications',
       });
     }
-    // Sign-up sends a code by email. Without email, new people can only send their details on WhatsApp.
+    // Sign-up sends a code by email. Only those who can set email up are told about it.
     const [{ signupOpen }, emailStatus] = await Promise.all([this.settings.get(), this.email.status()]);
-    if (signupOpen && emailStatus === 'NOT_SET_UP') {
+    if (auth.user.isMasterAdmin && signupOpen && emailStatus === 'NOT_SET_UP') {
       alerts.push({
         level: 'WARNING',
-        message: auth.user.isMasterAdmin
-          ? 'Email is not set up, so sign-up codes cannot be sent. Set it up in Configuration, Email.'
-          : 'Email is not set up, so sign-up codes cannot be sent. Ask the Super Admin to set it up.',
+        message: 'Email is not set up, so sign-up codes cannot be sent. Set it up in Configuration, Email.',
         href: '/admin/settings?tab=email',
       });
     }
@@ -152,13 +175,14 @@ export class AdminController {
   @Get('performance')
   @Summary('Internal analytics. Never exposed publicly.')
   performanceReport(@ZQuery(performanceQuery) query: z.infer<typeof performanceQuery>) {
-    return this.performance.internal(query);
+    return this.performance.report(query);
   }
 
   @Get('audit')
-  @Summary('Audit log')
-  async auditLog(@ZQuery(auditQuery) query: z.infer<typeof auditQuery>) {
-    const where = {
+  @Summary('Audit log. Actions only the Master Admin can take are listed for the Master Admin only.')
+  async auditLog(@ZQuery(auditQuery) query: z.infer<typeof auditQuery>, @Auth() auth: AuthContext) {
+    const where: Prisma.AuditLogWhereInput = {
+      ...(auth.user.isMasterAdmin ? {} : { NOT: PRIVILEGED_AUDIT }),
       ...(query.action ? { action: { contains: query.action, mode: 'insensitive' as const } } : {}),
       ...(query.actorId ? { actorId: query.actorId } : {}),
       ...(query.targetId ? { targetId: query.targetId } : {}),

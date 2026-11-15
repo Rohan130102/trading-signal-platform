@@ -16,6 +16,7 @@ jest.mock('expo-router', () => ({
   useRouter: () => ({ push: jest.fn(), back: jest.fn(), replace: jest.fn(), canGoBack: () => true }),
   useLocalSearchParams: () => ({}),
   Link: ({ children }: { children: React.ReactNode }) => children,
+  Redirect: () => null,
 }));
 jest.mock('@/lib/config', () => ({ API: { origin: 'https://api.test', problem: null }, websiteUrl: () => null }));
 
@@ -202,12 +203,11 @@ describe('the configuration screen', () => {
     expect(screen.getByTestId('email-test')).toBeTruthy();
   });
 
-  it('is read-only for other administrators, and hides the email account from them', async () => {
+  it('does not exist for other administrators: no tabs, no lock, no mention of a higher role', async () => {
     mockMe = { isMasterAdmin: false, profile: null };
     await wrap(<ConfigurationScreen />);
-    expect(await screen.findByText(/Only the Super Admin can change the configuration/)).toBeTruthy();
-    await fireEvent.press(screen.getByTestId('config-tab-email'));
-    expect(await screen.findByText('Only the Super Admin can see and change the email account.')).toBeTruthy();
+    expect(screen.queryByTestId('config-tab-general')).toBeNull();
+    expect(screen.queryByText(/Super Admin|Master Admin|Only the/)).toBeNull();
   });
 });
 

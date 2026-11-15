@@ -10,6 +10,7 @@ import { AuthService } from '../auth/auth.service.js';
 import { SESSION_COOKIE } from '../auth/session.guard.js';
 import { CH_ACCESS, CH_EVENTS, CH_REFRESH, ListenerService } from '../db/listener.service.js';
 import { PrismaService } from '../db/prisma.service.js';
+import { type AlertScope, AudienceService, type Periods } from '../feed/audience.service.js';
 import { toFeedEvent } from '../trades/mappers.js';
 
 const RING_SIZE = 2000;
@@ -32,6 +33,36 @@ interface Conn {
   alive: boolean;
   pumping: boolean;
   dirty: boolean;
+  /** What this member may see; refreshed with every access check. */
+  periods: Periods;
+}
+
+/** An alert, with what the audience rule needs to decide who receives it. Only `event` is ever sent. */
+interface RingItem {
+  event: FeedEvent;
+  scope: AlertScope;
+}
+
+const WITH_SCOPE = {
+  trade: { select: { status: true, publishedAt: true, removal: { select: { tradeId: true } } } },
+} as const;
+
+function toRingItem(
+  row: {
+    createdAt: Date;
+    tradeId: string | null;
+    trade: { status: string; publishedAt: Date | null; removal: { tradeId: string } | null } | null;
+  } & Parameters<typeof toFeedEvent>[0],
+): RingItem {
+  return {
+    event: toFeedEvent(row, (row.trade?.status ?? null) as Parameters<typeof toFeedEvent>[1]),
+    scope: {
+      createdAt: row.createdAt.toISOString(),
+      tradePublishedAt: row.trade?.publishedAt?.toISOString() ?? null,
+      hasTrade: row.tradeId !== null,
+      removed: row.trade?.removal != null,
+    },
+  };
 }
 
 /**
@@ -44,7 +75,7 @@ interface Conn {
 export class RealtimeGateway implements OnModuleDestroy {
   private wss: WebSocketServer | null = null;
   private readonly conns = new Set<Conn>();
-  private ring: FeedEvent[] = [];
+  private ring: RingItem[] = [];
   private head = 0;
   private tailing = false;
   private tailAgain = false;
@@ -54,6 +85,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly listener: ListenerService,
+    private readonly audience: AudienceService,
   ) {}
 
   get connectionCount(): number {
@@ -119,6 +151,7 @@ export class RealtimeGateway implements OnModuleDestroy {
     const token = bearer ?? parseCookies(req.headers.cookie)[SESSION_COOKIE];
     const context = token ? await this.auth.authenticate(token) : null;
     if (!context || context.next) return this.rejectUpgrade(socket, 401);
+    const periods = await this.audience.periods(context.user.id);
 
     const wss = this.wss as WebSocketServer;
     wss.handleUpgrade(req, socket, head, (ws) => {
@@ -140,6 +173,7 @@ export class RealtimeGateway implements OnModuleDestroy {
         alive: true,
         pumping: false,
         dirty: false,
+        periods,
       };
       this.conns.add(conn);
       ws.on('pong', () => {
@@ -197,18 +231,18 @@ export class RealtimeGateway implements OnModuleDestroy {
           where: { broadcast: true, seq: { gt: BigInt(this.head) } },
           orderBy: { seq: 'asc' },
           take: PAGE,
-          include: { trade: { select: { status: true } } },
+          include: WITH_SCOPE,
         });
-        const fresh = rows.map((r) => toFeedEvent(r, r.trade?.status ?? null));
+        const fresh = rows.map(toRingItem);
         if (fresh.length > 0) {
           this.ring.push(...fresh);
           if (this.ring.length > RING_SIZE) this.ring = this.ring.slice(-RING_SIZE);
-          this.head = fresh[fresh.length - 1]?.seq ?? this.head;
+          this.head = fresh[fresh.length - 1]?.event.seq ?? this.head;
         }
         // Also picks up any connection left behind by an earlier failure.
         const lagging = [...this.conns].filter((c) => c.cursor !== null && c.cursor < this.head);
         await Promise.all(lagging.map((c) => this.advance(c)));
-        if (fresh.length > 0) await this.recordFanout(fresh);
+        if (fresh.length > 0) await this.recordFanout(fresh.map((item) => item.event));
         if (rows.length === PAGE) this.tailAgain = true;
       } while (this.tailAgain);
     } catch (error) {
@@ -234,19 +268,19 @@ export class RealtimeGateway implements OnModuleDestroy {
       .catch((error: Error) => log('warn', 'fanout_metric_failed', { error: error.message }));
   }
 
-  private async eventsAfter(cursor: number): Promise<FeedEvent[]> {
+  private async eventsAfter(cursor: number): Promise<RingItem[]> {
     const first = this.ring[0];
-    if (first && cursor >= first.seq - 1) {
-      return this.ring.filter((e) => e.seq > cursor).slice(0, PAGE);
+    if (first && cursor >= first.event.seq - 1) {
+      return this.ring.filter((item) => item.event.seq > cursor).slice(0, PAGE);
     }
     if (cursor >= this.head) return [];
     const rows = await this.prisma.signalEvent.findMany({
       where: { broadcast: true, seq: { gt: BigInt(cursor), lte: BigInt(this.head) } },
       orderBy: { seq: 'asc' },
       take: PAGE,
-      include: { trade: { select: { status: true } } },
+      include: WITH_SCOPE,
     });
-    return rows.map((r) => toFeedEvent(r, r.trade?.status ?? null));
+    return rows.map(toRingItem);
   }
 
   private async pump(conn: Conn): Promise<void> {
@@ -261,17 +295,18 @@ export class RealtimeGateway implements OnModuleDestroy {
         conn.dirty = false;
         if (conn.ws.readyState !== WebSocket.OPEN) return;
         if (!(await this.stillAllowed(conn))) return;
-        const events = await this.eventsAfter(conn.cursor);
-        for (const event of events) {
+        const items = await this.eventsAfter(conn.cursor);
+        for (const { event, scope } of items) {
           if (conn.ws.bufferedAmount > MAX_BUFFERED_BYTES) {
             // A client this far behind recovers faster by reconnecting from its cursor.
             conn.ws.terminate();
             return;
           }
-          this.send(conn, { type: 'event', event });
+          // Skipped alerts still move the cursor: the member simply never had them.
+          if (AudienceService.alertVisible(scope, conn.periods)) this.send(conn, { type: 'event', event });
           conn.cursor = event.seq;
         }
-        if (events.length === PAGE) conn.dirty = true;
+        if (items.length === PAGE) conn.dirty = true;
       } while (conn.dirty);
     } finally {
       conn.pumping = false;
@@ -281,8 +316,13 @@ export class RealtimeGateway implements OnModuleDestroy {
   private async stillAllowed(conn: Conn): Promise<boolean> {
     const now = Date.now();
     if ((conn.validUntil === null || now < conn.validUntil) && now - conn.validatedAt < REVALIDATE_MS) return true;
-    const decisions = await this.auth.decisionsForSessions([conn.sessionId]);
-    return this.applyDecision(conn, decisions.get(conn.sessionId) ?? null);
+    const [decisions, scopes] = await Promise.all([
+      this.auth.decisionsForSessions([conn.sessionId]),
+      this.audience.periodsFor([conn.userId]),
+    ]);
+    const allowed = this.applyDecision(conn, decisions.get(conn.sessionId) ?? null);
+    if (allowed) conn.periods = scopes.get(conn.userId) ?? [];
+    return allowed;
   }
 
   private applyDecision(conn: Conn, decision: AccessDecision | null): boolean {
@@ -308,8 +348,13 @@ export class RealtimeGateway implements OnModuleDestroy {
   }
 
   private async revalidate(targets: Conn[]): Promise<void> {
-    const decisions = await this.auth.decisionsForSessions([...new Set(targets.map((c) => c.sessionId))]);
-    for (const conn of targets) this.applyDecision(conn, decisions.get(conn.sessionId) ?? null);
+    const [decisions, scopes] = await Promise.all([
+      this.auth.decisionsForSessions([...new Set(targets.map((c) => c.sessionId))]),
+      this.audience.periodsFor([...new Set(targets.map((c) => c.userId))]),
+    ]);
+    for (const conn of targets) {
+      if (this.applyDecision(conn, decisions.get(conn.sessionId) ?? null)) conn.periods = scopes.get(conn.userId) ?? [];
+    }
   }
 
   /** Closes connections that passed their expiry or are due a re-check, in one query. */

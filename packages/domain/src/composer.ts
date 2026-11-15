@@ -204,10 +204,15 @@ export function trailStopPrice(
 }
 
 /** The basis an exit starts on: an earlier exit on the trade fixes it, because bases cannot be mixed. */
-export function defaultExitBasis(trade: AdminTradeDetail): CalculationBasis {
+/** The same choice the server makes when an exit names no basis, so the preview matches what is recorded. */
+export function defaultExitBasis(trade: AdminTradeDetail, typedEntry = ''): CalculationBasis {
   return (
     trade.closures.find((c) => !c.superseded)?.basis ??
-    (trade.execution ? 'ADMIN_DECLARED_EXECUTION' : trade.entryType === 'SINGLE' ? 'HYPOTHETICAL_OUTCOME' : 'NONE')
+    (trade.execution
+      ? 'ADMIN_DECLARED_EXECUTION'
+      : trade.entryType === 'SINGLE' || typedEntry.trim() !== ''
+        ? 'HYPOTHETICAL_OUTCOME'
+        : 'NONE')
   );
 }
 

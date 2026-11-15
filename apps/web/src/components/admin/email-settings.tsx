@@ -14,7 +14,7 @@ import {
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
-import { AlertTriangle, CheckCircle2, Eye, EyeOff, Info, Lock, Send } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Eye, EyeOff, Info, Send } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button, Card, ErrorState, Field, FormError, Input, Loading, Segmented, Select, Switch } from '@/components/ui';
@@ -122,14 +122,7 @@ export function EmailSettings({ canEdit, defaultTestTo }: { canEdit: boolean; de
     onError: (error) => setTestResult({ ok: false, message: (error as Error).message }),
   });
 
-  if (!canEdit) {
-    return (
-      <Card className="flex items-start gap-3 p-4 text-[13px] text-muted sm:p-5">
-        <Lock className="mt-0.5 size-4 shrink-0" aria-hidden />
-        Only the Super Admin can see and change the email account.
-      </Card>
-    );
-  }
+  if (!canEdit) return null;
   if (view.isPending || !draft) return <Loading rows={3} label="Loading email settings" />;
   if (view.isError) return <ErrorState error={view.error} onRetry={() => void view.refetch()} />;
 

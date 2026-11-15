@@ -218,10 +218,34 @@ export class WorkerService implements OnModuleDestroy {
     return claimed.length;
   }
 
-  /** One row per eligible device. The unique key makes a repeat of this step harmless. */
+  /**
+   * One row per eligible device. The unique key makes a repeat of this step harmless. An alert about a trade goes
+   * only to members who may see that trade (the audience rule), so nobody is told about an update without its signal.
+   */
   private async expandEvent(eventId: string): Promise<void> {
-    const event = await this.prisma.signalEvent.findUniqueOrThrow({ where: { id: eventId }, select: { type: true } });
+    const event = await this.prisma.signalEvent.findUniqueOrThrow({
+      where: { id: eventId },
+      select: {
+        type: true,
+        tradeId: true,
+        trade: { select: { publishedAt: true, removal: { select: { tradeId: true } } } },
+      },
+    });
     if (!this.transport.available) return;
+    if (event.trade?.removal) return;
+    let followers = Prisma.sql`true`;
+    if (event.tradeId) {
+      const candidates = await this.prisma.pushSubscription.findMany({
+        where: { invalidatedAt: null, user: { role: 'SUBSCRIBER' } },
+        select: { userId: true },
+        distinct: ['userId'],
+      });
+      const allowed = await this.audience.mayFollowTrade(
+        candidates.map((c) => c.userId),
+        event.trade?.publishedAt ?? null,
+      );
+      followers = Prisma.sql`u.id = ANY(${allowed}::uuid[])`;
+    }
     const category = eventCategory(event.type as EventType);
     const preference = Prisma.raw(
       {
@@ -249,7 +273,7 @@ export class WorkerService implements OnModuleDestroy {
       WHERE ps.invalidated_at IS NULL
         AND ${channelAllowed}
         AND ${preference}
-        AND (u.role = 'ADMIN' OR (sub.starts_at <= now() AND sub.expires_at > now()))
+        AND (u.role = 'ADMIN' OR (sub.starts_at <= now() AND sub.expires_at > now() AND ${followers}))
       ON CONFLICT (event_id, push_subscription_id) DO NOTHING`;
     if (inserted > 0) void this.runPush();
   }

@@ -237,10 +237,8 @@ export default function Signals() {
           ) : signals.isError ? (
             <ErrorState error={signals.error} onRetry={() => void signals.refetch()} />
           ) : (
-            <EmptyState icon="pulse" title={filtered ? 'Nothing matches these filters' : 'No live signals right now'}>
-              {filtered
-                ? 'Try fewer filters, or reset them.'
-                : 'New signals appear here as soon as they are published.'}
+            <EmptyState icon="pulse" title={filtered ? 'Nothing matches these filters' : 'No Signals Yet'}>
+              {filtered ? 'Try fewer filters, or reset them.' : 'New signals will appear here.'}
             </EmptyState>
           )
         }

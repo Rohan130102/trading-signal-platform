@@ -46,10 +46,12 @@ const SECONDARY = [
   { href: '/admin/instruments', label: 'Instruments', icon: CandlestickChart },
   { href: '/admin/templates', label: 'Templates', icon: FileText },
   { href: '/admin/audit', label: 'Audit log', icon: ScrollText },
-  { href: '/admin/settings', label: 'Configuration', icon: Settings },
 ];
-/** The Master Admin's own pages. The API enforces this; the link is only hidden for everyone else. */
-const MASTER = [{ href: '/admin/admins', label: 'Administrators', icon: ShieldCheck }];
+/** The Master Admin's own pages. Nobody else sees them in any form; the API refuses them too. */
+const MASTER = [
+  { href: '/admin/settings', label: 'Configuration', icon: Settings },
+  { href: '/admin/admins', label: 'Administrators', icon: ShieldCheck },
+];
 
 function Shell({ children, name, master }: { children: ReactNode; name: string; master: boolean }) {
   const secondary = master ? [...SECONDARY, ...MASTER] : SECONDARY;

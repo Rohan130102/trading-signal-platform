@@ -91,28 +91,28 @@ export default function More() {
           onPress={() => router.push('/admin/health')}
         />
       </Card>
-      <SectionTitle>{master ? 'Master Admin' : 'Platform'}</SectionTitle>
-      <Card padded={false} style={{ paddingHorizontal: space.lg }}>
-        <ListRow
-          testID="more-settings"
-          icon="options-outline"
-          title="Configuration"
-          subtitle={master ? 'Email, sign-up, trials, contact, signals and legal text' : 'See what is in force'}
-          onPress={() => router.push('/admin/settings')}
-        />
-        {master && (
-          <>
+      {master && (
+        <>
+          <SectionTitle>Platform</SectionTitle>
+          <Card padded={false} style={{ paddingHorizontal: space.lg }}>
+            <ListRow
+              testID="more-settings"
+              icon="options-outline"
+              title="Configuration"
+              subtitle="Email, sign-up, trials, contact, signals and legal text"
+              onPress={() => router.push('/admin/settings')}
+            />
             <Divider />
             <ListRow
               testID="more-admins"
               icon="shield-checkmark-outline"
               title="Administrators"
-              subtitle="Register, suspend, reset, Master Admin"
+              subtitle="Register, suspend, reset"
               onPress={() => router.push('/admin/admins')}
             />
-          </>
-        )}
-      </Card>
+          </Card>
+        </>
+      )}
       <SectionTitle>You</SectionTitle>
       <Card padded={false} style={{ paddingHorizontal: space.lg }}>
         <ListRow

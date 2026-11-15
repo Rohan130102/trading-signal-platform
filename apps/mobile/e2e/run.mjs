@@ -419,8 +419,8 @@ J['subscriber-live-signal'] = async () => {
     confirm: true,
   });
   await d.scrollTo({ id: 'outcome' });
-  await expectText('Favourable');
-  await expectText(/not what any subscriber achieved/);
+  await expectText('Win');
+  assert(!(await d.has({ any: /hypothetical|declared|verified/i })), 'No internal labels on the trade');
   await d.screenshot('trade-closed');
   const closed = await d.text();
   assert(!/USD\b.*\d+\.\d\d (USD)/.test(closed) && !/Net result/.test(closed), 'A subscriber sees no money figures');
@@ -647,7 +647,7 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.screenshot('action-record-execution');
   await d.tap({ id: 'action-submit' });
   await d.waitFor({ id: 'do-MOVE_STOP' }, 15_000);
-  await expectText(/Declared execution \(private\)/);
+  await expectText(/Only administrators see this/);
 
   // Move the stop tighter.
   const tighter = String(Number(entry) - 100);
@@ -700,7 +700,8 @@ J['admin-publish-and-manage-trade'] = async () => {
   await d.type({ id: 'exit-price' }, String(Number(entry) + 100));
   await d.hideKeyboard();
   await d.waitFor({ id: 'exit-preview' });
-  await d.tap({ id: 'basis-ADMIN_DECLARED_EXECUTION' });
+  // No choice to make: with the admin's entry recorded, the result is measured from it.
+  assert(!(await d.has({ any: /based on|basis/i })), 'The close form asks nothing about a basis');
   await expectText('+100 pts');
   // The money line sits below the fees and comment fields.
   await d.scrollTo({ any: /100\.00 USD/ });
@@ -873,8 +874,9 @@ J['admin-other-screens'] = async () => {
 
   await tapMore('more-performance');
   await d.waitFor({ id: 'performance' });
-  await expectText('Internal analytics');
-  await expectText('Every record');
+  await expectText('Total signals');
+  await expectText('Win rate');
+  assert(!(await d.has({ any: /hypothetical|declared|verified|basis/i })), 'One set of results, no categories');
   await d.screenshot('performance');
   await d.back();
 

@@ -50,14 +50,14 @@ export default function SignalsPage() {
       {active.isSuccess && trades.length === 0 && (
         <EmptyState
           icon={<Activity className="size-5" aria-hidden />}
-          title="No live signals right now"
+          title="No Signals Yet"
           action={
             <Link href="/app/history" className={buttonClass('secondary')}>
               See {TITLES.history}
             </Link>
           }
         >
-          New signals appear here as soon as they are published.
+          New signals will appear here.
         </EmptyState>
       )}
       <Group id="running" title={TITLES.active} trades={running} />

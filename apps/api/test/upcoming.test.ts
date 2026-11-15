@@ -17,6 +17,7 @@ async function upcoming(direction: 'BUY' | 'SELL' = 'BUY') {
 
 describe('upcoming range trades', () => {
   it('publish with no target or stop-loss, waiting for activation, and read as an upcoming trade', async () => {
+    const members = await newSubscriber(5);
     const { trade, low } = await upcoming();
     expect(trade).toMatchObject({
       status: 'PUBLISHED',
@@ -32,7 +33,8 @@ describe('upcoming range trades', () => {
     );
     expect(published.body).not.toMatch(/Target|Stop/);
 
-    const sub = await newSubscriber(5);
+    // A subscriber who joined before it was published sees it as an upcoming trade.
+    const sub = members;
     const seen = (await sub.client.get(`/trades/${trade.id}`)).body;
     expect(seen).toMatchObject({ status: 'PUBLISHED', stopLoss: null, targets: [] });
     expect((await sub.client.get('/trades/active')).body.trades.some((t: { id: string }) => t.id === trade.id)).toBe(

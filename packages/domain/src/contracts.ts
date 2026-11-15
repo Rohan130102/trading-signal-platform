@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { CALCULATION_BASES, TRADE_OUTCOMES } from './pnl.js';
 import {
   HISTORY_SCOPES,
   MAX_ENTRY_WINDOW_MINUTES,
@@ -175,8 +174,9 @@ const executionBasis = z.enum(['HYPOTHETICAL_OUTCOME', 'ADMIN_DECLARED_EXECUTION
 const closureOutcome = {
   exitPrice: priceSchema,
   exitedAt: instant.optional(),
-  basis: executionBasis,
-  /** Entry for a hypothetical outcome. Required when the recommendation was a range. */
+  /** What the result is measured from. Left out, the server decides (see `exitBasis`). */
+  basis: executionBasis.optional(),
+  /** Entry the result is measured from, when the recommendation was a range. */
   hypotheticalEntry: priceSchema.optional(),
   fees: priceSchema.optional(),
   comment,
@@ -540,13 +540,11 @@ export const approvalSchema = z.strictObject({
   notes: shortText(2000).optional(),
 });
 
+/** One instrument and a period. Figures are never computed from a subset chosen by outcome. */
 export const performanceQuery = z.object({
   from: localDate.optional(),
   to: localDate.optional(),
   symbol: z.string().trim().max(24).optional(),
-  basis: z.enum(CALCULATION_BASES).optional(),
-  direction: z.enum(DIRECTIONS).optional(),
-  outcome: z.enum(TRADE_OUTCOMES).optional(),
 });
 
 export const auditQuery = z.object({

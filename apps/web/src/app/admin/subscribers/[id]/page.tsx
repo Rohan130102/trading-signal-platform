@@ -290,7 +290,7 @@ function Registration({ detail }: { detail: Detail }) {
   );
 }
 
-/** The Master Admin's choice for this subscriber. Everyone else sees what applies. */
+/** The Master Admin's choice for this subscriber. Nobody else sees it. */
 function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void }) {
   const master = useMe().data?.isMasterAdmin === true;
   const save = useMutation({
@@ -303,6 +303,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
     onError: (e) => toast.error((e as ApiError).message),
   });
   const value = detail.screenshotsAllowed === null ? 'DEFAULT' : detail.screenshotsAllowed ? 'ALLOW' : 'BLOCK';
+  if (!master) return null;
   return (
     <Card className="mt-4">
       <CardHeader
@@ -310,12 +311,12 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
         description={detail.screenshotsEffective ? 'Allowed for this subscriber.' : 'Blocked for this subscriber.'}
       />
       <div className="flex flex-col gap-2 border-t border-line p-3">
-        <Field label="Permission" hint={master ? undefined : 'Only the Master Admin can change this.'}>
+        <Field label="Permission">
           {(c) => (
             <Select
               {...c}
               value={value}
-              disabled={!master || save.isPending}
+              disabled={save.isPending}
               onChange={(e) => save.mutate(e.target.value === 'DEFAULT' ? null : e.target.value === 'ALLOW')}
             >
               <option value="DEFAULT">Platform default</option>
@@ -324,10 +325,7 @@ function Screenshots({ detail, onSaved }: { detail: Detail; onSaved: () => void 
             </Select>
           )}
         </Field>
-        <p className="text-xs leading-relaxed text-subtle">
-          Android blocks captures fully. iPhone cannot block them; the app hides content where iOS allows it and notes a
-          screenshot when it sees one. Web browsers cannot block them.
-        </p>
+        <p className="text-xs text-subtle">iPhone and web browsers cannot fully block screenshots.</p>
       </div>
     </Card>
   );

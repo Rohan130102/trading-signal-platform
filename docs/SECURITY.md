@@ -94,6 +94,24 @@ A logged screenshot records only the fact, the screen and the time, capped at 30
 development bundle can switch capture back on for automated visual checks (`EXPO_PUBLIC_E2E_ALLOW_CAPTURE=1`); it is
 ignored in every preview and production build, where `__DEV__` is false.
 
+## What each subscriber may see
+
+One rule, enforced by the server for every list, detail, search, page, unread count, live update and push notification:
+a subscriber sees what was published while they were entitled. Their entitlement periods come from the recorded
+history of their subscription and trials: each window holds from its start until it expired or a later change
+replaced it. A gap between two memberships stays a gap, so renewing never opens what was published while access had
+lapsed. A trade published before they joined stays out with all its later updates, so nobody receives an update
+without the signal it belongs to. Announcements follow the same rule, except Maintenance notices, which stay on the
+board for everyone signed in. An old identifier typed into a URL or an API call answers "not found". With the ALL
+history scope (Configuration, Signals), everything is shown.
+
+## The Master Admin's functions
+
+Configuration, administrators, the email account, the support contact, compliance approvals, screenshot permissions
+and removing trades from subscriber screens belong to the Master Admin. The API refuses them to everyone else with the
+same 403 as any other refusal, which names no role. Other administrators do not see these pages, links or fields at all,
+and typing their address leads to the dashboard. The audit log they see leaves out these actions.
+
 ## Announcements
 
 Plain text only: control characters are removed and nothing is rendered as HTML. A link button accepts only `https://`

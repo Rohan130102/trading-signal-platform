@@ -59,7 +59,7 @@ export class FeedService {
     const [user, hidden, from] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
       this.hiddenIds(userId, 'TRADE'),
-      this.audience.scopeStart(userId),
+      this.audience.periods(userId),
     ]);
     const where: Prisma.TradeWhereInput = {
       AND: [this.audience.tradeWhere(from)],
@@ -121,7 +121,7 @@ export class FeedService {
   async notifications(userId: string, query: { before?: number; limit: number }): Promise<NotificationsPage> {
     const [user, from] = await Promise.all([
       this.prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { lastReadSeq: true } }),
-      this.audience.scopeStart(userId),
+      this.audience.periods(userId),
     ]);
     const rows = await this.prisma.signalEvent.findMany({
       where: {
@@ -178,11 +178,17 @@ export class FeedService {
     return this.unreadCount(userId);
   }
 
+  /** Only what this person may see can be hidden, so an old identifier reveals nothing about what exists. */
   async hide(userId: string, type: HiddenItemType, id: string): Promise<void> {
+    const periods = await this.audience.periods(userId);
     const exists =
       type === 'TRADE'
-        ? await this.prisma.trade.count({ where: { id, status: { not: 'DRAFT' } } })
-        : await this.prisma.announcementRecord.count({ where: { id, status: 'PUBLISHED', deletedAt: null } });
+        ? await this.prisma.trade.count({
+            where: { id, status: { not: 'DRAFT' }, AND: [this.audience.tradeWhere(periods)] },
+          })
+        : await this.prisma.announcementRecord.count({
+            where: { id, status: 'PUBLISHED', deletedAt: null, AND: [this.audience.announcementWhere(periods)] },
+          });
     if (exists === 0) throw notFound(type === 'TRADE' ? 'Trade not found' : 'Announcement not found');
     await this.prisma.userHiddenItem.upsert({
       where: { userId_itemType_itemId: { userId, itemType: type, itemId: id } },
@@ -197,7 +203,7 @@ export class FeedService {
    * restoreHistory brings them back.
    */
   async clearHistory(userId: string): Promise<{ cleared: number }> {
-    const from = await this.audience.scopeStart(userId);
+    const from = await this.audience.periods(userId);
     const rows = await this.prisma.trade.findMany({
       where: {
         AND: [this.audience.tradeWhere(from)],

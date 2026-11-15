@@ -73,7 +73,7 @@ Public, rate limited per address and per client. The answer is the same whether 
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /signals`                                                      | Trades with up to four latest updates, newest activity first. `symbols`, `direction`, `status` (`ALL`, `OPEN`, `AWAITING`, `LIVE`, `CLOSED`), cursor `before`                |
 | `GET /notifications`, `POST /notifications/read`                    | Every broadcast event with read state; mark all (`{ all, upToSeq }`), some (`{ eventIds }`) or one trade (`{ tradeId }`)                                                     |
-| `GET /announcements`                                                | Published, unexpired, not hidden; pinned first                                                                                                                               |
+| `GET /announcements`                                                | Published, unexpired, not hidden; pinned first. Only what was published while the subscriber was entitled, plus Maintenance notices                                          |
 | `POST /me/hidden`, `DELETE /me/hidden/:type/:id`                    | Hide or show a trade or announcement for the caller only                                                                                                                     |
 | `GET /me/device`, `POST /me/onboarding`, `POST /me/security-events` | This phone's binding; tour finished; an observed screen capture                                                                                                              |
 | `POST /me/enquiries`, `GET /me/enquiries/:id`                       | A subscription enquiry `{ channel: WHATSAPP \| EMAIL, purpose, whatsappUnavailable, idempotencyKey }`. Outcome `LINK_OPENED`, `EMAIL_QUEUED`, `EMAIL_SENT` or `EMAIL_FAILED` |
@@ -150,3 +150,20 @@ Instrument and direction cannot be corrected.
 | 4400          | Bad message                        | Fix the client                                          |
 | 4408          | Too many connections for this user | Close a tab                                             |
 | Anything else | Network or restart                 | Reconnect with backoff, sending the last `seq` you hold |
+
+## Performance
+
+`GET /admin/performance?symbol=&from=&to=` and, behind the compliance gate, `GET /public/performance` return the same
+report, built by one function (`summarizePerformance`):
+
+- `counts`: `total`, `closed`, `active`, `awaitingEntry`, `cancelled` (cancelled includes expired, no entry).
+- `results`: `winRate`, `wins`, `losses`, `breakevens`, `measured`. The win rate is wins over `measured`: closed trades
+  with a result. A closed trade without one counts as closed and nowhere else; nothing is invented for it.
+- `instruments`: the same per instrument, with `netPoints` and `averagePoints`. Points are never added across
+  instruments.
+- `running`: the running total of points, for one instrument only; otherwise `null`.
+- `trades` (admin) or `records` (public, no prices): finished signals, newest first.
+
+A trade counts the moment it closes. Removed trades still count. An exit names no basis: the server measures it from
+the administrator's recorded entry if there is one, else the signal's entry, or for a range the entry typed when
+closing; without any of these the exit is recorded without a result.

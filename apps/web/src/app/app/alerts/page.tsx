@@ -112,9 +112,9 @@ export default function AlertsPage() {
       {feed.isSuccess && events.length === 0 && (
         <EmptyState
           icon={<Inbox className="size-5" aria-hidden />}
-          title={symbol ? `Nothing for ${symbol} yet` : 'No signals yet'}
+          title={symbol ? `Nothing for ${symbol} yet` : 'No alerts yet'}
         >
-          When a signal is published it will appear here straight away. There is no need to refresh.
+          New signals and updates will appear here.
         </EmptyState>
       )}
       <div className="flex flex-col gap-3">

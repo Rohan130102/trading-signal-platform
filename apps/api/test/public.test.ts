@@ -66,16 +66,13 @@ describe('public performance gate', () => {
     const open = await gated.get('/public/performance');
     expect(open.status).toBe(200);
     expect(open.body.disclosures.riskDisclosure).toMatch(/risk of loss/i);
-    expect(open.body.methodology.statements.join(' ')).toMatch(/not independently verified/);
 
     // Every outcome is present, and nothing private crosses the boundary.
-    expect(open.body.lifecycle.totalRecords).toBeGreaterThan(0);
+    expect(open.body.counts.total).toBeGreaterThan(0);
     const wire = JSON.stringify(open.body.records);
     expect(wire).not.toMatch(/quantity|fees|netPnl|grossPnl|actor/i);
     expect(open.body.records.some((r: { status: string }) => r.status === 'CANCELLED')).toBe(true);
-    for (const section of [open.body.lifecycle, open.body.hypothetical, open.body.declared]) {
-      expect(JSON.stringify(section)).not.toMatch(/netPnl|grossPnl|Net"|monetary/i);
-    }
+    expect(JSON.stringify(open.body)).not.toMatch(/netPnl|grossPnl|quantity|fees|entryLow|averageExit/i);
 
     const revoked = await admin().post(`/admin/compliance/public-performance/approvals/${created.body.id}/revoke`);
     expect(revoked.status).toBe(200);

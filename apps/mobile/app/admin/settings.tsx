@@ -12,7 +12,7 @@ import {
   TRIAL_DAY_SHORTCUTS,
 } from '@signaldesk/domain';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useLocalSearchParams } from 'expo-router';
+import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { View } from 'react-native';
 import { EmailSettings } from '@/admin/EmailSettings';
@@ -138,7 +138,14 @@ function TextSettings({
  * Everything the Super Admin can change without a code update, in the same tabs as the website. Choices are saved
  * as soon as they are tapped; text has a Save button. Every change is recorded in the audit log.
  */
+/** Only the Master Admin has this screen. Anyone else is sent back, as if it did not exist. */
 export default function ConfigurationScreen() {
+  const { me } = useSession();
+  if (me && !me.isMasterAdmin) return <Redirect href="/" />;
+  return <Configuration />;
+}
+
+function Configuration() {
   const { me } = useSession();
   const canEdit = me?.isMasterAdmin === true;
   const params = useLocalSearchParams<{ tab?: string }>();
@@ -188,11 +195,6 @@ export default function ConfigurationScreen() {
           />
         ))}
       </ChipRow>
-      {!canEdit && tab !== 'email' && (
-        <Notice tone="neutral" icon="lock-closed-outline">
-          Only the Super Admin can change the configuration. You can see what is in force.
-        </Notice>
-      )}
       {settings.isPending && <Loading rows={3} label="Loading configuration" />}
       {settings.isError && <ErrorState error={settings.error} onRetry={() => void settings.refetch()} />}
 
