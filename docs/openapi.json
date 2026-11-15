@@ -9247,6 +9247,91 @@
         }
       }
     },
+    "/api/v1/app-updates/manifest": {
+      "get": {
+        "summary": "Update check for the native app (Expo Updates protocol 1). 204 when there is nothing new.",
+        "tags": [
+          "AppUpdates"
+        ],
+        "security": [],
+        "x-access": "public",
+        "parameters": [],
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/app-updates/files/{platform}/{runtime}/{update}/{key}": {
+      "get": {
+        "summary": "One file of a published update. Its hash is in the signed manifest, and the app checks it.",
+        "tags": [
+          "AppUpdates"
+        ],
+        "security": [],
+        "x-access": "public",
+        "parameters": [
+          {
+            "name": "platform",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "runtime",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "update",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "2XX": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health/live": {
       "get": {
         "summary": "The process is up",

@@ -116,6 +116,33 @@ that differ from a plain Ubuntu host:
   `pg_restore --no-owner --no-privileges` into the empty `postgres` service before `migrate` runs. Copy the old
   `APP_ENCRYPTION_KEY` into `.env` too, or MFA secrets and the saved email password cannot be decrypted.
 
+## App updates
+
+The API serves over-the-air updates for the native app ([MOBILE.md](MOBILE.md#updates-without-a-new-apk)). To switch
+them on:
+
+1. Generate the key pair once: `npx expo-updates codesigning:generate --key-output-directory <private folder>
+--certificate-output-directory code-signing --certificate-validity-duration-years 10 --certificate-common-name
+"SignalDesk app updates"` in `apps/mobile`. Commit only `code-signing/certificate.pem`. Keep `private-key.pem`
+   off the server's disk except in `.env`, and keep one copy somewhere safe: without it, phones need a new APK.
+2. Put it in `.env` as one line: `APP_UPDATES_SIGNING_KEY=` followed by `base64 < private-key.pem | tr -d '\n'`.
+   Create `app-updates/` next to `docker-compose.yml`, owned by the user who publishes. `docker compose up -d api`.
+3. Build an APK that contains the certificate (any build after it was committed). Older APKs never check.
+
+To publish, copy one export into `app-updates/android/<runtime version>/` under a temporary name and rename it into
+place, so a half-copied update is never served:
+
+```bash
+RUNTIME=$(cat runtime-version.txt); STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+ssh server "mkdir -p ~/signaldesk/app-updates/android/$RUNTIME"
+tar -C update -c . | ssh server "mkdir ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && tar -x -C ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP && mv ~/signaldesk/app-updates/android/$RUNTIME/.incoming-$STAMP ~/signaldesk/app-updates/android/$RUNTIME/$STAMP"
+```
+
+The newest folder (by its UTC name) is what phones get. To withdraw an update, publish a newer empty folder holding
+only a file named `rollback`: phones go back to the code inside their APK. Deleting a folder brings back the one
+before it for phones that have not yet downloaded it. Keep older folders for a day or two; a phone that started
+downloading one finishes from it.
+
 ## Without containers
 
 ```bash

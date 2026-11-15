@@ -1,5 +1,5 @@
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createServer as createTlsServer } from 'node:https';
@@ -32,6 +32,9 @@ declare module 'vitest' {
       databaseUrl: string;
       /** Where the API writes the emails it sends (EMAIL_TRANSPORT=file). */
       mailDir: string;
+      /** Where app updates are published, and the public half of the key that signs them. */
+      updatesDir: string;
+      updatesPublicKey: string;
       adminCookie: string;
       adminId: string;
     };
@@ -71,6 +74,12 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const dataDir = mkdtempSync(join(tmpdir(), 'sd-test-pg-'));
   const certDir = mkdtempSync(join(tmpdir(), 'sd-test-cert-'));
   const mailDir = mkdtempSync(join(tmpdir(), 'sd-test-mail-'));
+  const updatesDir = mkdtempSync(join(tmpdir(), 'sd-test-updates-'));
+  const updateKeys = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+  });
   const pg = new EmbeddedPostgres({
     databaseDir: dataDir,
     user: 'signaldesk',
@@ -111,6 +120,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
     EMAIL_FILE_DIR: mailDir,
     EMAIL_FROM: 'Signal Desk <no-reply@example.test>',
     EMAIL_CODE_IP_LIMIT_PER_HOUR: '100000',
+    APP_UPDATES_DIR: updatesDir,
+    APP_UPDATES_SIGNING_KEY: Buffer.from(updateKeys.privateKey).toString('base64'),
   };
 
   execFileSync('npx', ['prisma', 'migrate', 'deploy'], { cwd: apiDir, env: baseEnv, stdio: 'pipe' });
@@ -350,6 +361,8 @@ export default async function setup(project: TestProject): Promise<() => Promise
     origin: ORIGIN,
     databaseUrl,
     mailDir,
+    updatesDir,
+    updatesPublicKey: updateKeys.publicKey,
     adminCookie,
     adminId: me.id,
   });
@@ -371,5 +384,6 @@ export default async function setup(project: TestProject): Promise<() => Promise
     rmSync(dataDir, { recursive: true, force: true });
     rmSync(certDir, { recursive: true, force: true });
     rmSync(mailDir, { recursive: true, force: true });
+    rmSync(updatesDir, { recursive: true, force: true });
   };
 }

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createPrivateKey, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
@@ -27,6 +27,12 @@ const list = (fallback: string) =>
         .map((s) => s.trim())
         .filter(Boolean),
     );
+
+/** Docker Compose passes an unset optional value as an empty string. */
+const blankAsUnset = z
+  .string()
+  .optional()
+  .transform((v) => v?.trim() || undefined);
 
 const schema = z
   .object({
@@ -84,6 +90,13 @@ const schema = z
     SMTP_PASS: z.string().optional(),
     /** Email-code requests one client address may start per hour. Checking codes allows three times as many. */
     EMAIL_CODE_IP_LIMIT_PER_HOUR: z.coerce.number().int().min(1).default(20),
+    /** Folder of published over-the-air app updates (see AppUpdatesService). Unset: the app is told there are none. */
+    APP_UPDATES_DIR: blankAsUnset,
+    /**
+     * Base64 of the PEM private key that signs app updates. Its certificate is built into the app
+     * (apps/mobile/code-signing), so the app refuses anything this key did not sign. Never commit it.
+     */
+    APP_UPDATES_SIGNING_KEY: blankAsUnset,
   })
   .superRefine((env, ctx) => {
     if (env.PUSH_TRANSPORT === 'webpush' && (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT)) {
@@ -103,6 +116,23 @@ const schema = z
         code: 'custom',
         message: 'EMAIL_TRANSPORT=file writes codes to disk and is refused in production',
       });
+    }
+    if (env.APP_UPDATES_DIR && !env.APP_UPDATES_SIGNING_KEY) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'APP_UPDATES_DIR requires APP_UPDATES_SIGNING_KEY: the app accepts only signed updates',
+      });
+    }
+    if (env.APP_UPDATES_SIGNING_KEY) {
+      try {
+        const key = createPrivateKey(Buffer.from(env.APP_UPDATES_SIGNING_KEY, 'base64'));
+        if (key.asymmetricKeyType !== 'rsa') throw new Error('not RSA');
+      } catch {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'APP_UPDATES_SIGNING_KEY must be a base64-encoded PEM RSA private key',
+        });
+      }
     }
     if (env.NODE_ENV === 'production' && env.APP_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', message: 'In production every APP_ORIGINS entry must use https://' });
