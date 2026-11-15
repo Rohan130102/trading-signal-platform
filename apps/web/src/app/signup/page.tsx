@@ -17,7 +17,14 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useRef, useState } from 'react';
 import { CodeStep } from '@/components/auth/code-step';
-import { Hints, issuesByField, PasswordInput, readFields, useEarlyInput } from '@/components/auth/parts';
+import {
+  Hints,
+  issuesByField,
+  PasswordInput,
+  readFields,
+  useEarlyInput,
+  useFocusOnLoad,
+} from '@/components/auth/parts';
 import { AuthFrame, usePublicInfo } from '@/components/shell/auth-frame';
 import { buttonClass } from '@/components/styles';
 import { EnquiryActions } from '@/components/subscriber/enquiry';
@@ -94,6 +101,7 @@ function DetailsStep({
   const [busy, setBusy] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   useEarlyInput(formRef, (fields) => setForm((f) => withFields(f, fields)));
+  const firstField = useFocusOnLoad<HTMLInputElement>();
   // Editing a field clears its message: it was about the old value.
   const set = (key: keyof Details) => (value: string | boolean) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -141,7 +149,7 @@ function DetailsStep({
               {...control}
               name="firstName"
               autoComplete="given-name"
-              autoFocus
+              ref={firstField}
               value={form.firstName}
               onChange={(e) => set('firstName')(e.target.value)}
             />

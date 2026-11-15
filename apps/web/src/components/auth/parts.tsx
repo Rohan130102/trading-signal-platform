@@ -3,7 +3,7 @@
 import { ACTIONS, OTP_LENGTH, OTP_RESEND_SECONDS } from '@signaldesk/domain';
 import { clsx } from 'clsx';
 import { Check, Eye, EyeOff } from 'lucide-react';
-import { forwardRef, type InputHTMLAttributes, type RefObject, useEffect, useState } from 'react';
+import { forwardRef, type InputHTMLAttributes, type RefObject, useEffect, useRef, useState } from 'react';
 import { Button, Input } from '@/components/ui';
 
 /**
@@ -18,6 +18,20 @@ export function readFields(form: HTMLFormElement | null): Record<string, string 
     values[element.name] = element.type === 'checkbox' ? element.checked : element.value;
   }
   return values;
+}
+
+/**
+ * Puts the cursor in this field once the page is interactive, unless the person is already in another one. On a page
+ * rendered by the server, `autoFocus` becomes the browser's own `autofocus` attribute, which Safari can apply after
+ * someone has started typing in another field: the rest of their password then lands at the start of the first one.
+ */
+export function useFocusOnLoad<T extends HTMLElement>(): RefObject<T | null> {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const active = document.activeElement;
+    if (!active || active === document.body) ref.current?.focus();
+  }, []);
+  return ref;
 }
 
 /** Once the page is interactive, takes in anything typed or filled in before it was, so nothing is lost. */

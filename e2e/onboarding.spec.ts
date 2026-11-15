@@ -152,6 +152,39 @@ test('what is typed or autofilled before the page has finished loading is still 
   await expect(page.getByText('Enter your email or username')).toHaveCount(0);
 });
 
+test('the cursor stays in the field someone is typing in when the page finishes loading', async ({ page }) => {
+  // Safari could move the cursor to the first field after someone had started typing in the password, so the rest
+  // of it ended up at the start of the username.
+  let release = () => {};
+  const scripts = new Promise<void>((resolve) => (release = resolve));
+  await page.route('**/_next/static/chunks/**/*.js', async (route) => {
+    await scripts;
+    await route.continue();
+  });
+  await page.goto('/login', { waitUntil: 'domcontentloaded' });
+  const username = page.getByLabel('Email or username');
+  const password = page.getByLabel('Password', { exact: true });
+  await username.fill('nobody.here');
+  await password.click();
+  await page.keyboard.type('first-half-');
+  const ready = page.waitForResponse('**/api/v1/public/info');
+  release();
+  await ready;
+  await page.keyboard.type('second-half');
+  await expect(username).toHaveValue('nobody.here');
+  await expect(password).toHaveValue('first-half-second-half');
+  await expect(password).toBeFocused();
+});
+
+test('on a page that has finished loading, the cursor starts in the first field', async ({ page }) => {
+  await page.goto('/login');
+  await expect(page.getByLabel('Email or username')).toBeFocused();
+  // Not through the browser's own autofocus, which can fire after typing has started elsewhere.
+  for (const path of ['/login', '/signup', '/forgot-password']) {
+    expect(await (await page.request.get(path)).text(), path).not.toMatch(/\sautofocus(=|\s|>)/i);
+  }
+});
+
 test('sign-up details typed before the page has finished loading are kept', async ({ page }) => {
   let release = () => {};
   const scripts = new Promise<void>((resolve) => (release = resolve));
